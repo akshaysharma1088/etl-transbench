@@ -6,7 +6,7 @@ authors:
   - family-names: Sharma
     given-names: Akshay
     orcid: "https://orcid.org/0000-0000-0000-0000"
-repository-code: "https://github.com/<you>/etl-transbench"
+repository-code: "https://github.com/akshaysharma1088/etl-transbench"
 license: MIT
 version: "1.0.0"
 date-released: "2026-07-26"

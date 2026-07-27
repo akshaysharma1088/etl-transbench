@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/OWNER/etl-transbench/actions/workflows/tests.yml">
-    <img alt="benchmark self-verification" src="https://github.com/OWNER/etl-transbench/actions/workflows/tests.yml/badge.svg"></a>
+  <a href="https://github.com/akshaysharma1088/etl-transbench/actions/workflows/tests.yml">
+    <img alt="benchmark self-verification" src="https://github.com/akshaysharma1088/etl-transbench/actions/workflows/tests.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-green.svg"></a>
   <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-blue.svg">
   <img alt="32 tasks" src="https://img.shields.io/badge/tasks-32-informational">
@@ -68,7 +68,7 @@ Raw per-task results, including cost and iteration counts for all 128 task runs,
 ## Quickstart
 
 ```bash
-git clone https://github.com/<you>/etl-transbench.git
+git clone https://github.com/akshaysharma1088/etl-transbench.git
 cd etl-transbench
 pip install -r requirements.txt
 ```
