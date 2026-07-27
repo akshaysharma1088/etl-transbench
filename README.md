@@ -153,8 +153,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). The short version: write the legacy arti
 
 ## Known limitations
 
-<details>
-<summary>Stated plainly, because they bound what conclusions the results support. (click to expand)</summary>
+<details open>
+<summary>Stated plainly, because they bound what conclusions the results support. (click to collapse)</summary>
 
 - **Test equivalence is not proof.** Passing all corpora does not establish semantic equivalence, only that no engineered case distinguished the programs. This is the same standard used to accept human-performed migrations, applied more systematically.
 - **Three categories are saturated.** T3, T7, and T8 are solved by every configuration including single-pass, so they contribute no discriminating power. T5 currently carries a disproportionate share of it.
