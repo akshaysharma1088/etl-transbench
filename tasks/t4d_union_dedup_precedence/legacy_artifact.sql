@@ -1,0 +1,14 @@
+-- Legacy multi-step batch job: merge two feeds with SOURCE PRECEDENCE.
+-- Step 1: CREATE STG_COMBINED AS
+--   SELECT customer_id, email, updated_at, 1 AS src_rank FROM crm_feed
+--   UNION ALL
+--   SELECT customer_id, email, updated_at, 2 AS src_rank FROM web_feed;
+-- Step 2: CREATE GOLDEN AS
+--   SELECT customer_id, email, updated_at FROM (
+--     SELECT s.*, ROW_NUMBER() OVER (
+--       PARTITION BY customer_id
+--       ORDER BY src_rank ASC, updated_at DESC, email ASC   -- CRM WINS even if older
+--     ) AS rn FROM STG_COMBINED s) WHERE rn = 1;
+-- Output: GOLDEN (customer_id, email, updated_at).
+-- NOTE precedence: a CRM row beats a NEWER web row. Recency only breaks ties
+-- WITHIN a source; email ASC breaks exact updated_at ties deterministically.

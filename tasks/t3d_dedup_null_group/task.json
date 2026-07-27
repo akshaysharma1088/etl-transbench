@@ -1,0 +1,8 @@
+{
+  "id": "t3d_dedup_null_group",
+  "category": "T3",
+  "tier": 2,
+  "description": "Graphical sort+dedup(keep LAST)+aggregate: latest-read selection and NULL group-key preservation",
+  "legacy_artifact": "legacy_artifact.json",
+  "target": "pandas (PySpark in full benchmark)"
+}

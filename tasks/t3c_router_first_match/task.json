@@ -1,0 +1,8 @@
+{
+  "id": "t3c_router_first_match",
+  "category": "T3",
+  "tier": 2,
+  "description": "Graphical router: ordered first-match rules with overlapping predicates, three output ports",
+  "legacy_artifact": "legacy_artifact.json",
+  "target": "pandas (PySpark in full benchmark)"
+}

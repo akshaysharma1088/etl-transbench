@@ -1,0 +1,8 @@
+{
+  "id": "t2_cursor_balance",
+  "category": "T2",
+  "tier": 2,
+  "description": "Cursor loop computing running balances and overdraft flags",
+  "legacy_artifact": "legacy_artifact.txt",
+  "target": "pandas (PySpark in full benchmark)"
+}

@@ -1,0 +1,19 @@
+-- Legacy stored procedure SP_LOAD_DIM_PRODUCT_MULTI (abstracted).
+-- Inputs:
+--   DIM_PRODUCT (product_id INT, category VARCHAR, price_band VARCHAR,
+--                eff_start_date DATE, eff_end_date DATE NULL, is_current SMALLINT)
+--   STG_PRODUCT (product_id INT, category VARCHAR, price_band VARCHAR, update_date DATE)
+-- Output: DIM_PRODUCT post-state, relation name dim_product_out.
+--
+-- PROCEDURE BODY (pseudocode preserved):
+--   CURSOR over STG_PRODUCT ORDER BY product_id, update_date ASC;
+--   FOR EACH staged record s IN DATE ORDER:        -- NOT deduplicated!
+--     c := current row for s.product_id;
+--     IF c missing THEN insert new current version (start=s.update_date);
+--     ELSIF c.category <> s.category OR c.price_band <> s.price_band THEN
+--        expire c at s.update_date; insert new current version;
+--     ELSE no-op;
+--   -- CONSEQUENCE: a product staged A -> B -> A in one batch yields TWO new
+--   -- versions (B, then A again); intermediate versions MUST appear in history.
+--   NULL semantics: NULL vs non-NULL is a change; NULL vs NULL is not.
+--   Staged dates are unique per product within a batch.

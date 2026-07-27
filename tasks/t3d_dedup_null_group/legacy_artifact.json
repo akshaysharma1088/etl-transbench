@@ -1,0 +1,16 @@
+{
+  "_comment": "Vendor-neutral export of a graphical ETL component graph.",
+  "graph": [
+    {"id": "src", "type": "source", "relation": "meter_reads"},
+    {"id": "srt", "type": "sort", "input": "src",
+     "by": ["meter_id ASC", "read_ts ASC", "read_seq ASC"]},
+    {"id": "ddp", "type": "dedup", "input": "srt",
+     "keys": ["meter_id"], "keep": "LAST",
+     "note": "legacy dedup keeps the LAST row per key in the sorted stream (= latest read)"},
+    {"id": "agg", "type": "aggregate", "input": "ddp",
+     "group_by": ["zone"], "aggregations": {"total_kwh": "SUM(kwh)", "meter_count": "COUNT(*)"},
+     "note": "legacy aggregator treats NULL zone as a real group (one output row with NULL key)"},
+    {"id": "out", "type": "output", "input": "agg",
+     "relation": "zone_totals", "columns": ["zone","total_kwh","meter_count"]}
+  ]
+}

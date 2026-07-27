@@ -1,0 +1,15 @@
+-- Legacy incremental loader (abstracted MERGE job).
+-- Inputs:
+--   target_snapshot (product_id, name, price, last_event_ts)
+--   cdc_events     (event_seq, event_ts, op IN ('I','U','D'),
+--                   product_id, name, price)
+--   watermark      (single row: high_ts)  -- events with event_ts <= high_ts
+--                                            were already applied: SKIP them.
+-- Semantics:
+--   1. Keep only events with event_ts > watermark.high_ts.
+--   2. Per product_id, apply the LATEST event by (event_ts, event_seq).
+--      (event_seq breaks event_ts ties deterministically.)
+--   3. op 'D' deletes the product from the snapshot; 'I'/'U' upsert
+--      name/price and set last_event_ts = event_ts.
+--   4. Products without surviving events are carried over unchanged.
+--   Output: new_snapshot (same schema as target_snapshot).

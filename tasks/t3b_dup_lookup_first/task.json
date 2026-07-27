@@ -1,0 +1,8 @@
+{
+  "id": "t3b_dup_lookup_first",
+  "category": "T3",
+  "tier": 2,
+  "description": "Graphical lookup with duplicate-key resolution policy: first-by ordering, no row explosion",
+  "legacy_artifact": "legacy_artifact.json",
+  "target": "pandas (PySpark in full benchmark)"
+}

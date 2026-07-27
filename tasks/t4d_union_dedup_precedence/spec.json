@@ -1,0 +1,14 @@
+{
+  "task_id": "t4d_union_dedup_precedence",
+  "relations": [
+    {
+      "name": "golden",
+      "key_columns": ["customer_id"],
+      "ordered": false,
+      "columns": [
+        {"name": "email", "kind": "string", "trim": true},
+        {"name": "updated_at", "kind": "timestamp"}
+      ]
+    }
+  ]
+}

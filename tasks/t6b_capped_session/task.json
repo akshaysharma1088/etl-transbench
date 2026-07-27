@@ -1,0 +1,8 @@
+{
+  "id": "t6b_capped_session",
+  "category": "T6",
+  "tier": 3,
+  "description": "Sessionization with inactivity gap AND stateful 4-hour cap anchored to session start",
+  "legacy_artifact": "legacy_artifact.sql",
+  "target": "pandas (PySpark in full benchmark)"
+}

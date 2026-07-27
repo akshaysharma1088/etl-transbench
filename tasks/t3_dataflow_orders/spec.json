@@ -1,0 +1,28 @@
+{
+  "task_id": "t3_dataflow_orders",
+  "relations": [
+    {
+      "name": "shipped_orders_enriched",
+      "key_columns": [
+        "order_id"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "net_amount",
+          "kind": "float",
+          "abs_tol": 1e-06
+        },
+        {
+          "name": "unit_price",
+          "kind": "float",
+          "abs_tol": 1e-09
+        },
+        {
+          "name": "region",
+          "kind": "string"
+        }
+      ]
+    }
+  ]
+}

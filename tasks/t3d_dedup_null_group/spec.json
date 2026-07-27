@@ -1,0 +1,14 @@
+{
+  "task_id": "t3d_dedup_null_group",
+  "relations": [
+    {
+      "name": "zone_totals",
+      "key_columns": ["zone"],
+      "ordered": false,
+      "columns": [
+        {"name": "total_kwh", "kind": "float", "abs_tol": 1e-6},
+        {"name": "meter_count", "kind": "int"}
+      ]
+    }
+  ]
+}

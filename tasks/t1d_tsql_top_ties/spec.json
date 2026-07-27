@@ -1,0 +1,15 @@
+{
+  "task_id": "t1d_tsql_top_ties",
+  "relations": [
+    {
+      "name": "top_branches",
+      "key_columns": ["branch_id"],
+      "ordered": false,
+      "columns": [
+        {"name": "manager_norm", "kind": "string", "trim": true},
+        {"name": "branch_label", "kind": "string"},
+        {"name": "score", "kind": "float", "abs_tol": 1e-9}
+      ]
+    }
+  ]
+}

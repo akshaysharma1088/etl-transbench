@@ -1,0 +1,11 @@
+-- Legacy analytical SQL: sessionize with BOTH an inactivity gap AND a hard cap.
+-- A new session starts when EITHER:
+--   (a) gap from previous event of same user is STRICTLY > 20 minutes, OR
+--   (b) the event would make the session exceed a HARD CAP of 4 hours from
+--       the SESSION START (event_ts - session_start > 4h starts a new
+--       session AT this event; exactly 4h stays in-session).
+-- The cap is measured against the CURRENT session's start, which moves when
+-- a new session begins — a running/stateful comparison, not a window LAG.
+-- Within a user, order by event_ts then event_id.
+-- Output user_sessions: user_id, session_num, session_start, session_end,
+--   event_count.

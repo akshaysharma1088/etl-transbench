@@ -1,0 +1,24 @@
+{
+  "task_id": "t7d_quarantine_threshold",
+  "relations": [
+    {
+      "name": "readings_clean",
+      "key_columns": ["reading_id"],
+      "ordered": false,
+      "columns": [{"name": "value", "kind": "float", "abs_tol": 1e-9}]
+    },
+    {
+      "name": "readings_rejects",
+      "key_columns": ["reading_id"],
+      "ordered": false,
+      "columns": [{"name": "value", "kind": "float", "abs_tol": 1e-9}]
+    },
+    {
+      "name": "readings_quarantine",
+      "key_columns": ["reading_id"],
+      "ordered": false,
+      "columns": [{"name": "value", "kind": "float", "abs_tol": 1e-9},
+                  {"name": "batch_reject_pct", "kind": "float", "abs_tol": 0.005}]
+    }
+  ]
+}

@@ -1,0 +1,777 @@
+{
+  "mode": "REAL",
+  "config_index": 4,
+  "models": {
+    "cheap": "claude-haiku-4-5-20251001",
+    "frontier": "claude-sonnet-5"
+  },
+  "result": {
+    "config": "B3: self-repair without external grounding",
+    "ser_at": {
+      "0": 0.625,
+      "1": 0.7188,
+      "3": 0.7812,
+      "5": 0.7812
+    },
+    "total_usd": 1.9627,
+    "total_tokens": 192823,
+    "tasks": [
+      {
+        "task": "t1_dialect_qualify",
+        "category": "T1",
+        "equivalent": true,
+        "iterations": 1,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "cheap",
+            "class": "runtime"
+          },
+          {
+            "iter": 1,
+            "tier": "frontier",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 2253,
+        "tokens_out": 3585,
+        "usd": 0.0476255,
+        "wall_s": 32.96967816352844
+      },
+      {
+        "task": "t1b_oracle_decode_nvl",
+        "category": "T1",
+        "equivalent": true,
+        "iterations": 1,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "cheap",
+            "class": "runtime"
+          },
+          {
+            "iter": 1,
+            "tier": "frontier",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 2256,
+        "tokens_out": 2623,
+        "usd": 0.034684,
+        "wall_s": 20.671879053115845
+      },
+      {
+        "task": "t1c_teradata_intdiv",
+        "category": "T1",
+        "equivalent": false,
+        "iterations": 4,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "cheap",
+            "class": "semantic_divergence"
+          },
+          {
+            "iter": 1,
+            "tier": "frontier",
+            "class": "semantic_divergence"
+          },
+          {
+            "iter": 2,
+            "tier": "frontier",
+            "class": "syntactic"
+          },
+          {
+            "iter": 3,
+            "tier": "frontier",
+            "class": "semantic_divergence"
+          },
+          {
+            "iter": 4,
+            "tier": "frontier",
+            "class": "semantic_divergence"
+          }
+        ],
+        "final_class": "semantic_divergence",
+        "tokens_in": 5014,
+        "tokens_out": 13354,
+        "usd": 0.20599374999999998,
+        "wall_s": 122.28175377845764
+      },
+      {
+        "task": "t1d_tsql_top_ties",
+        "category": "T1",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "cheap",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 364,
+        "tokens_out": 679,
+        "usd": 0.00093975,
+        "wall_s": 4.81900429725647
+      },
+      {
+        "task": "t2_cursor_balance",
+        "category": "T2",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 713,
+        "tokens_out": 346,
+        "usd": 0.007329,
+        "wall_s": 8.520872592926025
+      },
+      {
+        "task": "t2b_stmt_cycle_reset",
+        "category": "T2",
+        "equivalent": true,
+        "iterations": 3,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "runtime"
+          },
+          {
+            "iter": 1,
+            "tier": "frontier",
+            "class": "syntactic"
+          },
+          {
+            "iter": 2,
+            "tier": "frontier",
+            "class": "runtime"
+          },
+          {
+            "iter": 3,
+            "tier": "frontier",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 3990,
+        "tokens_out": 7592,
+        "usd": 0.12585,
+        "wall_s": 79.7902729511261
+      },
+      {
+        "task": "t2c_locf_carry_forward",
+        "category": "T2",
+        "equivalent": true,
+        "iterations": 2,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "runtime"
+          },
+          {
+            "iter": 1,
+            "tier": "frontier",
+            "class": "syntactic"
+          },
+          {
+            "iter": 2,
+            "tier": "frontier",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 3078,
+        "tokens_out": 5614,
+        "usd": 0.093444,
+        "wall_s": 62.44636917114258
+      },
+      {
+        "task": "t2d_reject_skip_accum",
+        "category": "T2",
+        "equivalent": false,
+        "iterations": 4,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "runtime"
+          },
+          {
+            "iter": 1,
+            "tier": "frontier",
+            "class": "syntactic"
+          },
+          {
+            "iter": 2,
+            "tier": "frontier",
+            "class": "runtime"
+          },
+          {
+            "iter": 3,
+            "tier": "frontier",
+            "class": "runtime"
+          },
+          {
+            "iter": 4,
+            "tier": "frontier",
+            "class": "runtime"
+          }
+        ],
+        "final_class": "runtime",
+        "tokens_in": 5982,
+        "tokens_out": 9160,
+        "usd": 0.15534599999999998,
+        "wall_s": 89.19925594329834
+      },
+      {
+        "task": "t3_dataflow_orders",
+        "category": "T3",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "cheap",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 447,
+        "tokens_out": 430,
+        "usd": 0.00064925,
+        "wall_s": 2.8008012771606445
+      },
+      {
+        "task": "t3b_dup_lookup_first",
+        "category": "T3",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "cheap",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 486,
+        "tokens_out": 619,
+        "usd": 0.00089525,
+        "wall_s": 4.079203128814697
+      },
+      {
+        "task": "t3c_router_first_match",
+        "category": "T3",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "cheap",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 549,
+        "tokens_out": 541,
+        "usd": 0.0008135,
+        "wall_s": 3.175454616546631
+      },
+      {
+        "task": "t3d_dedup_null_group",
+        "category": "T3",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "cheap",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 477,
+        "tokens_out": 494,
+        "usd": 0.00073675,
+        "wall_s": 4.753122806549072
+      },
+      {
+        "task": "t4_multistep_sales",
+        "category": "T4",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "cheap",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 418,
+        "tokens_out": 657,
+        "usd": 0.00092575,
+        "wall_s": 3.530675172805786
+      },
+      {
+        "task": "t4b_delete_reinsert",
+        "category": "T4",
+        "equivalent": false,
+        "iterations": 4,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "cheap",
+            "class": "runtime"
+          },
+          {
+            "iter": 1,
+            "tier": "frontier",
+            "class": "semantic_divergence"
+          },
+          {
+            "iter": 2,
+            "tier": "frontier",
+            "class": "semantic_divergence"
+          },
+          {
+            "iter": 3,
+            "tier": "frontier",
+            "class": "runtime"
+          },
+          {
+            "iter": 4,
+            "tier": "frontier",
+            "class": "runtime"
+          }
+        ],
+        "final_class": "runtime",
+        "tokens_in": 5516,
+        "tokens_out": 7537,
+        "usd": 0.1213585,
+        "wall_s": 63.06301474571228
+      },
+      {
+        "task": "t4c_stale_snapshot",
+        "category": "T4",
+        "equivalent": false,
+        "iterations": 4,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "cheap",
+            "class": "runtime"
+          },
+          {
+            "iter": 1,
+            "tier": "frontier",
+            "class": "syntactic"
+          },
+          {
+            "iter": 2,
+            "tier": "frontier",
+            "class": "runtime"
+          },
+          {
+            "iter": 3,
+            "tier": "frontier",
+            "class": "runtime"
+          },
+          {
+            "iter": 4,
+            "tier": "frontier",
+            "class": "runtime"
+          }
+        ],
+        "final_class": "runtime",
+        "tokens_in": 4601,
+        "tokens_out": 7668,
+        "usd": 0.119044,
+        "wall_s": 77.47109198570251
+      },
+      {
+        "task": "t4d_union_dedup_precedence",
+        "category": "T4",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "cheap",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 417,
+        "tokens_out": 373,
+        "usd": 0.0005705,
+        "wall_s": 2.436525583267212
+      },
+      {
+        "task": "t5_scd2_customer",
+        "category": "T5",
+        "equivalent": false,
+        "iterations": 4,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "runtime"
+          },
+          {
+            "iter": 1,
+            "tier": "frontier",
+            "class": "syntactic"
+          },
+          {
+            "iter": 2,
+            "tier": "frontier",
+            "class": "runtime"
+          },
+          {
+            "iter": 3,
+            "tier": "frontier",
+            "class": "runtime"
+          },
+          {
+            "iter": 4,
+            "tier": "frontier",
+            "class": "runtime"
+          }
+        ],
+        "final_class": "runtime",
+        "tokens_in": 6632,
+        "tokens_out": 15054,
+        "usd": 0.24570600000000004,
+        "wall_s": 135.34201502799988
+      },
+      {
+        "task": "t5b_scd2_multi_batch",
+        "category": "T5",
+        "equivalent": false,
+        "iterations": 4,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "runtime"
+          },
+          {
+            "iter": 1,
+            "tier": "frontier",
+            "class": "syntactic"
+          },
+          {
+            "iter": 2,
+            "tier": "frontier",
+            "class": "runtime"
+          },
+          {
+            "iter": 3,
+            "tier": "frontier",
+            "class": "runtime"
+          },
+          {
+            "iter": 4,
+            "tier": "frontier",
+            "class": "runtime"
+          }
+        ],
+        "final_class": "runtime",
+        "tokens_in": 5794,
+        "tokens_out": 12451,
+        "usd": 0.20414700000000002,
+        "wall_s": 121.07016015052795
+      },
+      {
+        "task": "t5c_scd1_scd2_mixed",
+        "category": "T5",
+        "equivalent": false,
+        "iterations": 4,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "runtime"
+          },
+          {
+            "iter": 1,
+            "tier": "frontier",
+            "class": "syntactic"
+          },
+          {
+            "iter": 2,
+            "tier": "frontier",
+            "class": "syntactic"
+          },
+          {
+            "iter": 3,
+            "tier": "frontier",
+            "class": "syntactic"
+          },
+          {
+            "iter": 4,
+            "tier": "frontier",
+            "class": "runtime"
+          }
+        ],
+        "final_class": "runtime",
+        "tokens_in": 6507,
+        "tokens_out": 19071,
+        "usd": 0.305586,
+        "wall_s": 175.190363407135
+      },
+      {
+        "task": "t5d_asof_reconstruction",
+        "category": "T5",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 738,
+        "tokens_out": 1179,
+        "usd": 0.019899,
+        "wall_s": 9.897701978683472
+      },
+      {
+        "task": "t6_sessionize_events",
+        "category": "T6",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "cheap",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 424,
+        "tokens_out": 552,
+        "usd": 0.000796,
+        "wall_s": 3.770449638366699
+      },
+      {
+        "task": "t6b_capped_session",
+        "category": "T6",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 528,
+        "tokens_out": 1435,
+        "usd": 0.023109,
+        "wall_s": 14.058590650558472
+      },
+      {
+        "task": "t6c_midnight_split",
+        "category": "T6",
+        "equivalent": true,
+        "iterations": 1,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "cheap",
+            "class": "semantic_divergence"
+          },
+          {
+            "iter": 1,
+            "tier": "frontier",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 2151,
+        "tokens_out": 2369,
+        "usd": 0.02810875,
+        "wall_s": 17.865805625915527
+      },
+      {
+        "task": "t6d_channel_interleave",
+        "category": "T6",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "cheap",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 299,
+        "tokens_out": 1008,
+        "usd": 0.00133475,
+        "wall_s": 5.591509103775024
+      },
+      {
+        "task": "t7_reject_validation",
+        "category": "T7",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 554,
+        "tokens_out": 1779,
+        "usd": 0.028347,
+        "wall_s": 15.46342420578003
+      },
+      {
+        "task": "t7b_multi_reason_collect",
+        "category": "T7",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 667,
+        "tokens_out": 968,
+        "usd": 0.016521,
+        "wall_s": 9.116261959075928
+      },
+      {
+        "task": "t7c_crossfield_reference",
+        "category": "T7",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 704,
+        "tokens_out": 2232,
+        "usd": 0.035592,
+        "wall_s": 15.979557037353516
+      },
+      {
+        "task": "t7d_quarantine_threshold",
+        "category": "T7",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 558,
+        "tokens_out": 1468,
+        "usd": 0.023694,
+        "wall_s": 11.274956941604614
+      },
+      {
+        "task": "t8_cdc_merge",
+        "category": "T8",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 644,
+        "tokens_out": 796,
+        "usd": 0.013872,
+        "wall_s": 6.4722442626953125
+      },
+      {
+        "task": "t8b_delete_reinsert_cdc",
+        "category": "T8",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 742,
+        "tokens_out": 1768,
+        "usd": 0.028746,
+        "wall_s": 17.14435577392578
+      },
+      {
+        "task": "t8c_out_of_order_late",
+        "category": "T8",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 749,
+        "tokens_out": 2581,
+        "usd": 0.040962,
+        "wall_s": 21.378002166748047
+      },
+      {
+        "task": "t8d_soft_delete_tombstone",
+        "category": "T8",
+        "equivalent": true,
+        "iterations": 0,
+        "history": [
+          {
+            "iter": 0,
+            "tier": "frontier",
+            "class": "equivalent"
+          }
+        ],
+        "final_class": "equivalent",
+        "tokens_in": 732,
+        "tokens_out": 1856,
+        "usd": 0.030036,
+        "wall_s": 15.629462480545044
+      }
+    ]
+  }
+}

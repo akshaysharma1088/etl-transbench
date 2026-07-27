@@ -1,0 +1,12 @@
+-- Legacy validate component, COLLECT-ALL mode (abstracted).
+-- Input: invoices (invoice_id, amount, tax, due_date, customer_ref)
+-- UNLIKE first-match validators, this component evaluates EVERY rule and
+-- concatenates ALL failing reason codes in RULE ORDER, pipe-delimited:
+--   R1: amount IS NULL OR amount < 0     -> 'AMT_BAD'
+--   R2: tax IS NULL OR tax < 0           -> 'TAX_BAD'
+--   R3: tax > amount * 0.5               -> 'TAX_EXCESS'   (NULL-safe: skipped
+--                                            if amount or tax is NULL)
+--   R4: due_date IS NULL                 -> 'DUE_NULL'
+--   R5: customer_ref IS NULL OR TRIM(customer_ref) = '' -> 'REF_EMPTY'
+-- A record with ANY failure goes to invoices_rejects with reason_codes
+-- (e.g. 'AMT_BAD|TAX_EXCESS'); records with none go to invoices_clean.

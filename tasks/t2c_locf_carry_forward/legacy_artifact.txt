@@ -1,0 +1,18 @@
+-- Legacy stored procedure SP_RATE_CARRY_FWD (abstracted).
+-- Input:  RATE_FEED (account_id INT, obs_seq INT, obs_date DATE, rate FLOAT)
+-- Output: RATE_FILLED (account_id, obs_seq, obs_date, rate_filled FLOAT,
+--                      was_carried SMALLINT)
+-- BODY (cursor semantics preserved):
+--   DECLARE CURSOR c FOR SELECT * FROM RATE_FEED
+--       ORDER BY account_id, obs_date, obs_seq;
+--   prev_acct := NULL;
+--   FOR EACH row r IN c:
+--     IF r.account_id <> prev_acct THEN
+--        last_rate := NULL; prev_acct := r.account_id;   -- carry NEVER crosses accounts
+--     IF r.rate IS NOT NULL THEN
+--        last_rate := r.rate; carried := 0;
+--     ELSE
+--        carried := CASE WHEN last_rate IS NULL THEN 0 ELSE 1 END;
+--     INSERT INTO RATE_FILLED VALUES
+--        (r.account_id, r.obs_seq, r.obs_date, COALESCE(r.rate, last_rate), carried);
+--   -- NOTE: leading NULLs in an account stay NULL with carried = 0.

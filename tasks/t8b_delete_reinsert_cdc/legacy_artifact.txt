@@ -1,0 +1,14 @@
+-- Legacy incremental loader, APPLY-IN-ORDER variant (abstracted).
+-- Inputs: target_snapshot (item_id, qty_on_hand, last_event_ts)
+--         cdc_events (event_seq, event_ts, op IN ('R','A','D'), item_id, qty)
+--         watermark (high_ts): events with event_ts <= high_ts already applied.
+-- Semantics — events are DELTAS and must be applied SEQUENTIALLY per item in
+-- (event_ts, event_seq) order; latest-wins collapsing is WRONG:
+--   op 'R' (receipt):    qty_on_hand := qty_on_hand + qty
+--   op 'A' (adjustment): qty_on_hand := qty                (absolute reset)
+--   op 'D' (delist):     remove item from snapshot; a LATER 'R'/'A' for the
+--                        same item RE-CREATES it starting from qty 0 ('R')
+--                        or the absolute qty ('A').
+--   Items absent from the snapshot receiving 'R' start from 0.
+--   last_event_ts := ts of the LAST applied event for the item.
+-- Output: new_snapshot (item_id, qty_on_hand, last_event_ts).

@@ -1,0 +1,39 @@
+{
+  "task_id": "t7_reject_validation",
+  "relations": [
+    {
+      "name": "payments_clean",
+      "key_columns": [
+        "payment_id"
+      ],
+      "columns": [
+        {
+          "name": "amount",
+          "kind": "float",
+          "abs_tol": 1e-09
+        },
+        {
+          "name": "currency",
+          "kind": "string"
+        }
+      ]
+    },
+    {
+      "name": "payments_rejects",
+      "key_columns": [
+        "payment_id"
+      ],
+      "columns": [
+        {
+          "name": "amount",
+          "kind": "float",
+          "abs_tol": 1e-09
+        },
+        {
+          "name": "reason_code",
+          "kind": "string"
+        }
+      ]
+    }
+  ]
+}

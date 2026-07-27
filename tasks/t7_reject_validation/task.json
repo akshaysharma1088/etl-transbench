@@ -1,0 +1,8 @@
+{
+  "id": "t7_reject_validation",
+  "category": "T7",
+  "tier": 1,
+  "description": "Validation with reject port; rule ORDER determines reason code",
+  "legacy_artifact": "legacy_artifact.txt",
+  "target": "pandas (PySpark in full benchmark)"
+}

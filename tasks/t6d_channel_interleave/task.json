@@ -1,0 +1,8 @@
+{
+  "id": "t6d_channel_interleave",
+  "category": "T6",
+  "tier": 2,
+  "description": "Per-(user,channel) independent sessionization over interleaved streams",
+  "legacy_artifact": "legacy_artifact.sql",
+  "target": "pandas (PySpark in full benchmark)"
+}

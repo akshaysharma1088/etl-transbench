@@ -1,0 +1,27 @@
+name: benchmark self-verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - name: Harness and equivalence checker
+        run: python tests/test_harness.py
+      - name: All oracles, defect probes, perturbation
+        run: python tests/test_full_benchmark.py
+      - name: Per-category defect probes
+        run: |
+          for f in tests/test_t*_variants.py; do
+            echo "== $f"; python "$f";
+          done
+      - name: Agent loop, mocked model (no API calls)
+        run: python experiments/run_experiments.py --mock --limit 3 --out /tmp/ci

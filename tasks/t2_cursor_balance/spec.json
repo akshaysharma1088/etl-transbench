@@ -1,0 +1,25 @@
+{
+  "task_id": "t2_cursor_balance",
+  "relations": [
+    {
+      "name": "acct_balance_flags",
+      "key_columns": [
+        "account_id",
+        "txn_seq"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "running_balance",
+          "kind": "float",
+          "abs_tol": 1e-06
+        },
+        {
+          "name": "amount",
+          "kind": "float",
+          "abs_tol": 1e-09
+        }
+      ]
+    }
+  ]
+}

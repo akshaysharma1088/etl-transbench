@@ -1,0 +1,8 @@
+{
+  "id": "t1_dialect_qualify",
+  "category": "T1",
+  "tier": 1,
+  "description": "Teradata-style QUALIFY: latest high-value transaction per account",
+  "legacy_artifact": "legacy_artifact.sql",
+  "target": "pandas (PySpark in full benchmark)"
+}

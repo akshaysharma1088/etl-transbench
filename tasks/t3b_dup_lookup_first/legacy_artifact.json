@@ -1,0 +1,17 @@
+{
+  "_comment": "Vendor-neutral export of a graphical ETL component graph.",
+  "graph": [
+    {"id": "src", "type": "source", "relation": "shipments"},
+    {"id": "lkp", "type": "lookup", "input": "src",
+     "lookup_relation": "carrier_rates", "on": "carrier_id",
+     "select": ["rate_per_kg", "service_tier"],
+     "duplicate_policy": {"first_by": ["effective_date DESC", "rate_id DESC"]},
+     "on_miss": {"rate_per_kg": 0.0, "service_tier": "NONE"},
+     "note": "legacy lookup component resolves duplicate keys to ONE row: latest effective_date, rate_id breaks ties; output row count always equals input row count"},
+    {"id": "rfm", "type": "reformat", "input": "lkp",
+     "compute": {"freight_cost": "weight_kg * rate_per_kg"}},
+    {"id": "out", "type": "output", "input": "rfm",
+     "relation": "shipment_costs",
+     "columns": ["shipment_id","carrier_id","service_tier","weight_kg","rate_per_kg","freight_cost"]}
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "task_id": "t7c_crossfield_reference",
+  "relations": [
+    {
+      "name": "orders_clean",
+      "key_columns": ["order_id"],
+      "ordered": false,
+      "columns": [{"name": "qty", "kind": "float", "abs_tol": 1e-9}]
+    },
+    {
+      "name": "orders_rejects",
+      "key_columns": ["order_id"],
+      "ordered": false,
+      "columns": [{"name": "reason_code", "kind": "string"}]
+    }
+  ]
+}

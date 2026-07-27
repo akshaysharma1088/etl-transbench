@@ -1,0 +1,15 @@
+{
+  "task_id": "t5d_asof_reconstruction",
+  "relations": [
+    {
+      "name": "asof_result",
+      "key_columns": ["query_id"],
+      "ordered": false,
+      "columns": [
+        {"name": "emp_id", "kind": "int"},
+        {"name": "dept", "kind": "string"},
+        {"name": "grade", "kind": "string"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "id": "t6_sessionize_events",
+  "category": "T6",
+  "tier": 2,
+  "description": "Sessionization: 30-minute inactivity gap window semantics",
+  "legacy_artifact": "legacy_artifact.sql",
+  "target": "pandas (PySpark in full benchmark)"
+}

@@ -1,0 +1,14 @@
+{
+  "task_id": "t8c_out_of_order_late",
+  "relations": [
+    {
+      "name": "new_snapshot",
+      "key_columns": ["device_id"],
+      "ordered": false,
+      "columns": [
+        {"name": "reading", "kind": "float", "abs_tol": 1e-9},
+        {"name": "applied_event_ts", "kind": "timestamp"}
+      ]
+    }
+  ]
+}

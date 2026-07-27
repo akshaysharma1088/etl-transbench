@@ -1,0 +1,15 @@
+-- Legacy reporting SQL: point-in-time attribute reconstruction.
+-- Inputs: DIM_EMP_HIST (emp_id INT, dept VARCHAR, grade VARCHAR,
+--                       eff_start_date DATE, eff_end_date DATE NULL, is_current SMALLINT)
+--         ASOF_QUERIES (query_id INT, emp_id INT, as_of_date DATE)
+-- Output: ASOF_RESULT (query_id, emp_id, dept, grade)
+--
+-- SELECT q.query_id, q.emp_id, h.dept, h.grade
+-- FROM ASOF_QUERIES q
+-- JOIN DIM_EMP_HIST h
+--   ON q.emp_id = h.emp_id
+--  AND q.as_of_date >= h.eff_start_date                 -- start INCLUSIVE
+--  AND (h.eff_end_date IS NULL OR q.as_of_date < h.eff_end_date)  -- end EXCLUSIVE
+-- -- Version intervals are half-open [start, end). On the boundary date the
+-- -- NEW version applies. Queries dated before an employee's first version
+-- -- (or for unknown employees) return NO row (inner join).

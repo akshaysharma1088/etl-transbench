@@ -1,0 +1,3 @@
+{"id": "t8d_soft_delete_tombstone", "category": "T8", "tier": 3,
+ "description": "Soft-delete CDC with sticky 7-day resurrection window: strict-inequality boundary",
+ "legacy_artifact": "legacy_artifact.txt", "target": "pandas (PySpark in full benchmark)"}

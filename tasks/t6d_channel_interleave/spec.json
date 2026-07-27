@@ -1,0 +1,15 @@
+{
+  "task_id": "t6d_channel_interleave",
+  "relations": [
+    {
+      "name": "channel_sessions",
+      "key_columns": ["user_id", "channel", "session_num"],
+      "ordered": false,
+      "columns": [
+        {"name": "session_start", "kind": "timestamp"},
+        {"name": "session_end", "kind": "timestamp"},
+        {"name": "event_count", "kind": "int"}
+      ]
+    }
+  ]
+}

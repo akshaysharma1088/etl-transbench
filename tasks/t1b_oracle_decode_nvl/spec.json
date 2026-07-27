@@ -1,0 +1,14 @@
+{
+  "task_id": "t1b_oracle_decode_nvl",
+  "relations": [
+    {
+      "name": "monthly_region_rollup",
+      "key_columns": ["txn_month", "region_norm"],
+      "ordered": false,
+      "columns": [
+        {"name": "total_amount", "kind": "float", "abs_tol": 1e-6},
+        {"name": "txn_count", "kind": "int"}
+      ]
+    }
+  ]
+}

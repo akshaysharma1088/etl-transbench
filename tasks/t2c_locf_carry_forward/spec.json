@@ -1,0 +1,14 @@
+{
+  "task_id": "t2c_locf_carry_forward",
+  "relations": [
+    {
+      "name": "rate_filled",
+      "key_columns": ["account_id", "obs_seq"],
+      "ordered": false,
+      "columns": [
+        {"name": "rate_filled", "kind": "float", "abs_tol": 1e-9},
+        {"name": "was_carried", "kind": "int"}
+      ]
+    }
+  ]
+}

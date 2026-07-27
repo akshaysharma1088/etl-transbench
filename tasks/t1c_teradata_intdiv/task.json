@@ -1,0 +1,8 @@
+{
+  "id": "t1c_teradata_intdiv",
+  "category": "T1",
+  "tier": 1,
+  "description": "Teradata integer division: trunc-toward-zero vs floor on negative balances",
+  "legacy_artifact": "legacy_artifact.sql",
+  "target": "pandas (PySpark in full benchmark)"
+}

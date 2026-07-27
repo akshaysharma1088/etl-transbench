@@ -1,0 +1,341 @@
+{
+  "mode": "REAL",
+  "config_index": 2,
+  "models": {
+    "cheap": "claude-haiku-4-5-20251001",
+    "frontier": "claude-sonnet-5"
+  },
+  "result": {
+    "config": "LEGATO full (escalation)",
+    "ser_at": {
+      "0": 0.6562,
+      "1": 0.8438,
+      "3": 0.9062,
+      "5": 0.9062
+    },
+    "total_usd": 1.2045,
+    "total_tokens": 136293,
+    "tasks": [
+      {
+        "task": "t1_dialect_qualify",
+        "category": "T1",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 369,
+        "tokens_out": 681,
+        "usd": 0.0009435,
+        "wall_s": 4.270508527755737
+      },
+      {
+        "task": "t1b_oracle_decode_nvl",
+        "category": "T1",
+        "equivalent": true,
+        "iterations": 1,
+        "tokens_in": 2657,
+        "tokens_out": 2371,
+        "usd": 0.03264325,
+        "wall_s": 19.46001958847046
+      },
+      {
+        "task": "t1c_teradata_intdiv",
+        "category": "T1",
+        "equivalent": false,
+        "iterations": 4,
+        "tokens_in": 4787,
+        "tokens_out": 9306,
+        "usd": 0.14682024999999999,
+        "wall_s": 84.81452131271362
+      },
+      {
+        "task": "t1d_tsql_top_ties",
+        "category": "T1",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 364,
+        "tokens_out": 746,
+        "usd": 0.0010235,
+        "wall_s": 5.774341821670532
+      },
+      {
+        "task": "t2_cursor_balance",
+        "category": "T2",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 713,
+        "tokens_out": 603,
+        "usd": 0.011184,
+        "wall_s": 5.304511070251465
+      },
+      {
+        "task": "t2b_stmt_cycle_reset",
+        "category": "T2",
+        "equivalent": true,
+        "iterations": 1,
+        "tokens_in": 2306,
+        "tokens_out": 1661,
+        "usd": 0.031833,
+        "wall_s": 15.61975646018982
+      },
+      {
+        "task": "t2c_locf_carry_forward",
+        "category": "T2",
+        "equivalent": true,
+        "iterations": 1,
+        "tokens_in": 2339,
+        "tokens_out": 1280,
+        "usd": 0.026217,
+        "wall_s": 11.743549823760986
+      },
+      {
+        "task": "t2d_reject_skip_accum",
+        "category": "T2",
+        "equivalent": true,
+        "iterations": 1,
+        "tokens_in": 4029,
+        "tokens_out": 1989,
+        "usd": 0.041922,
+        "wall_s": 18.047836542129517
+      },
+      {
+        "task": "t3_dataflow_orders",
+        "category": "T3",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 447,
+        "tokens_out": 500,
+        "usd": 0.00073675,
+        "wall_s": 3.268796443939209
+      },
+      {
+        "task": "t3b_dup_lookup_first",
+        "category": "T3",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 486,
+        "tokens_out": 658,
+        "usd": 0.000944,
+        "wall_s": 3.9682109355926514
+      },
+      {
+        "task": "t3c_router_first_match",
+        "category": "T3",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 549,
+        "tokens_out": 775,
+        "usd": 0.001106,
+        "wall_s": 4.287990093231201
+      },
+      {
+        "task": "t3d_dedup_null_group",
+        "category": "T3",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 477,
+        "tokens_out": 292,
+        "usd": 0.00048425,
+        "wall_s": 2.2587764263153076
+      },
+      {
+        "task": "t4_multistep_sales",
+        "category": "T4",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 418,
+        "tokens_out": 448,
+        "usd": 0.0006645,
+        "wall_s": 2.575136184692383
+      },
+      {
+        "task": "t4b_delete_reinsert",
+        "category": "T4",
+        "equivalent": false,
+        "iterations": 4,
+        "tokens_in": 5934,
+        "tokens_out": 8251,
+        "usd": 0.13322625,
+        "wall_s": 80.10754752159119
+      },
+      {
+        "task": "t4c_stale_snapshot",
+        "category": "T4",
+        "equivalent": false,
+        "iterations": 4,
+        "tokens_in": 6177,
+        "tokens_out": 8728,
+        "usd": 0.13985075,
+        "wall_s": 87.68985342979431
+      },
+      {
+        "task": "t4d_union_dedup_precedence",
+        "category": "T4",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 417,
+        "tokens_out": 411,
+        "usd": 0.000618,
+        "wall_s": 2.608795166015625
+      },
+      {
+        "task": "t5_scd2_customer",
+        "category": "T5",
+        "equivalent": true,
+        "iterations": 2,
+        "tokens_in": 7276,
+        "tokens_out": 7603,
+        "usd": 0.135873,
+        "wall_s": 58.67071723937988
+      },
+      {
+        "task": "t5b_scd2_multi_batch",
+        "category": "T5",
+        "equivalent": true,
+        "iterations": 1,
+        "tokens_in": 3025,
+        "tokens_out": 3903,
+        "usd": 0.06762,
+        "wall_s": 32.73856782913208
+      },
+      {
+        "task": "t5c_scd1_scd2_mixed",
+        "category": "T5",
+        "equivalent": true,
+        "iterations": 2,
+        "tokens_in": 5834,
+        "tokens_out": 6747,
+        "usd": 0.11870700000000001,
+        "wall_s": 53.60639262199402
+      },
+      {
+        "task": "t5d_asof_reconstruction",
+        "category": "T5",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 738,
+        "tokens_out": 811,
+        "usd": 0.014379,
+        "wall_s": 7.191673278808594
+      },
+      {
+        "task": "t6_sessionize_events",
+        "category": "T6",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 424,
+        "tokens_out": 451,
+        "usd": 0.00066975,
+        "wall_s": 3.1227126121520996
+      },
+      {
+        "task": "t6b_capped_session",
+        "category": "T6",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 528,
+        "tokens_out": 1028,
+        "usd": 0.017004,
+        "wall_s": 8.408584117889404
+      },
+      {
+        "task": "t6c_midnight_split",
+        "category": "T6",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 332,
+        "tokens_out": 1096,
+        "usd": 0.001453,
+        "wall_s": 6.506124973297119
+      },
+      {
+        "task": "t6d_channel_interleave",
+        "category": "T6",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 299,
+        "tokens_out": 1033,
+        "usd": 0.001366,
+        "wall_s": 6.044981002807617
+      },
+      {
+        "task": "t7_reject_validation",
+        "category": "T7",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 554,
+        "tokens_out": 1954,
+        "usd": 0.030972,
+        "wall_s": 16.62078070640564
+      },
+      {
+        "task": "t7b_multi_reason_collect",
+        "category": "T7",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 667,
+        "tokens_out": 745,
+        "usd": 0.013176,
+        "wall_s": 5.788740396499634
+      },
+      {
+        "task": "t7c_crossfield_reference",
+        "category": "T7",
+        "equivalent": true,
+        "iterations": 1,
+        "tokens_in": 2245,
+        "tokens_out": 5953,
+        "usd": 0.09603,
+        "wall_s": 54.76916575431824
+      },
+      {
+        "task": "t7d_quarantine_threshold",
+        "category": "T7",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 558,
+        "tokens_out": 1014,
+        "usd": 0.016884,
+        "wall_s": 8.029464960098267
+      },
+      {
+        "task": "t8_cdc_merge",
+        "category": "T8",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 644,
+        "tokens_out": 780,
+        "usd": 0.013632,
+        "wall_s": 7.065586566925049
+      },
+      {
+        "task": "t8b_delete_reinsert_cdc",
+        "category": "T8",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 742,
+        "tokens_out": 2475,
+        "usd": 0.039351,
+        "wall_s": 21.5255606174469
+      },
+      {
+        "task": "t8c_out_of_order_late",
+        "category": "T8",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 749,
+        "tokens_out": 1481,
+        "usd": 0.024462,
+        "wall_s": 12.316487312316895
+      },
+      {
+        "task": "t8d_soft_delete_tombstone",
+        "category": "T8",
+        "equivalent": true,
+        "iterations": 0,
+        "tokens_in": 732,
+        "tokens_out": 2703,
+        "usd": 0.042741,
+        "wall_s": 22.952356815338135
+      }
+    ]
+  }
+}

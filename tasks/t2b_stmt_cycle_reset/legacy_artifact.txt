@@ -1,0 +1,16 @@
+-- Legacy stored procedure SP_STMT_CYCLE_BAL (abstracted).
+-- Input:  LEDGER (account_id INT, row_seq INT, entry_date DATE,
+--                 entry_type CHAR: 'TXN' | 'STMT', amount FLOAT)
+-- Output: CYCLE_BALANCES (account_id, row_seq, entry_date, entry_type, amount,
+--                         cycle_no INT, cycle_balance FLOAT)
+-- BODY (cursor semantics preserved):
+--   DECLARE CURSOR c FOR SELECT * FROM LEDGER
+--       ORDER BY account_id, entry_date, row_seq;
+--   prev_acct := NULL;
+--   FOR EACH row r IN c:
+--     IF r.account_id <> prev_acct THEN
+--        bal := 0; cyc := 1; prev_acct := r.account_id;
+--     IF r.entry_type = 'STMT' THEN
+--        bal := 0; cyc := cyc + 1;          -- reset happens BEFORE adding:
+--     bal := bal + COALESCE(r.amount, 0);   -- a STMT row's fee lands in the NEW cycle
+--     INSERT INTO CYCLE_BALANCES VALUES (r.*, cyc, bal);

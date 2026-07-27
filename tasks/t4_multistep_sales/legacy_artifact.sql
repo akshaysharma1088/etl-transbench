@@ -1,0 +1,13 @@
+-- Legacy multi-step batch job (steps share an intermediate staging table).
+-- Step 1: CREATE STG_DAILY AS
+--   SELECT store_id, sale_date, SUM(amount) AS gross, COUNT(*) AS txn_cnt
+--   FROM sales WHERE amount IS NOT NULL GROUP BY store_id, sale_date;
+-- Step 2: CREATE store_daily AS
+--   SELECT s.store_id, s.sale_date, s.gross, s.txn_cnt, d.region
+--   FROM STG_DAILY s JOIN store_dim d ON s.store_id = d.store_id;  -- INNER
+-- Step 3: CREATE region_daily AS
+--   SELECT region, sale_date, SUM(gross) AS region_gross,
+--          SUM(txn_cnt) AS region_txn_cnt
+--   FROM store_daily GROUP BY region, sale_date;
+-- Outputs: store_daily, region_daily. Stores absent from store_dim are
+-- dropped in Step 2 and therefore absent from BOTH outputs.

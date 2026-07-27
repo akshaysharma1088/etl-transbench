@@ -1,0 +1,27 @@
+-- Legacy stored procedure SP_POST_WITH_REJECTS (abstracted).
+-- Input:  POSTINGS (account_id INT, post_seq INT, post_date DATE,
+--                   qty FLOAT, unit_price FLOAT)
+-- Output: POSTED_TOTALS (account_id, post_seq, post_date, post_value FLOAT,
+--                        running_total FLOAT)
+--         REJECT_COUNTS (account_id, reject_count INT)
+-- BODY (cursor semantics preserved; row-level error handling):
+--   DECLARE CURSOR c FOR SELECT * FROM POSTINGS
+--       ORDER BY account_id, post_date, post_seq;
+--   prev_acct := NULL;
+--   FOR EACH row r IN c:
+--     IF r.account_id <> prev_acct THEN
+--        tot := 0; rej := 0;
+--        IF prev_acct IS NOT NULL THEN INSERT INTO REJECT_COUNTS (prev_acct, rej_prev);
+--        prev_acct := r.account_id;
+--     BEGIN TRY
+--        IF r.qty IS NULL OR r.qty <= 0 OR r.unit_price IS NULL OR r.unit_price < 0
+--           THEN RAISE reject;                -- bad row: SKIPPED entirely
+--        v := r.qty * r.unit_price;
+--        tot := tot + v;
+--        INSERT INTO POSTED_TOTALS VALUES (r.account_id, r.post_seq, r.post_date, v, tot);
+--     END TRY
+--     BEGIN CATCH
+--        rej := rej + 1;                      -- counted, NOT posted, total unchanged
+--     END CATCH
+--   -- final account's reject count flushed after loop.
+--   -- NOTE: accounts with zero rejects still emit a REJECT_COUNTS row (count 0).

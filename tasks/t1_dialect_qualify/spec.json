@@ -1,0 +1,15 @@
+{
+  "task_id": "t1_dialect_qualify",
+  "relations": [
+    {
+      "name": "latest_high_value_txn",
+      "key_columns": ["account_id"],
+      "ordered": false,
+      "columns": [
+        {"name": "amount", "kind": "float", "abs_tol": 1e-9},
+        {"name": "channel", "kind": "string", "trim": true},
+        {"name": "size_band", "kind": "string"}
+      ]
+    }
+  ]
+}

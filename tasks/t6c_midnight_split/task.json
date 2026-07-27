@@ -1,0 +1,8 @@
+{
+  "id": "t6c_midnight_split",
+  "category": "T6",
+  "tier": 2,
+  "description": "Sessionization with forced midnight split: sessions never cross calendar dates",
+  "legacy_artifact": "legacy_artifact.sql",
+  "target": "pandas (PySpark in full benchmark)"
+}

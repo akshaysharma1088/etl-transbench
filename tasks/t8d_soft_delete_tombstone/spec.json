@@ -1,0 +1,15 @@
+{
+  "task_id": "t8d_soft_delete_tombstone",
+  "relations": [
+    {
+      "name": "new_snapshot",
+      "key_columns": ["user_id"],
+      "ordered": false,
+      "columns": [
+        {"name": "email", "kind": "string", "trim": true},
+        {"name": "status", "kind": "string"},
+        {"name": "status_ts", "kind": "timestamp"}
+      ]
+    }
+  ]
+}

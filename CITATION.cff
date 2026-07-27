@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+title: "ETL-TransBench + LEGATO"
+message: "If you use this benchmark or framework, please cite the paper."
+type: software
+authors:
+  - family-names: Sharma
+    given-names: Akshay
+    orcid: "https://orcid.org/0000-0000-0000-0000"
+repository-code: "https://github.com/<you>/etl-transbench"
+license: MIT
+version: "1.0.0"
+date-released: "2026-07-26"
+keywords:
+  - ETL modernization
+  - code translation
+  - large language models
+  - agentic AI
+  - differential testing
+  - semantic equivalence
+preferred-citation:
+  type: article
+  title: "LEGATO: Agentic Large Language Model Translation of Legacy ETL Workflows to Modern Dataflow Code with Test-Based Semantic Verification"
+  authors:
+    - family-names: Sharma
+      given-names: Akshay
+  year: 2026
+  # journal: ""      # fill in on acceptance
+  # doi: ""          # fill in on acceptance

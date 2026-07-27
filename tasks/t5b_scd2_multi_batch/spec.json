@@ -1,0 +1,16 @@
+{
+  "task_id": "t5b_scd2_multi_batch",
+  "relations": [
+    {
+      "name": "dim_product_out",
+      "key_columns": ["product_id", "eff_start_date"],
+      "ordered": false,
+      "columns": [
+        {"name": "category", "kind": "string"},
+        {"name": "price_band", "kind": "string"},
+        {"name": "eff_end_date", "kind": "timestamp"},
+        {"name": "is_current", "kind": "int"}
+      ]
+    }
+  ]
+}

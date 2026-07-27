@@ -1,0 +1,9 @@
+-- Legacy validate component with BATCH QUARANTINE (abstracted).
+-- Input: readings (batch_id, reading_id, sensor, value)
+-- Row rule: value IS NULL OR value < 0 OR value > 1000 -> row is BAD.
+-- Batch rule (evaluated per batch_id AFTER row checks):
+--   IF bad_row_count * 100 > total_rows * 20            -- STRICTLY over 20%
+--   THEN the ENTIRE batch is quarantined: ALL its rows (good and bad) go to
+--        readings_quarantine with batch_reject_pct (bad*100.0/total, 2dp);
+--   ELSE good rows -> readings_clean, bad rows -> readings_rejects.
+-- NOTE: exactly 20.00% is NOT quarantined.

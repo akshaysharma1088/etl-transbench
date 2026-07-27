@@ -1,0 +1,14 @@
+{
+  "task_id": "t1c_teradata_intdiv",
+  "relations": [
+    {
+      "name": "balance_buckets",
+      "key_columns": ["account_id"],
+      "ordered": false,
+      "columns": [
+        {"name": "balance_bucket", "kind": "int"},
+        {"name": "fx_units", "kind": "int"}
+      ]
+    }
+  ]
+}

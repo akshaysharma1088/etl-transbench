@@ -1,0 +1,13 @@
+-- Legacy multi-step batch job: partition refresh via DELETE + INSERT.
+-- TARGET_SNAPSHOT holds prior-day results and is carried forward.
+-- Step 1: CREATE STG_NEW AS
+--   SELECT product_id, batch_date, SUM(qty) AS total_qty,
+--          MAX(unit_cost) AS max_unit_cost
+--   FROM inbound WHERE qty > 0 GROUP BY product_id, batch_date;
+-- Step 2: DELETE FROM TARGET_SNAPSHOT
+--   WHERE batch_date IN (SELECT DISTINCT batch_date FROM STG_NEW);
+--   -- entire arriving partitions are cleared, INCLUDING products that do
+--   -- NOT reappear in today's feed for that date.
+-- Step 3: INSERT INTO TARGET_SNAPSHOT SELECT * FROM STG_NEW;
+-- Output: TARGET_SNAPSHOT (product_id, batch_date, total_qty, max_unit_cost).
+-- Rows in untouched partitions survive UNCHANGED.

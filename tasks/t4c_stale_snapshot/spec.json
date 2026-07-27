@@ -1,0 +1,21 @@
+{
+  "task_id": "t4c_stale_snapshot",
+  "relations": [
+    {
+      "name": "delta",
+      "key_columns": ["account_id"],
+      "ordered": false,
+      "columns": [
+        {"name": "score_delta", "kind": "float", "abs_tol": 1e-6}
+      ]
+    },
+    {
+      "name": "score_snapshot",
+      "key_columns": ["account_id"],
+      "ordered": false,
+      "columns": [
+        {"name": "avg_score", "kind": "float", "abs_tol": 1e-6}
+      ]
+    }
+  ]
+}

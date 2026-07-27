@@ -1,0 +1,3 @@
+{"id": "t7d_quarantine_threshold", "category": "T7", "tier": 3,
+ "description": "Two-level validation: row rules plus strict >20% batch quarantine moving good rows too",
+ "legacy_artifact": "legacy_artifact.txt", "target": "pandas (PySpark in full benchmark)"}

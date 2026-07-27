@@ -1,0 +1,22 @@
+{
+  "task_id": "t2d_reject_skip_accum",
+  "relations": [
+    {
+      "name": "posted_totals",
+      "key_columns": ["account_id", "post_seq"],
+      "ordered": false,
+      "columns": [
+        {"name": "post_value", "kind": "float", "abs_tol": 1e-9},
+        {"name": "running_total", "kind": "float", "abs_tol": 1e-6}
+      ]
+    },
+    {
+      "name": "reject_counts",
+      "key_columns": ["account_id"],
+      "ordered": false,
+      "columns": [
+        {"name": "reject_count", "kind": "int"}
+      ]
+    }
+  ]
+}

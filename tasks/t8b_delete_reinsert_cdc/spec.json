@@ -1,0 +1,14 @@
+{
+  "task_id": "t8b_delete_reinsert_cdc",
+  "relations": [
+    {
+      "name": "new_snapshot",
+      "key_columns": ["item_id"],
+      "ordered": false,
+      "columns": [
+        {"name": "qty_on_hand", "kind": "float", "abs_tol": 1e-6},
+        {"name": "last_event_ts", "kind": "timestamp"}
+      ]
+    }
+  ]
+}

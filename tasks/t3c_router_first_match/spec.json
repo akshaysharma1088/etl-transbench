@@ -1,0 +1,32 @@
+{
+  "task_id": "t3c_router_first_match",
+  "relations": [
+    {
+      "name": "claims_fast_track",
+      "key_columns": ["claim_id"],
+      "ordered": false,
+      "columns": [
+        {"name": "amount", "kind": "float", "abs_tol": 1e-9},
+        {"name": "photos_attached", "kind": "int"}
+      ]
+    },
+    {
+      "name": "claims_high_value",
+      "key_columns": ["claim_id"],
+      "ordered": false,
+      "columns": [
+        {"name": "amount", "kind": "float", "abs_tol": 1e-9},
+        {"name": "photos_attached", "kind": "int"}
+      ]
+    },
+    {
+      "name": "claims_manual_review",
+      "key_columns": ["claim_id"],
+      "ordered": false,
+      "columns": [
+        {"name": "amount", "kind": "float", "abs_tol": 1e-9},
+        {"name": "photos_attached", "kind": "int"}
+      ]
+    }
+  ]
+}

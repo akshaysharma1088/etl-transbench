@@ -1,0 +1,14 @@
+-- Legacy validate component with reference-data checks (abstracted).
+-- Inputs: orders (order_id, customer_id, sku, qty, ship_country)
+--         ref_customers (customer_id, status IN ('ACTIVE','SUSPENDED','CLOSED'))
+--         ref_skus (sku, discontinued SMALLINT, allowed_countries VARCHAR
+--                   -- comma-delimited whitelist, e.g. 'US,CA,MX'; empty/NULL
+--                   -- means ALL countries allowed)
+-- Rules IN ORDER, first failure wins:
+--   R1: customer_id not present in ref_customers      -> 'CUST_UNKNOWN'
+--   R2: customer status <> 'ACTIVE'                   -> 'CUST_INACTIVE'
+--   R3: sku not present in ref_skus                   -> 'SKU_UNKNOWN'
+--   R4: sku discontinued = 1                          -> 'SKU_DISC'
+--   R5: allowed_countries non-empty AND ship_country
+--       not in the delimited list (TRIMMED members)   -> 'CTRY_BLOCKED'
+-- Passing orders -> orders_clean; failures -> orders_rejects with reason_code.

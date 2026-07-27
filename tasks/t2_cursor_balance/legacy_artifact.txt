@@ -1,0 +1,13 @@
+-- Legacy stored procedure SP_RUNNING_BALANCE (abstracted).
+-- Input:  TRANSACTIONS (account_id INT, txn_seq INT, txn_date DATE, amount FLOAT)
+-- Output: ACCT_BALANCE_FLAGS (account_id, txn_seq, txn_date, amount,
+--                             running_balance FLOAT, overdraft_flag SMALLINT)
+-- BODY (cursor semantics preserved):
+--   DECLARE CURSOR c FOR SELECT * FROM TRANSACTIONS
+--       ORDER BY account_id, txn_date, txn_seq;   -- txn_seq breaks date ties
+--   prev_acct := NULL; bal := 0;
+--   FOR EACH row r IN c:
+--     IF r.account_id <> prev_acct THEN bal := 0; prev_acct := r.account_id;
+--     bal := bal + COALESCE(r.amount, 0);          -- NULL amounts add zero
+--     flag := CASE WHEN bal < 0 THEN 1 ELSE 0 END;
+--     INSERT INTO ACCT_BALANCE_FLAGS VALUES (r.*, bal, flag);

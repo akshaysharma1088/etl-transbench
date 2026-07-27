@@ -1,0 +1,15 @@
+{
+  "task_id": "t6b_capped_session",
+  "relations": [
+    {
+      "name": "user_sessions",
+      "key_columns": ["user_id", "session_num"],
+      "ordered": false,
+      "columns": [
+        {"name": "session_start", "kind": "timestamp"},
+        {"name": "session_end", "kind": "timestamp"},
+        {"name": "event_count", "kind": "int"}
+      ]
+    }
+  ]
+}

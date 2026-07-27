@@ -1,0 +1,22 @@
+{
+  "task_id": "t7b_multi_reason_collect",
+  "relations": [
+    {
+      "name": "invoices_clean",
+      "key_columns": ["invoice_id"],
+      "ordered": false,
+      "columns": [
+        {"name": "amount", "kind": "float", "abs_tol": 1e-9},
+        {"name": "tax", "kind": "float", "abs_tol": 1e-9}
+      ]
+    },
+    {
+      "name": "invoices_rejects",
+      "key_columns": ["invoice_id"],
+      "ordered": false,
+      "columns": [
+        {"name": "reason_codes", "kind": "string"}
+      ]
+    }
+  ]
+}

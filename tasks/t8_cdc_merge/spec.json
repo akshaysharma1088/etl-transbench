@@ -1,0 +1,26 @@
+{
+  "task_id": "t8_cdc_merge",
+  "relations": [
+    {
+      "name": "new_snapshot",
+      "key_columns": [
+        "product_id"
+      ],
+      "columns": [
+        {
+          "name": "price",
+          "kind": "float",
+          "abs_tol": 1e-09
+        },
+        {
+          "name": "name",
+          "kind": "string"
+        },
+        {
+          "name": "last_event_ts",
+          "kind": "timestamp"
+        }
+      ]
+    }
+  ]
+}

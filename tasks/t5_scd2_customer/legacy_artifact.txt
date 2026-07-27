@@ -1,0 +1,28 @@
+-- Legacy stored procedure SP_LOAD_DIM_CUSTOMER (abstracted, vendor-neutral).
+-- Inputs:
+--   DIM_CUSTOMER (customer_id INT, name VARCHAR, segment VARCHAR,
+--                 eff_start_date DATE, eff_end_date DATE NULL, is_current SMALLINT)
+--   STG_CUSTOMER (customer_id INT, name VARCHAR, segment VARCHAR, update_date DATE)
+-- Output: DIM_CUSTOMER (post-state), relation name dim_customer_out.
+--
+-- PROCEDURE BODY (pseudocode preserved from legacy source):
+--   1. Deduplicate STG_CUSTOMER to the latest record per customer_id by
+--      update_date; on ties, keep the record with the greater (name, segment)
+--      pair under lexicographic comparison (legacy ORDER BY ... DESC behavior).
+--   2. FOR EACH staged record s:
+--        c := current row in DIM_CUSTOMER for s.customer_id (is_current = 1)
+--        IF c does not exist THEN
+--            INSERT (s.customer_id, s.name, s.segment,
+--                    eff_start_date = s.update_date, eff_end_date = NULL,
+--                    is_current = 1)
+--        ELSIF c.name <> s.name OR c.segment <> s.segment THEN
+--            -- tracked-attribute change: expire and version
+--            UPDATE c SET eff_end_date = s.update_date, is_current = 0
+--            INSERT (s.customer_id, s.name, s.segment,
+--                    eff_start_date = s.update_date, eff_end_date = NULL,
+--                    is_current = 1)
+--        ELSE
+--            -- no change: do nothing (MUST NOT create a new version)
+--        END IF
+--   3. Rows of DIM_CUSTOMER not touched by staging are preserved unchanged.
+--   NULL semantics: NULL <> 'x' is treated as a change; NULL vs NULL is no change.

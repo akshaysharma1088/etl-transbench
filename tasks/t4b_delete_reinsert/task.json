@@ -1,0 +1,8 @@
+{
+  "id": "t4b_delete_reinsert",
+  "category": "T4",
+  "tier": 2,
+  "description": "Multi-step partition refresh: DELETE whole arriving partitions then INSERT (not an upsert)",
+  "legacy_artifact": "legacy_artifact.sql",
+  "target": "pandas (PySpark in full benchmark)"
+}

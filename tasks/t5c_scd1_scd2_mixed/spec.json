@@ -1,0 +1,16 @@
+{
+  "task_id": "t5c_scd1_scd2_mixed",
+  "relations": [
+    {
+      "name": "dim_acct_out",
+      "key_columns": ["acct_id", "eff_start_date"],
+      "ordered": false,
+      "columns": [
+        {"name": "email", "kind": "string", "trim": true},
+        {"name": "tier", "kind": "string"},
+        {"name": "eff_end_date", "kind": "timestamp"},
+        {"name": "is_current", "kind": "int"}
+      ]
+    }
+  ]
+}

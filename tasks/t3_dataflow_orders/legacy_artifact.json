@@ -1,0 +1,17 @@
+{
+  "_comment": "Vendor-neutral export of a graphical ETL component graph.",
+  "graph": [
+    {"id": "src", "type": "source", "relation": "orders"},
+    {"id": "flt", "type": "filter", "input": "src",
+     "predicate": "status == 'SHIPPED'"},
+    {"id": "lkp", "type": "lookup", "input": "flt",
+     "lookup_relation": "customers", "on": "customer_id",
+     "select": ["region"], "on_miss": {"region": "UNKNOWN"}},
+    {"id": "rfm", "type": "reformat", "input": "lkp",
+     "compute": {"net_amount": "qty * unit_price * (1 - discount)"},
+     "note": "NULL discount treated as 0 by legacy reformat component"},
+    {"id": "out", "type": "output", "input": "rfm",
+     "relation": "shipped_orders_enriched",
+     "columns": ["order_id","customer_id","region","qty","unit_price","net_amount"]}
+  ]
+}

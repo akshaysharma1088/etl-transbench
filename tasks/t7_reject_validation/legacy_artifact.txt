@@ -1,0 +1,10 @@
+-- Legacy validate component with reject port (abstracted).
+-- Input: payments (payment_id, amount, currency, country)
+-- Rules are evaluated IN ORDER; the FIRST failing rule assigns reason_code
+-- and routes the record to the reject port (later rules are not evaluated):
+--   R1: amount IS NULL                  -> reason_code 'AMT_NULL'
+--   R2: amount <= 0                     -> reason_code 'AMT_NONPOS'
+--   R3: currency NOT IN ('USD','EUR','GBP') -> reason_code 'CCY_INVALID'
+--   R4: country IS NULL                 -> reason_code 'CTRY_NULL'
+-- Passing records flow to payments_clean with amount ROUND(amount, 2).
+-- Rejected records flow to payments_rejects with original amount + reason_code.

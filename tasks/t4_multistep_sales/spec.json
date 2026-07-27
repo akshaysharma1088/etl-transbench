@@ -1,0 +1,41 @@
+{
+  "task_id": "t4_multistep_sales",
+  "relations": [
+    {
+      "name": "store_daily",
+      "key_columns": [
+        "store_id",
+        "sale_date"
+      ],
+      "columns": [
+        {
+          "name": "gross",
+          "kind": "float",
+          "abs_tol": 1e-06
+        },
+        {
+          "name": "sale_date",
+          "kind": "timestamp"
+        }
+      ]
+    },
+    {
+      "name": "region_daily",
+      "key_columns": [
+        "region",
+        "sale_date"
+      ],
+      "columns": [
+        {
+          "name": "region_gross",
+          "kind": "float",
+          "abs_tol": 1e-06
+        },
+        {
+          "name": "sale_date",
+          "kind": "timestamp"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+-- Legacy incremental loader with PER-ITEM watermarks (abstracted).
+-- Inputs: target_snapshot (device_id, reading, applied_event_ts)
+--            -- applied_event_ts = ts of the event that produced this row
+--         cdc_events (event_seq, event_ts, device_id, reading)
+-- Semantics (idempotent late-arrival handling):
+--   An event applies to a device ONLY IF (event_ts, event_seq) is STRICTLY
+--   greater than the device's current (applied_event_ts, applied at load
+--   time with event_seq unavailable for snapshot rows: compare event_ts >
+--   applied_event_ts, OR event_ts == applied_event_ts is a REPLAY: skip).
+--   Among surviving events per device, the latest by (event_ts, event_seq)
+--   wins and sets reading + applied_event_ts.
+--   LATE events (event_ts <= device's applied_event_ts) are DISCARDED even
+--   though they may be newer than OTHER devices' watermarks — the watermark
+--   is PER DEVICE, not global.
+--   Devices with no surviving events carry forward. New devices apply their
+--   latest event.
+-- Output: new_snapshot (device_id, reading, applied_event_ts).

@@ -1,0 +1,9 @@
+-- Legacy analytical SQL: sessionize with gap rule PLUS forced calendar split.
+-- A new session starts when:
+--   (a) gap from previous event of same user is STRICTLY > 45 minutes, OR
+--   (b) the event falls on a DIFFERENT CALENDAR DATE (server local) than the
+--       previous event — sessions NEVER cross midnight, even with a 1-minute
+--       gap (23:59:30 -> 00:00:10 splits).
+-- Order within user: event_ts, then event_id.
+-- Output user_sessions: user_id, session_num, session_date (DATE of the
+--   session's events), session_start, session_end, event_count.

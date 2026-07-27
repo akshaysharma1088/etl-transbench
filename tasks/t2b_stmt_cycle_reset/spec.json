@@ -1,0 +1,15 @@
+{
+  "task_id": "t2b_stmt_cycle_reset",
+  "relations": [
+    {
+      "name": "cycle_balances",
+      "key_columns": ["account_id", "row_seq"],
+      "ordered": false,
+      "columns": [
+        {"name": "cycle_no", "kind": "int"},
+        {"name": "cycle_balance", "kind": "float", "abs_tol": 1e-6},
+        {"name": "amount", "kind": "float", "abs_tol": 1e-9}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "task_id": "t5_scd2_customer",
+  "relations": [
+    {
+      "name": "dim_customer_out",
+      "key_columns": ["customer_id", "eff_start_date"],
+      "ordered": false,
+      "columns": [
+        {"name": "name", "kind": "string", "trim": true},
+        {"name": "segment", "kind": "string"},
+        {"name": "eff_start_date", "kind": "timestamp"},
+        {"name": "eff_end_date", "kind": "timestamp"}
+      ]
+    }
+  ]
+}

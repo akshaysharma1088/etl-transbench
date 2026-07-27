@@ -1,0 +1,20 @@
+{
+  "_comment": "Vendor-neutral export of a graphical ETL component graph.",
+  "graph": [
+    {"id": "src", "type": "source", "relation": "claims"},
+    {"id": "rtr", "type": "router", "input": "src",
+     "note": "rules evaluated IN ORDER; a row goes to the FIRST matching port only; unmatched rows go to the default port",
+     "rules": [
+       {"port": "fast_track", "predicate": "amount <= 500 and photos_attached == 1"},
+       {"port": "high_value", "predicate": "amount > 10000"},
+       {"port": "manual_review", "predicate": "photos_attached == 0 or amount > 500"}
+     ],
+     "default_port": "standard"},
+    {"id": "out1", "type": "output", "input": "rtr.fast_track", "relation": "claims_fast_track",
+     "columns": ["claim_id","amount","photos_attached"]},
+    {"id": "out2", "type": "output", "input": "rtr.high_value", "relation": "claims_high_value",
+     "columns": ["claim_id","amount","photos_attached"]},
+    {"id": "out3", "type": "output", "input": "rtr.manual_review", "relation": "claims_manual_review",
+     "columns": ["claim_id","amount","photos_attached"]}
+  ]
+}

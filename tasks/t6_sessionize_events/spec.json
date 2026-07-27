@@ -1,0 +1,22 @@
+{
+  "task_id": "t6_sessionize_events",
+  "relations": [
+    {
+      "name": "user_sessions",
+      "key_columns": [
+        "user_id",
+        "session_num"
+      ],
+      "columns": [
+        {
+          "name": "session_start",
+          "kind": "timestamp"
+        },
+        {
+          "name": "session_end",
+          "kind": "timestamp"
+        }
+      ]
+    }
+  ]
+}

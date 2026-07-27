@@ -1,0 +1,14 @@
+{
+  "task_id": "t4b_delete_reinsert",
+  "relations": [
+    {
+      "name": "target_snapshot",
+      "key_columns": ["product_id", "batch_date"],
+      "ordered": false,
+      "columns": [
+        {"name": "total_qty", "kind": "float", "abs_tol": 1e-9},
+        {"name": "max_unit_cost", "kind": "float", "abs_tol": 1e-9}
+      ]
+    }
+  ]
+}

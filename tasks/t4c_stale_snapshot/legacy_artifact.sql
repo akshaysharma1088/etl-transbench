@@ -1,0 +1,14 @@
+-- Legacy multi-step batch job: later step reads the PRE-UPDATE snapshot.
+-- Step 1: CREATE STG_CURR AS
+--   SELECT account_id, AVG(score) AS avg_score
+--   FROM score_feed GROUP BY account_id;
+-- Step 2: CREATE DELTA AS
+--   SELECT c.account_id,
+--          c.avg_score - COALESCE(p.avg_score, 0) AS score_delta
+--   FROM STG_CURR c
+--   LEFT JOIN SCORE_SNAPSHOT p ON c.account_id = p.account_id;
+--   -- CRITICAL: DELTA is computed against the OLD snapshot, BEFORE Step 3.
+-- Step 3: DELETE FROM SCORE_SNAPSHOT; INSERT INTO SCORE_SNAPSHOT
+--   SELECT account_id, avg_score FROM STG_CURR;
+-- Outputs: DELTA (account_id, score_delta),
+--          SCORE_SNAPSHOT (account_id, avg_score)  -- post-update state.

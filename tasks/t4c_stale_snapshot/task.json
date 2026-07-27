@@ -1,0 +1,8 @@
+{
+  "id": "t4c_stale_snapshot",
+  "category": "T4",
+  "tier": 2,
+  "description": "Multi-step job where a later step must read the PRE-update snapshot: step-order semantics",
+  "legacy_artifact": "legacy_artifact.sql",
+  "target": "pandas (PySpark in full benchmark)"
+}

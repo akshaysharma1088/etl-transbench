@@ -1,0 +1,7 @@
+-- Legacy analytical SQL: sessionize per (user, channel) INDEPENDENTLY.
+-- Events from WEB and APP interleave in time for the same user; the 25-minute
+-- STRICT gap rule applies WITHIN each (user_id, channel) stream separately —
+-- an APP event does NOT keep a WEB session alive.
+-- Order within (user, channel): event_ts, then event_id.
+-- Output channel_sessions: user_id, channel, session_num (1-based per
+--   user+channel), session_start, session_end, event_count.

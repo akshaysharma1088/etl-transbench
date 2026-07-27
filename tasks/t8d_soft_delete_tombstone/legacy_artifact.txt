@@ -1,0 +1,16 @@
+-- Legacy incremental loader with SOFT DELETES (abstracted).
+-- Inputs: target_snapshot (user_id, email, status IN ('ACTIVE','DELETED'),
+--                          status_ts)
+--         cdc_events (event_seq, event_ts, op IN ('U','D'), user_id, email)
+--         watermark (high_ts): events with event_ts <= high_ts already applied.
+-- Semantics:
+--   1. Keep events with event_ts > high_ts; apply per user SEQUENTIALLY by
+--      (event_ts, event_seq).
+--   2. op 'D': soft delete — row STAYS with status='DELETED', status_ts=ts,
+--      email PRESERVED as of deletion.
+--   3. op 'U' on an ACTIVE or new user: upsert email, status='ACTIVE',
+--      status_ts=ts.
+--   4. op 'U' on a DELETED user: RESURRECTION only if the update arrives
+--      STRICTLY MORE than 7 days after status_ts of the deletion; otherwise
+--      the update is DISCARDED (deletion is sticky inside the 7-day window).
+-- Output: new_snapshot (user_id, email, status, status_ts).

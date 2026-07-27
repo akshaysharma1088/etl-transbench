@@ -1,0 +1,30 @@
+-- Legacy stored procedure SP_LOAD_DIM_ACCT_MIXED (abstracted).
+-- Inputs:
+--   DIM_ACCT (acct_id INT, email VARCHAR,        -- TYPE-1 attribute
+--             tier VARCHAR,                       -- TYPE-2 attribute
+--             eff_start_date DATE, eff_end_date DATE NULL, is_current SMALLINT)
+--   STG_ACCT (acct_id INT, email VARCHAR, tier VARCHAR, update_date DATE)
+-- Output: DIM_ACCT post-state, relation name dim_acct_out.
+--
+-- PROCEDURE BODY (pseudocode preserved):
+--   1. Dedup STG_ACCT to latest per acct_id by update_date
+--      (ties: greater (email, tier) lexicographic pair wins).
+--   2. FOR EACH staged record s:
+--        c := current row for s.acct_id;
+--        IF c missing THEN insert new current version;
+--        ELSE
+--          IF c.tier <> s.tier THEN                       -- TYPE-2 change
+--             expire c at s.update_date;
+--             insert new current version (email = s.email, tier = s.tier);
+--          END IF
+--          IF c.email <> s.email THEN                     -- TYPE-1 change
+--             UPDATE ALL rows of acct_id (history AND current)
+--             SET email = s.email;                        -- retro-overwrite
+--             -- no new version for an email-only change
+--          END IF
+--        END IF
+--   NULL semantics: NULL vs non-NULL is a change; NULL vs NULL is not.
+--   NOTE order of operations: on a combined change the type-2 versioning uses
+--   the OLD current row's tier comparison, and the type-1 overwrite then
+--   rewrites email across the whole key including the freshly inserted row
+--   (net effect identical either way since the new row already carries s.email).
