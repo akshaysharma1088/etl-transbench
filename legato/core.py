@@ -48,8 +48,30 @@ class LLMClient:
         self.prices = prices or PRICES_USD_PER_MTOK
         self.resolved: Dict[str, str] = {}  # tier -> model id the API reports
         self.truncated: Dict[str, int] = {}  # tier -> replies cut off at max_tokens
+        self.retried = 0                     # replies re-requested after a dropped connection
         self._lock = threading.Lock()
         self._client = None
+
+    def _stream_once(self, tier, cap, system, user, extra, tries: int = 6):
+        """One streamed reply. A connection that drops part-way through a
+        stream is not retried by the SDK, so it is retried here; the partial
+        reply is discarded and was not billed as a completed message."""
+        import anthropic
+        import httpx
+        for i in range(tries):
+            try:
+                with self._client.messages.stream(  # no temperature given: the API default, 1.0
+                        model=self.models[tier], max_tokens=cap, system=system,
+                        messages=[{"role": "user", "content": user}], **extra) as stream:
+                    return stream.get_final_message()
+            except (httpx.TransportError, anthropic.APIConnectionError, anthropic.APITimeoutError,
+                    anthropic.InternalServerError, anthropic.RateLimitError) as exc:
+                if i == tries - 1:
+                    raise
+                with self._lock:
+                    self.retried += 1
+                print(f"  connection problem ({type(exc).__name__}), retrying in {5 * 2 ** i}s", flush=True)
+                time.sleep(5 * 2 ** i)
 
     def complete(self, tier: str, system: str, user: str,
                  ledger: CostLedger, role: str, max_tokens: int = MAX_TOKENS) -> str:
@@ -64,10 +86,7 @@ class LLMClient:
         # once more with twice the room, and every cut-off is counted.
         for attempt, cap in enumerate((max_tokens, 2 * max_tokens)):
             t0 = time.time()
-            with self._client.messages.stream(  # no temperature given: the API default, 1.0
-                    model=self.models[tier], max_tokens=cap, system=system,
-                    messages=[{"role": "user", "content": user}], **extra) as stream:
-                msg = stream.get_final_message()
+            msg = self._stream_once(tier, cap, system, user, extra)
             self.resolved[tier] = getattr(msg, "model", self.models[tier])
             text = "".join(b.text for b in msg.content if b.type == "text")
             usd = (msg.usage.input_tokens * self.prices[tier]["in"]
