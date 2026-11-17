@@ -57,16 +57,23 @@ class LLMClient:
         stream is not retried by the SDK, so it is retried here; the partial
         reply is discarded and was not billed as a completed message."""
         import anthropic
-        import httpx
+        transient = (anthropic.APIConnectionError, anthropic.APITimeoutError,
+                     anthropic.InternalServerError, anthropic.RateLimitError)
+
+        def is_transient(exc) -> bool:
+            # The HTTP layer under the SDK has changed package name between SDK
+            # versions, so its errors are recognised by module, not by import.
+            mod = type(exc).__module__.split(".")[0]
+            return isinstance(exc, transient) or mod.startswith(("httpx", "httpcore", "h11"))
+
         for i in range(tries):
             try:
                 with self._client.messages.stream(  # no temperature given: the API default, 1.0
                         model=self.models[tier], max_tokens=cap, system=system,
                         messages=[{"role": "user", "content": user}], **extra) as stream:
                     return stream.get_final_message()
-            except (httpx.TransportError, anthropic.APIConnectionError, anthropic.APITimeoutError,
-                    anthropic.InternalServerError, anthropic.RateLimitError) as exc:
-                if i == tries - 1:
+            except Exception as exc:
+                if not is_transient(exc) or i == tries - 1:
                     raise
                 with self._lock:
                     self.retried += 1
