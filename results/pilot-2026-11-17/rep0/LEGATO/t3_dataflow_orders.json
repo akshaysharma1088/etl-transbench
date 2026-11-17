@@ -1,0 +1,48 @@
+{
+ "config": "LEGATO",
+ "rep": 0,
+ "task": "t3_dataflow_orders",
+ "category": "T3",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    orders = inputs[\"orders\"]\n    customers = inputs[\"customers\"]\n    \n    # Filter: status == 'SHIPPED'\n    flt = orders[orders[\"status\"] == \"SHIPPED\"].copy()\n    \n    # Lookup: join with customers table on customer_id\n    # select [\"region\"], on_miss means unmapped rows get \"UNKNOWN\" for region\n    lkp = flt.merge(customers[[\"customer_id\", \"region\"]], \n                     on=\"customer_id\", \n                     how=\"left\")\n    lkp[\"region\"] = lkp[\"region\"].fillna(\"UNKNOWN\")\n    \n    # Reformat: compute net_amount = qty * unit_price * (1 - discount)\n    # NULL discount treated as 0\n    rfm = lkp.copy()\n    rfm[\"discount\"] = rfm[\"discount\"].fillna(0.0)\n    rfm[\"net_amount\"] = rfm[\"qty\"] * rfm[\"unit_price\"] * (1 - rfm[\"discount\"])\n    \n    # Output: select specific columns\n    output = rfm[[\"order_id\", \"customer_id\", \"region\", \"qty\", \"unit_price\", \"net_amount\"]]\n    \n    return {\"shipped_orders_enriched\": output}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 525,
+   "tokens_out": 339,
+   "usd": 0.00222,
+   "wall_s": 2.2090396881103516,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

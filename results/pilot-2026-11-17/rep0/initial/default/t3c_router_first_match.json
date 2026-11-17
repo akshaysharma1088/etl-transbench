@@ -1,0 +1,17 @@
+{
+ "task": "t3c_router_first_match",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Router component that directs claims to three output ports based on ordered rules.\n    Rules are evaluated in order; a row matches the FIRST applicable rule only.\n    Unmatched rows go to the default port \"standard\" (which is not output).\n    \"\"\"\n    claims = inputs[\"claims\"].copy()\n    \n    # Initialize output ports\n    fast_track = []\n    high_value = []\n    manual_review = []\n    \n    # Process each row\n    for idx, row in claims.iterrows():\n        amount = row[\"amount\"]\n        photos_attached = row[\"photos_attached\"]\n        \n        # Rule 1: amount <= 500 and photos_attached == 1\n        if amount <= 500 and photos_attached == 1:\n            fast_track.append(row)\n        # Rule 2: amount > 10000\n        elif amount > 10000:\n            high_value.append(row)\n        # Rule 3: photos_attached == 0 or amount > 500\n        elif photos_attached == 0 or amount > 500:\n            manual_review.append(row)\n        # else: goes to default \"standard\" port (not output)\n    \n    # Convert lists back to DataFrames\n    fast_track_df = pd.DataFrame(fast_track) if fast_track else pd.DataFrame(columns=claims.columns)\n    high_value_df = pd.DataFrame(high_value) if high_value else pd.DataFrame(columns=claims.columns)\n    manual_review_df = pd.DataFrame(manual_review) if manual_review else pd.DataFrame(columns=claims.columns)\n    \n    # Ensure columns are in the correct order and types are preserved\n    for df in [fast_track_df, high_value_df, manual_review_df]:\n        for col in [\"claim_id\", \"amount\", \"photos_attached\"]:\n            if col not in df.columns:\n                df[col] = pd.Series(dtype=claims[col].dtype)\n    \n    # Select only the required columns\n    output_cols = [\"claim_id\", \"amount\", \"photos_attached\"]\n    fast_track_df = fast_track_df[output_cols].reset_index(drop=True)\n    high_value_df = high_value_df[output_cols].reset_index(drop=True)\n    manual_review_df = manual_review_df[output_cols].reset_index(drop=True)\n    \n    return {\n        \"claims_fast_track\": fast_track_df,\n        \"claims_high_value\": high_value_df,\n        \"claims_manual_review\": manual_review_df\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 593,
+   "tokens_out": 669,
+   "usd": 0.003938,
+   "wall_s": 5.451902151107788,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

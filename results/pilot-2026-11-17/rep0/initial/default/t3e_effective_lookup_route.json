@@ -1,0 +1,17 @@
+{
+ "task": "t3e_effective_lookup_route",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import numpy as np\nimport pandas as pd\n\n\ndef _norm_sku(x):\n    if pd.isna(x):\n        return np.nan\n    return str(x).strip().upper()\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    price_list = inputs[\"price_list\"].copy()\n\n    # ---- expression: sku_norm = UPPER(TRIM(sku)); NULL sku -> NULL sku_norm\n    orders[\"sku_norm\"] = orders[\"sku\"].apply(_norm_sku)\n    price_list[\"sku_norm_pl\"] = price_list[\"sku\"].apply(_norm_sku)\n\n    orders = orders.reset_index(drop=True)\n    orders[\"_row_id\"] = orders.index\n\n    # ---- lookup: cross-join on normalized sku, filter valid_from <= order_date\n    merged = orders.merge(\n        price_list,\n        left_on=\"sku_norm\",\n        right_on=\"sku_norm_pl\",\n        how=\"left\",\n        suffixes=(\"\", \"_pl\"),\n    )\n\n    valid_mask = (\n        merged[\"sku_norm\"].notna()\n        & merged[\"valid_from\"].notna()\n        & (merged[\"valid_from\"] <= merged[\"order_date\"])\n    )\n    merged_valid = merged[valid_mask].copy()\n\n    # pick GREATEST valid_from, tie-break LOWEST list_id\n    merged_valid = merged_valid.sort_values(\n        by=[\"_row_id\", \"valid_from\", \"list_id\"],\n        ascending=[True, False, True],\n    )\n    best = merged_valid.drop_duplicates(subset=[\"_row_id\"], keep=\"first\")\n    best = best[[\"_row_id\", \"unit_price\"]]\n\n    orders = orders.merge(best, on=\"_row_id\", how=\"left\")\n\n    orders[\"price_flag\"] = np.where(orders[\"unit_price\"].notna(), \"OK\", \"NO_PRICE\")\n    orders[\"unit_price\"] = orders[\"unit_price\"].fillna(0.0)\n\n    # ---- expression: ext_amount = qty * unit_price (NULL qty -> NULL ext_amount)\n    orders[\"ext_amount\"] = orders[\"qty\"] * orders[\"unit_price\"]\n\n    # ---- router: evaluate rules in order, first true wins; NULL predicate not true\n    def route_fn(row):\n        qty = row[\"qty\"]\n        ext = row[\"ext_amount\"]\n        flag = row[\"price_flag\"]\n\n        qty_is_null = pd.isna(qty)\n        cond_review = (flag == \"NO_PRICE\") or qty_is_null or ((not qty_is_null) and qty >= 100)\n        if cond_review:\n            return \"REVIEW\"\n\n        ext_is_null = pd.isna(ext)\n        if (not ext_is_null) and ext >= 1000:\n            return \"BULK\"\n        if (not ext_is_null) and ext < 50:\n            return \"SMALL\"\n        return \"STANDARD\"\n\n    orders[\"route\"] = orders.apply(route_fn, axis=1)\n\n    # ---- output 1: order_enriched\n    order_enriched = orders[[\"order_id\", \"sku_norm\", \"unit_price\", \"route\"]].copy()\n\n    # ---- aggregator: group by route, order_date\n    agg = (\n        orders.groupby([\"route\", \"order_date\"], dropna=False)\n        .agg(order_count=(\"order_id\", \"size\"), total_ext=(\"ext_amount\", \"sum\"))\n        .reset_index()\n    )\n\n    route_daily = agg[[\"route\", \"order_date\", \"order_count\", \"total_ext\"]].copy()\n\n    return {\n        \"order_enriched\": order_enriched,\n        \"route_daily\": route_daily,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1518,
+   "tokens_out": 4040,
+   "usd": 0.065154,
+   "wall_s": 34.544233560562134,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

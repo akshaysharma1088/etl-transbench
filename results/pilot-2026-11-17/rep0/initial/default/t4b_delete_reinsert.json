@@ -1,0 +1,17 @@
+{
+ "task": "t4b_delete_reinsert",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    inbound = inputs[\"inbound\"].copy()\n    \n    # Step 1: Create STG_NEW\n    # Filter inbound where qty > 0\n    inbound_filtered = inbound[inbound[\"qty\"] > 0].copy()\n    \n    # Group by product_id and batch_date\n    stg_new = inbound_filtered.groupby([\"product_id\", \"batch_date\"], as_index=False).agg({\n        \"qty\": \"sum\",\n        \"unit_cost\": \"max\"\n    })\n    \n    # Rename columns to match target schema\n    stg_new.rename(columns={\"qty\": \"total_qty\", \"unit_cost\": \"max_unit_cost\"}, inplace=True)\n    \n    # Step 2: Delete from target_snapshot where batch_date is in stg_new\n    # Get distinct batch_dates from stg_new\n    arriving_batch_dates = stg_new[\"batch_date\"].unique()\n    \n    # Remove rows from target_snapshot that have batch_dates in arriving_batch_dates\n    target_snapshot = target_snapshot[~target_snapshot[\"batch_date\"].isin(arriving_batch_dates)].copy()\n    \n    # Step 3: Insert rows from stg_new into target_snapshot\n    target_snapshot = pd.concat([target_snapshot, stg_new], ignore_index=True)\n    \n    # Ensure consistent dtypes\n    target_snapshot[\"product_id\"] = target_snapshot[\"product_id\"].astype(\"int64\")\n    target_snapshot[\"batch_date\"] = target_snapshot[\"batch_date\"].astype(\"datetime64[us]\")\n    target_snapshot[\"total_qty\"] = target_snapshot[\"total_qty\"].astype(\"float64\")\n    target_snapshot[\"max_unit_cost\"] = target_snapshot[\"max_unit_cost\"].astype(\"float64\")\n    \n    return {\"target_snapshot\": target_snapshot}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 493,
+   "tokens_out": 510,
+   "usd": 0.003043,
+   "wall_s": 3.1173949241638184,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

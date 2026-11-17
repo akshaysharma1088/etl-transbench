@@ -1,0 +1,17 @@
+{
+ "task": "t6c_midnight_split",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, event_ts, event_id\n    events = events.sort_values(\n        by=[\"user_id\", \"event_ts\", \"event_id\"],\n        ignore_index=True\n    )\n    \n    # Extract date (calendar date in server local timezone, assumed to be naive)\n    events[\"event_date\"] = events[\"event_ts\"].dt.date\n    \n    # Initialize session tracking columns\n    events[\"session_num\"] = 0\n    session_counter = 0\n    \n    # Track previous user, timestamp, and date for gap detection\n    prev_user = None\n    prev_ts = None\n    prev_date = None\n    \n    session_numbers = []\n    \n    for idx, row in events.iterrows():\n        curr_user = row[\"user_id\"]\n        curr_ts = row[\"event_ts\"]\n        curr_date = row[\"event_date\"]\n        \n        # Determine if we need a new session\n        if prev_user is None or curr_user != prev_user:\n            # New user always starts a new session\n            session_counter += 1\n        elif prev_date != curr_date:\n            # Different calendar date -> new session (forced midnight split)\n            session_counter += 1\n        else:\n            # Same user, same date; check time gap\n            time_gap_minutes = (curr_ts - prev_ts).total_seconds() / 60.0\n            if time_gap_minutes > 45:\n                # Gap exceeds 45 minutes -> new session\n                session_counter += 1\n            # else: continue in same session\n        \n        session_numbers.append(session_counter)\n        prev_user = curr_user\n        prev_ts = curr_ts\n        prev_date = curr_date\n    \n    events[\"session_num\"] = session_numbers\n    \n    # Group by user_id and session_num to aggregate\n    user_sessions = events.groupby(\n        [\"user_id\", \"session_num\"],\n        as_index=False\n    ).agg(\n        session_date=(\"event_date\", \"first\"),\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    )\n    \n    # Ensure columns are in the correct order\n    user_sessions = user_sessions[\n        [\"user_id\", \"session_num\", \"session_date\", \"session_start\", \"session_end\", \"event_count\"]\n    ]\n    \n    return {\"user_sessions\": user_sessions}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 672,
+   "usd": 0.00374,
+   "wall_s": 5.713581323623657,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

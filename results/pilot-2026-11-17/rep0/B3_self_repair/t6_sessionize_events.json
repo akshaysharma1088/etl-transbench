@@ -1,0 +1,48 @@
+{
+ "config": "B3_self_repair",
+ "rep": 0,
+ "task": "t6_sessionize_events",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, event_ts, event_id to ensure correct ordering\n    events = events.sort_values(by=[\"user_id\", \"event_ts\", \"event_id\"]).reset_index(drop=True)\n    \n    # Calculate time difference from previous event within same user\n    events[\"time_diff\"] = events.groupby(\"user_id\")[\"event_ts\"].diff()\n    \n    # A new session starts when:\n    # 1. It's the first event for a user (time_diff is NaT/NaN), OR\n    # 2. The gap is STRICTLY GREATER than 30 minutes\n    events[\"new_sess\"] = (\n        events[\"time_diff\"].isna() | \n        (events[\"time_diff\"] > pd.Timedelta(minutes=30))\n    ).astype(int)\n    \n    # Calculate session_num as cumulative sum within each user\n    events[\"session_num\"] = events.groupby(\"user_id\")[\"new_sess\"].cumsum()\n    \n    # Group by user_id and session_num to get session-level aggregates\n    user_sessions = events.groupby([\"user_id\", \"session_num\"]).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    ).reset_index()\n    \n    # Ensure session_num is 1-based per user (it already is due to cumsum starting at 1)\n    # and sort by user_id, session_num for consistent output\n    user_sessions = user_sessions.sort_values(by=[\"user_id\", \"session_num\"]).reset_index(drop=True)\n    \n    return {\"user_sessions\": user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 472,
+   "tokens_out": 486,
+   "usd": 0.002902,
+   "wall_s": 3.408916473388672,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

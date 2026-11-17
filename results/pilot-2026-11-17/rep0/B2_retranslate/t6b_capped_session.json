@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 0,
+ "task": "t6b_capped_session",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    events = inputs[\"events\"].copy()\n\n    # Ensure correct dtypes\n    events[\"event_ts\"] = pd.to_datetime(events[\"event_ts\"])\n\n    # Sort by user, then event_ts, then event_id (tie-break)\n    events = events.sort_values(\n        by=[\"user_id\", \"event_ts\", \"event_id\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    gap_threshold = pd.Timedelta(minutes=20)\n    cap_threshold = pd.Timedelta(hours=4)\n\n    session_nums = []\n    session_starts = []\n\n    cur_user = None\n    session_num = 0\n    session_start = None\n    prev_ts = None\n\n    for row in events.itertuples(index=False):\n        user_id = row.user_id\n        event_ts = row.event_ts\n\n        if user_id != cur_user:\n            # new user -> new session\n            cur_user = user_id\n            session_num = 1\n            session_start = event_ts\n            prev_ts = event_ts\n        else:\n            gap = event_ts - prev_ts\n            cap_exceeded = (event_ts - session_start) > cap_threshold\n\n            if gap > gap_threshold or cap_exceeded:\n                session_num += 1\n                session_start = event_ts\n\n            prev_ts = event_ts\n\n        session_nums.append(session_num)\n        session_starts.append(session_start)\n\n    events[\"session_num\"] = session_nums\n    events[\"session_start\"] = session_starts\n\n    grouped = events.groupby(\n        [\"user_id\", \"session_num\"], as_index=False\n    ).agg(\n        session_start=(\"session_start\", \"first\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\"),\n    )\n\n    grouped = grouped.sort_values(\n        by=[\"user_id\", \"session_num\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    result = grouped[\n        [\"user_id\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]\n    ]\n\n    return {\"user_sessions\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 591,
+   "tokens_out": 984,
+   "usd": 0.016533,
+   "wall_s": 8.585840702056885,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

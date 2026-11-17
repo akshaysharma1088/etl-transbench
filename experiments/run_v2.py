@@ -51,9 +51,16 @@ CONFIGS = {
     "A1_trace_only":       (EscalationPolicy(evidence="trace_only"), "default"),
     "A2_no_hints":         (EscalationPolicy(use_hints=False), "no_hints"),
     "A3_frontier_only":    (EscalationPolicy(fixed_tier="frontier"), "frontier"),
-    "A4_cheap_only":       (EscalationPolicy(fixed_tier="cheap"), "cheap"),
+    # The same four strategies with every call on the cheap model, to see
+    # whether the kind of feedback matters more for a weaker translator.
+    "C0_cheap_single":     (EscalationPolicy(fixed_tier="cheap", max_iters=0), "cheap"),
+    "C1_cheap_grounded":   (EscalationPolicy(fixed_tier="cheap"), "cheap"),
+    "C2_cheap_retranslate": (EscalationPolicy(fixed_tier="cheap", escalate_after=0, retranslate_after=0), "cheap"),
+    "C3_cheap_self_repair": (EscalationPolicy(fixed_tier="cheap", grounded=False), "cheap"),
+    "C4_cheap_trace_only": (EscalationPolicy(fixed_tier="cheap", evidence="trace_only"), "cheap"),
 }
-DEFAULT_CONFIGS = "B1_single_pass,LEGATO,B2_retranslate,B3_self_repair,A1_trace_only,A2_no_hints"
+DEFAULT_CONFIGS = ("B1_single_pass,LEGATO,B2_retranslate,B3_self_repair,A1_trace_only,A2_no_hints,"
+                   "C0_cheap_single,C1_cheap_grounded,C2_cheap_retranslate,C3_cheap_self_repair,C4_cheap_trace_only")
 
 
 def seeds_for(rep: int):
@@ -159,7 +166,7 @@ def main():
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 recs = list(pool.map(lambda t: run_one(t, llm, name, rep, args.out), tasks))
             solved = sum(bool(r["heldout_equivalent"]) for r in recs)
-            print(f"rep {rep} {name:18s} held-out solved {solved}/{len(recs)} "
+            print(f"rep {rep} {name:21s} held-out solved {solved}/{len(recs)} "
                   f"[{time.time() - t0:.0f}s]", flush=True)
 
     manifest = {

@@ -1,0 +1,53 @@
+{
+ "config": "B3_self_repair",
+ "rep": 0,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n\n    # Sort by user_id, event_ts, event_id (ordering rule)\n    events = events.sort_values(\n        by=[\"user_id\", \"event_ts\", \"event_id\"],\n        kind=\"mergesort\",\n        ignore_index=True\n    )\n\n    # Calendar date (server local, assumed naive timestamps)\n    events[\"event_date\"] = events[\"event_ts\"].dt.date\n\n    # Identify previous user / ts / date within the same user group\n    prev_user = events[\"user_id\"].shift(1)\n    prev_ts = events[\"event_ts\"].shift(1)\n    prev_date = events[\"event_date\"].shift(1)\n\n    is_new_user = events[\"user_id\"] != prev_user\n\n    # Gap in minutes from previous event (NaT-safe)\n    gap_minutes = (events[\"event_ts\"] - prev_ts).dt.total_seconds() / 60.0\n\n    different_date = events[\"event_date\"] != prev_date\n    gap_exceeded = gap_minutes > 45\n\n    new_session = is_new_user | different_date | gap_exceeded\n\n    # session_num resets per user: cumulative count of new_session flags within each user\n    events[\"session_num\"] = new_session.groupby(events[\"user_id\"]).cumsum().astype(\"int64\")\n\n    # Aggregate\n    user_sessions = events.groupby(\n        [\"user_id\", \"session_num\"],\n        as_index=False\n    ).agg(\n        session_date=(\"event_date\", \"first\"),\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    )\n\n    user_sessions = user_sessions.sort_values(\n        by=[\"user_id\", \"session_num\"],\n        ignore_index=True\n    )\n\n    user_sessions = user_sessions[\n        [\"user_id\", \"session_num\", \"session_date\", \"session_start\", \"session_end\", \"event_count\"]\n    ]\n\n    return {\"user_sessions\": user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 672,
+   "usd": 0.00374,
+   "wall_s": 5.713581323623657,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1562,
+  "tokens_out": 958,
+  "usd": 0.019056,
+  "wall_s": 8.427347660064697
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

@@ -219,7 +219,7 @@ class EscalationPolicy:
         if spent >= self.budget_usd or iters >= self.max_iters:
             return "halt"
         if self.fixed_tier:
-            return f"repair_{tier}"
+            return f"retranslate_{tier}" if iters >= self.retranslate_after else f"repair_{tier}"
         if iters >= self.retranslate_after:
             return "retranslate_frontier"
         if tier == "cheap" and iters >= self.escalate_after:
@@ -320,8 +320,8 @@ def run_legato(task: Task, llm: LLMClient,
             return LegatoResult(task.meta["id"], False, it, code, history,
                                 ledger.totals(), handoff,
                                 heldout_equivalent=heldout(fn))
-        if action == "retranslate_frontier":
-            tier = "frontier"
+        if action.startswith("retranslate_"):
+            tier = action.split("_", 1)[1]
             code = extract_code(llm.complete(tier, TRANSLATOR_SYSTEM, base_user,
                                              ledger, "translator"))
             continue
