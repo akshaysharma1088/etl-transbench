@@ -58,6 +58,9 @@ class MockLLMClient:
     """Drop-in for legato.core.LLMClient with scripted outputs."""
     models = {"cheap": "mock-scripted-cheap", "frontier": "mock-scripted-frontier"}
 
+    temperature = None
+    resolved = models
+
     def __init__(self):
         self._calls: Dict[str, int] = {}
 
