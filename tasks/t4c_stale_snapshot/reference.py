@@ -7,7 +7,7 @@ import pandas as pd
 
 def run(inputs):
     feed = inputs["score_feed"]
-    old = inputs["score_snapshot_prior"]
+    old = inputs["score_snapshot"]
     curr = (feed.groupby("account_id", as_index=False)
                 .agg(avg_score=("score", "mean")))
     delta = curr.merge(old.rename(columns={"avg_score": "old_avg"}),

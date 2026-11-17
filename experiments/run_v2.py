@@ -103,6 +103,7 @@ def run_one(task, llm, name, rep, out):
     first_ok = bool(fn) and verify_candidate(task, fn, seeds=tuple(held)).equivalent
     rec = {"config": name, "rep": rep, "task": res.task_id,
            "category": task.meta["category"],
+           "set": task.meta.get("set", "core"),
            "dev_equivalent": res.equivalent, "iterations": res.iterations,
            "heldout_equivalent": res.heldout_equivalent,
            "heldout_equivalent_first": first_ok,
@@ -168,6 +169,9 @@ def main():
         "temperature": "API default (1.0)" if args.temperature is None else args.temperature,
         "max_tokens": 4000, "prices_usd_per_mtok": prices,
         "reps": args.reps, "configs": names, "n_tasks": len(tasks),
+        "tasks": [t.meta["id"] for t in tasks],
+        "python": sys.version.split()[0], "pandas": __import__("pandas").__version__,
+        "numpy": __import__("numpy").__version__,
         "dev_seeds": DEV_SEEDS, "heldout_seeds": HELDOUT_SEEDS, "rep_stride": REP_STRIDE,
         "policies": {n: asdict(CONFIGS[n][0]) for n in names},
         "initial_groups": {n: CONFIGS[n][1] for n in names},

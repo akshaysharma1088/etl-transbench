@@ -1,0 +1,32 @@
+-- Legacy stored procedure SP_LOAD_DIM_MEMBER_SIG (abstracted, vendor-neutral).
+-- Inputs:
+--   DIM_MEMBER (member_id INT, city VARCHAR, tier VARCHAR, eff_start_date DATE,
+--               eff_end_date DATE NULL, is_current SMALLINT)
+--   STG_MEMBER (member_id INT, city VARCHAR, tier VARCHAR, update_date DATE)
+--        -- at most one staged record per member_id.
+-- Output: DIM_MEMBER post-state, relation name dim_member_out,
+--         columns member_id, city, tier, eff_start_date, eff_end_date, is_current.
+--
+-- Change detection does NOT compare columns one by one. It compares a row
+-- signature, computed the same way for the staged record and for the
+-- member's current dimension row:
+--     SIG(city, tier) = RTRIM(COALESCE(city, '')) || '|' || RTRIM(COALESCE(tier, ''))
+--   Consequences that MUST be preserved:
+--     * NULL and the empty string give the same signature (not a change);
+--     * trailing spaces are ignored; leading spaces and letter case are NOT;
+--     * the delimiter is not escaped, so ('A|', 'B') and ('A', '|B') have the
+--       same signature and are NOT a change.
+--
+-- PROCEDURE BODY (pseudocode preserved):
+--   FOR EACH staged record s:
+--     c := current row (is_current = 1) for s.member_id;
+--     IF c missing THEN
+--         INSERT (s.city, s.tier, start = s.update_date, end = NULL, is_current = 1);
+--     ELSIF SIG(s.city, s.tier) <> SIG(c.city, c.tier) THEN
+--         UPDATE c SET eff_end_date = s.update_date, is_current = 0;
+--         INSERT (s.city, s.tier, start = s.update_date, end = NULL, is_current = 1);
+--     ELSE
+--         no-op;      -- c keeps its stored city and tier exactly as they were
+--     END IF;
+--   Inserted rows store s.city and s.tier EXACTLY as staged (no trimming, NULL
+--   stays NULL, '' stays '').

@@ -1,0 +1,9 @@
+{
+  "id": "t3e_effective_lookup_route",
+  "category": "T3",
+  "tier": 3,
+  "description": "Graphical dataflow: key normalisation, effective-dated lookup with tie-break and default, ordered router, aggregation",
+  "legacy_artifact": "legacy_artifact.json",
+  "target": "pandas (PySpark in full benchmark)",
+  "set": "extension"
+}

@@ -1,0 +1,31 @@
+{
+  "task_id": "t6e_session_heartbeat_logout",
+  "relations": [
+    {
+      "name": "user_sessions",
+      "key_columns": [
+        "user_id",
+        "session_num"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "session_start",
+          "kind": "timestamp"
+        },
+        {
+          "name": "session_end",
+          "kind": "timestamp"
+        },
+        {
+          "name": "event_count",
+          "kind": "int"
+        },
+        {
+          "name": "heartbeat_count",
+          "kind": "int"
+        }
+      ]
+    }
+  ]
+}

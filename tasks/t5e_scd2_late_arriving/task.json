@@ -1,0 +1,9 @@
+{
+  "id": "t5e_scd2_late_arriving",
+  "category": "T5",
+  "tier": 3,
+  "description": "SCD Type 2 with late-arriving changes: a staged record dated inside an old version splits that version",
+  "legacy_artifact": "legacy_artifact.txt",
+  "target": "pandas (PySpark in full benchmark)",
+  "set": "extension"
+}

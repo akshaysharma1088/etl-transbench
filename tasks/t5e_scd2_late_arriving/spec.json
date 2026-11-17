@@ -1,0 +1,31 @@
+{
+  "task_id": "t5e_scd2_late_arriving",
+  "relations": [
+    {
+      "name": "dim_account_out",
+      "key_columns": [
+        "account_id",
+        "eff_start_date"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "plan",
+          "kind": "string"
+        },
+        {
+          "name": "eff_start_date",
+          "kind": "timestamp"
+        },
+        {
+          "name": "eff_end_date",
+          "kind": "timestamp"
+        },
+        {
+          "name": "is_current",
+          "kind": "int"
+        }
+      ]
+    }
+  ]
+}

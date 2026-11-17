@@ -103,10 +103,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run_dir")
     ap.add_argument("--baseline", default="LEGATO")
+    ap.add_argument("--set", default="all", choices=["all", "core", "extension"],
+                    help="which task set to summarise (output goes to summary_<set>.*)")
     args = ap.parse_args()
     recs = load(args.run_dir)
+    if args.set != "all":
+        recs = [r for r in recs if r.get("set", "core") == args.set]
     if not recs:
         sys.exit("no results found")
+    stem = "summary" if args.set == "all" else f"summary_{args.set}"
     by = defaultdict(lambda: defaultdict(dict))  # config -> rep -> task -> rec
     for r in recs:
         by[r["config"]][r["rep"]][r["task"]] = r
@@ -162,7 +167,7 @@ def main():
                 "pooled_discordant": [b, c],
                 "mcnemar_exact_p": round(mcnemar_exact(b, c), 4)}
 
-    with open(os.path.join(args.run_dir, "summary.json"), "w") as f:
+    with open(os.path.join(args.run_dir, stem + ".json"), "w") as f:
         json.dump(out, f, indent=2)
 
     L = ["| Configuration | SER@0 | SER@1 | SER@3 | SER@5 | SER@5 (dev) | Cost per run (USD) |",
@@ -185,7 +190,7 @@ def main():
     for cfg, row in out["configs"].items():
         L.append(f"| {cfg} | " + " | ".join(f"{v:.2f}" for _, v in sorted(row["heldout_solve_rate_by_category"].items())) + " |")
     md = "\n".join(L) + "\n"
-    with open(os.path.join(args.run_dir, "summary.md"), "w") as f:
+    with open(os.path.join(args.run_dir, stem + ".md"), "w", encoding="utf-8") as f:
         f.write(md)
     print(md)
 

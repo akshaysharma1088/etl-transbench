@@ -1,0 +1,35 @@
+{
+  "task_id": "t5f_scd2_hash_detect",
+  "relations": [
+    {
+      "name": "dim_member_out",
+      "key_columns": [
+        "member_id",
+        "eff_start_date"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "city",
+          "kind": "string"
+        },
+        {
+          "name": "tier",
+          "kind": "string"
+        },
+        {
+          "name": "eff_start_date",
+          "kind": "timestamp"
+        },
+        {
+          "name": "eff_end_date",
+          "kind": "timestamp"
+        },
+        {
+          "name": "is_current",
+          "kind": "int"
+        }
+      ]
+    }
+  ]
+}

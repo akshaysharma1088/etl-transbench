@@ -1,0 +1,113 @@
+{
+ "_comment": "Vendor-neutral export of a graphical ETL component graph.",
+ "graph": [
+  {
+   "id": "src",
+   "type": "source",
+   "relation": "orders",
+   "columns": [
+    "order_id",
+    "sku",
+    "qty",
+    "order_date"
+   ]
+  },
+  {
+   "id": "exp",
+   "type": "expression",
+   "input": "src",
+   "derive": {
+    "sku_norm": "UPPER(TRIM(sku))"
+   },
+   "note": "a NULL sku gives a NULL sku_norm"
+  },
+  {
+   "id": "lkp",
+   "type": "lookup",
+   "input": "exp",
+   "lookup_relation": "price_list",
+   "lookup_columns": [
+    "list_id",
+    "sku",
+    "unit_price",
+    "valid_from"
+   ],
+   "condition": "UPPER(TRIM(price_list.sku)) == sku_norm and price_list.valid_from <= order_date",
+   "multiple_match": "take the row with the GREATEST valid_from; if several rows share it, take the LOWEST list_id",
+   "return": {
+    "unit_price": "unit_price"
+   },
+   "no_match": "unit_price = 0 and price_flag = 'NO_PRICE'; a NULL sku_norm never matches",
+   "on_match": "price_flag = 'OK'"
+  },
+  {
+   "id": "ext",
+   "type": "expression",
+   "input": "lkp",
+   "derive": {
+    "ext_amount": "qty * unit_price"
+   },
+   "note": "a NULL qty gives a NULL ext_amount"
+  },
+  {
+   "id": "rtr",
+   "type": "router",
+   "input": "ext",
+   "note": "rules evaluated IN ORDER; a row takes the FIRST rule that is true; a rule whose predicate is NULL is not true",
+   "rules": [
+    {
+     "route": "REVIEW",
+     "predicate": "price_flag == 'NO_PRICE' or qty is NULL or qty >= 100"
+    },
+    {
+     "route": "BULK",
+     "predicate": "ext_amount >= 1000"
+    },
+    {
+     "route": "SMALL",
+     "predicate": "ext_amount < 50"
+    }
+   ],
+   "default_route": "STANDARD"
+  },
+  {
+   "id": "out1",
+   "type": "output",
+   "input": "rtr",
+   "relation": "order_enriched",
+   "columns": [
+    "order_id",
+    "sku_norm",
+    "unit_price",
+    "route"
+   ],
+   "note": "one row per input order, every route included"
+  },
+  {
+   "id": "agg",
+   "type": "aggregator",
+   "input": "rtr",
+   "group_by": [
+    "route",
+    "order_date"
+   ],
+   "aggregates": {
+    "order_count": "COUNT(*)",
+    "total_ext": "SUM(ext_amount)"
+   },
+   "note": "SUM ignores NULLs; a group whose ext_amount values are all NULL has total_ext = 0"
+  },
+  {
+   "id": "out2",
+   "type": "output",
+   "input": "agg",
+   "relation": "route_daily",
+   "columns": [
+    "route",
+    "order_date",
+    "order_count",
+    "total_ext"
+   ]
+  }
+ ]
+}

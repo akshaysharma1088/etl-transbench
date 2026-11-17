@@ -1,0 +1,29 @@
+-- Legacy two-step job JOB_DIM_CUSTOMER_AND_FACT_KEYS (abstracted, vendor-neutral).
+-- Inputs:
+--   DIM_CUSTOMER (customer_sk INT, customer_id INT, segment VARCHAR,
+--                 eff_start_date DATE, eff_end_date DATE NULL, is_current SMALLINT)
+--        -- a version covers eff_start_date <= d < eff_end_date (end EXCLUSIVE; NULL = open)
+--   STG_CUSTOMER (customer_id INT, segment VARCHAR, update_date DATE)
+--        -- at most one staged record per customer_id
+--   FACT_TXN (txn_id INT, customer_id INT, txn_date DATE, amount DECIMAL)
+-- Outputs:
+--   dim_customer_out (customer_sk, customer_id, segment, eff_start_date, eff_end_date, is_current)
+--   fact_txn_keyed   (txn_id, customer_sk, amount)
+--
+-- STEP 1  SCD Type 2 load of DIM_CUSTOMER:
+--   A staged record CREATES A VERSION when the customer has no current row,
+--   or when its segment differs from the current row's segment
+--   (NULL vs non-NULL differs; NULL vs NULL does not). Otherwise it is a no-op.
+--   When a version is created and a current row exists, that row is expired:
+--   eff_end_date = s.update_date, is_current = 0.
+--   The new row is (segment = s.segment, eff_start_date = s.update_date,
+--   eff_end_date = NULL, is_current = 1) and its surrogate key is
+--       customer_sk = (SELECT MAX(customer_sk) FROM DIM_CUSTOMER before the load)
+--                     + ROW_NUMBER() OVER (ORDER BY customer_id)
+--   where the ROW_NUMBER runs ONLY over the staged records that create a version.
+--
+-- STEP 2  Key the facts against the dimension AS IT IS AFTER STEP 1:
+--   For each FACT_TXN row, customer_sk is the surrogate key of the version of
+--   that customer_id that covers txn_date. If no version covers txn_date
+--   (unknown customer, or a date before the customer's first version, or a
+--   date in a gap), customer_sk = -1. Every fact row is kept; amount is unchanged.

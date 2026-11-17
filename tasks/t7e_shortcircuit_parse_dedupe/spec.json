@@ -1,0 +1,44 @@
+{
+  "task_id": "t7e_shortcircuit_parse_dedupe",
+  "relations": [
+    {
+      "name": "valid_payments",
+      "key_columns": [
+        "payment_id"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "account_id",
+          "kind": "int"
+        },
+        {
+          "name": "amount",
+          "kind": "float",
+          "abs_tol": 1e-09
+        },
+        {
+          "name": "currency",
+          "kind": "string"
+        },
+        {
+          "name": "pay_date",
+          "kind": "timestamp"
+        }
+      ]
+    },
+    {
+      "name": "payment_rejects",
+      "key_columns": [
+        "row_num"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "reject_reason",
+          "kind": "string"
+        }
+      ]
+    }
+  ]
+}

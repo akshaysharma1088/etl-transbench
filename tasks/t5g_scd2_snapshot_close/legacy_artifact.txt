@@ -1,0 +1,31 @@
+-- Legacy stored procedure SP_LOAD_DIM_STORE_FULL (abstracted, vendor-neutral).
+-- Inputs:
+--   DIM_STORE (store_id INT, region VARCHAR, format VARCHAR, eff_start_date DATE,
+--              eff_end_date DATE NULL, is_current SMALLINT)
+--   STG_STORE_FULL (store_id INT, region VARCHAR, format VARCHAR)
+--        -- a FULL snapshot of every store that is open today. The extract can
+--        -- deliver the same row more than once (exact duplicates only).
+--   BATCH_CONTROL (batch_date DATE)   -- exactly one row
+-- Output: DIM_STORE post-state, relation name dim_store_out,
+--         columns store_id, region, format, eff_start_date, eff_end_date, is_current.
+--
+-- PROCEDURE BODY (pseudocode preserved):
+--   b := (SELECT batch_date FROM BATCH_CONTROL);
+--   S := SELECT DISTINCT store_id, region, format FROM STG_STORE_FULL;
+--   1. FOR EACH s IN S:
+--        c := current row (is_current = 1) of s.store_id;
+--        IF c exists AND (c.region differs from s.region OR c.format differs from s.format) THEN
+--            UPDATE c SET eff_end_date = b, is_current = 0;
+--            INSERT (s.region, s.format, start = b, end = NULL, is_current = 1);
+--        ELSIF c exists THEN
+--            no-op;
+--        ELSE
+--            -- no current row: a brand-new store, OR a store that was closed
+--            -- earlier and is open again. Either way it gets a new version,
+--            -- even if its attributes equal those of its last closed version.
+--            INSERT (s.region, s.format, start = b, end = NULL, is_current = 1);
+--        END IF;
+--   2. FOR EACH current row c whose store_id is NOT in S:
+--        UPDATE c SET eff_end_date = b, is_current = 0;    -- store closed; no new row
+--   Rows that are not current are never modified.
+--   NULL semantics: NULL vs non-NULL differs; NULL vs NULL does not.

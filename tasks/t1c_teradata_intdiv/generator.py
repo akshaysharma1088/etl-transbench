@@ -30,5 +30,10 @@ def corpus(seed: int):
     neg["account_id"] = neg["account_id"] + 1_000_000       # fresh keys
     neg["balance_cents"] = -(rng.integers(1, 5000, size=len(neg)) * 100 +
                              rng.integers(1, 100, size=len(neg))).astype(float)
-    data["acct_balance"] = pd.concat([df, neg], ignore_index=True)
+    out = pd.concat([df, neg], ignore_index=True)
+    # balance_cents is an INTEGER column in the legacy table (the artifact's
+    # INTEGER / INTEGER division depends on it), so the corpus holds whole
+    # cents. The dtype stays float only because the column is nullable.
+    out["balance_cents"] = np.trunc(out["balance_cents"])
+    data["acct_balance"] = out
     return data

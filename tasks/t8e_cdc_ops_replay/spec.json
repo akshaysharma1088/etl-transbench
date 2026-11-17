@@ -1,0 +1,40 @@
+{
+  "task_id": "t8e_cdc_ops_replay",
+  "relations": [
+    {
+      "name": "new_state",
+      "key_columns": [
+        "order_id"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "status",
+          "kind": "string"
+        },
+        {
+          "name": "amount",
+          "kind": "float",
+          "abs_tol": 1e-09
+        },
+        {
+          "name": "last_seq",
+          "kind": "int"
+        }
+      ]
+    },
+    {
+      "name": "tombstones",
+      "key_columns": [
+        "order_id"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "deleted_seq",
+          "kind": "int"
+        }
+      ]
+    }
+  ]
+}

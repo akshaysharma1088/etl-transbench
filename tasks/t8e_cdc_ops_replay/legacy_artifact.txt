@@ -1,0 +1,36 @@
+-- Legacy incremental loader APPLY_ORDER_CDC (abstracted, vendor-neutral).
+-- Inputs:
+--   target_state (order_id INT, status VARCHAR, amount DECIMAL NULL, last_seq INT)
+--        -- last_seq = sequence number of the event that last wrote the row
+--   cdc_events (seq INT, order_id INT, op CHAR(1), status VARCHAR,
+--               amount DECIMAL NULL, event_ts TIMESTAMP)
+--        -- op is 'I', 'U' or 'D'. seq is the source log position and is the
+--        -- ONLY ordering to trust; event_ts can be out of order and is not used.
+--        -- At-least-once delivery: the same event (same seq) can appear twice.
+-- Outputs:
+--   new_state  (order_id, status, amount, last_seq)
+--   tombstones (order_id, deleted_seq)
+--
+-- Semantics:
+--   1. Events delivered more than once are applied once (distinct by seq).
+--   2. REPLAY GUARD, per order: an event is skipped when the order has a row
+--      in target_state and seq <= that row's last_seq. Orders with no row in
+--      target_state have no guard, so all their events apply.
+--   3. The remaining events of an order are applied IN seq ORDER:
+--        'I' or 'U': if the order has a row, update it; otherwise create it
+--                    (a 'U' for a missing order creates it; an 'I' for an
+--                    existing order updates it). status := event status.
+--                    amount := event amount, EXCEPT that a 'U' with a NULL
+--                    amount leaves the existing amount unchanged. A row that
+--                    is created takes the event amount as is (NULL stays NULL).
+--                    last_seq := seq.
+--        'D':        remove the order's row. A 'D' for a missing order does
+--                    nothing. An 'I' or 'U' later in the same batch creates
+--                    the row again from scratch (the old amount is gone).
+--   4. new_state = target_state after all events. Orders with no surviving
+--      events are carried forward unchanged.
+--   5. tombstones has one row for each order that HAD a row (in target_state
+--      or created in this batch) and whose LAST applied event is a 'D';
+--      deleted_seq is that event's seq.
+--   The job must be idempotent: running it again with new_state as
+--   target_state and the same cdc_events must give the same new_state.
