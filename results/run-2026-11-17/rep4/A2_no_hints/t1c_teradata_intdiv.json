@@ -1,0 +1,66 @@
+{
+ "config": "A2_no_hints",
+ "rep": 4,
+ "task": "t1c_teradata_intdiv",
+ "category": "T1",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import numpy as np\nimport pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs['acct_balance'].copy()\n\n    # WHERE acct_type <> 'CLOSED'\n    # NULL acct_type yields UNKNOWN in Teradata, which is excluded by WHERE.\n    # pandas '!=' comparison with NaN already evaluates to False, matching\n    # that exclusion behavior.\n    mask = df['acct_type'] != 'CLOSED'\n    df = df[mask]\n\n    # ZEROIFNULL(balance_cents): NULL -> 0, before any division.\n    balance_cents_zeroed = df['balance_cents'].fillna(0).astype('int64')\n\n    # Teradata INTEGER / INTEGER truncates toward zero (not floor division).\n    sign = np.sign(balance_cents_zeroed)\n    balance_bucket = (sign * (balance_cents_zeroed.abs() // 100)).astype('int64')\n\n    # fx_units: ZEROIFNULL(balance_cents) * fx_rate / 100, then CAST AS INTEGER\n    # (truncating toward zero). fx_rate is NOT wrapped in ZEROIFNULL, so a\n    # NULL fx_rate propagates to NULL for the whole expression and for the\n    # final CAST as well.\n    fx_rate = df['fx_rate']\n    numerator = balance_cents_zeroed.astype('float64') * fx_rate\n    val = numerator / 100.0\n\n    # np.trunc truncates toward zero, matching Teradata's INTEGER CAST semantics.\n    fx_units_float = np.trunc(val)\n\n    # Convert to nullable integer type, preserving NULLs where fx_rate was NULL.\n    fx_units = fx_units_float.astype('Int64')\n\n    out = pd.DataFrame({\n        'account_id': df['account_id'].values,\n        'balance_bucket': balance_bucket.values,\n        'fx_units': fx_units.values,\n    })\n\n    return {'balance_buckets': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 342,
+   "tokens_out": 506,
+   "usd": 0.002872,
+   "wall_s": 3.493881940841675
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4502,
+  "tokens_out": 12664,
+  "usd": 0.203466,
+  "wall_s": 128.21716117858887
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

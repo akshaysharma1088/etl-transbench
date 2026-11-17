@@ -1,0 +1,51 @@
+{
+ "config": "A1_trace_only",
+ "rep": 2,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Multi-step partition refresh: DELETE whole arriving partitions then INSERT.\n    \n    Step 1: Create staging table with aggregated inbound data (qty > 0)\n    Step 2: Delete from target_snapshot all rows matching batch_dates in staging\n    Step 3: Insert staging data into target_snapshot\n    \n    This ensures entire partitions are refreshed, not upserted.\n    \"\"\"\n    \n    inbound = inputs['inbound'].copy()\n    \n    # Locate the prior-day snapshot table under a tolerant set of possible keys,\n    # since the exact input key name may vary across harness configurations.\n    snapshot_key_candidates = [\n        'target_snapshot',\n        'TARGET_SNAPSHOT',\n        'Target_Snapshot',\n        'target_snapshot_prior',\n        'prior_snapshot',\n        'snapshot',\n    ]\n    \n    target_snapshot = None\n    for key in snapshot_key_candidates:\n        if key in inputs:\n            target_snapshot = inputs[key].copy()\n            break\n    \n    if target_snapshot is None:\n        # No prior snapshot provided; start from an empty table with expected schema.\n        target_snapshot = pd.DataFrame(\n            columns=['product_id', 'batch_date', 'total_qty', 'max_unit_cost']\n        )\n    \n    # Step 1: CREATE STG_NEW - filter qty > 0 and aggregate\n    stg_new = inbound[inbound['qty'] > 0].copy()\n    stg_new = stg_new.groupby(['product_id', 'batch_date'], as_index=False).agg(\n        total_qty=('qty', 'sum'),\n        max_unit_cost=('unit_cost', 'max'),\n    )\n    \n    # Step 2: DELETE FROM TARGET_SNAPSHOT where batch_date IN (SELECT DISTINCT batch_date FROM STG_NEW)\n    batch_dates_to_delete = stg_new['batch_date'].unique()\n    target_snapshot = target_snapshot[~target_snapshot['batch_date'].isin(batch_dates_to_delete)]\n    \n    # Step 3: INSERT INTO TARGET_SNAPSHOT SELECT * FROM STG_NEW\n    target_snapshot = pd.concat([target_snapshot, stg_new], ignore_index=True)\n    \n    return {'target_snapshot': target_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 626,
+   "usd": 0.003528,
+   "wall_s": 4.149228096008301
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1900,
+  "tokens_out": 1553,
+  "usd": 0.028995,
+  "wall_s": 14.030634880065918
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

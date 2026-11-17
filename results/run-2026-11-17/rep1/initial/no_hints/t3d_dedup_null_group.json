@@ -1,0 +1,16 @@
+{
+ "task": "t3d_dedup_null_group",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy ETL semantics:\n    1. Sort by meter_id ASC, read_ts ASC, read_seq ASC\n    2. Dedup keeping LAST row per meter_id\n    3. Aggregate by zone (treating NULL zone as a real group)\n    4. Output zone_totals with zone, total_kwh, meter_count\n    \"\"\"\n    \n    # Read input\n    meter_reads = inputs['meter_reads'].copy()\n    \n    # Step 1: Sort by meter_id, read_ts, read_seq (all ascending)\n    # Handle NaN/None values: in pandas, NaN sorts to the end for numeric/string columns\n    meter_reads = meter_reads.sort_values(\n        by=['meter_id', 'read_ts', 'read_seq'],\n        ascending=[True, True, True],\n        na_position='last'\n    )\n    \n    # Step 2: Dedup - keep LAST row per meter_id\n    # Reset index to avoid index-based operations interfering\n    meter_reads = meter_reads.reset_index(drop=True)\n    # Keep last occurrence of each meter_id\n    deduped = meter_reads.drop_duplicates(\n        subset=['meter_id'],\n        keep='last'\n    )\n    \n    # Step 3: Aggregate by zone\n    # Group by zone (NULL/NaN zones form their own group)\n    # Aggregations: total_kwh = SUM(kwh), meter_count = COUNT(*)\n    grouped = deduped.groupby('zone', dropna=False).agg(\n        total_kwh=('kwh', 'sum'),\n        meter_count=('meter_id', 'count')\n    ).reset_index()\n    \n    # Step 4: Prepare output with correct column order\n    zone_totals = grouped[['zone', 'total_kwh', 'meter_count']].copy()\n    \n    return {'zone_totals': zone_totals}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 477,
+   "tokens_out": 526,
+   "usd": 0.003107,
+   "wall_s": 4.079298496246338
+  }
+ ]
+}

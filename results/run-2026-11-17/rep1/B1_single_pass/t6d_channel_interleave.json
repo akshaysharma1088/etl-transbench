@@ -1,0 +1,46 @@
+{
+ "config": "B1_single_pass",
+ "rep": 1,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize events per (user_id, channel) independently.\n    A 25-minute gap rule applies within each (user_id, channel) stream.\n    Events from different channels do not interact.\n    \"\"\"\n    \n    # Assume the input is 'events' with columns: user_id, channel, event_ts, event_id, ...\n    if 'events' not in inputs:\n        return {'channel_sessions': pd.DataFrame()}\n    \n    events = inputs['events'].copy()\n    \n    if events.empty:\n        return {'channel_sessions': pd.DataFrame(columns=[\n            'user_id', 'channel', 'session_num', 'session_start', 'session_end', 'event_count'\n        ])}\n    \n    # Ensure proper types\n    events['event_ts'] = pd.to_datetime(events['event_ts'])\n    \n    # Sort by (user_id, channel, event_ts, event_id)\n    events = events.sort_values(\n        by=['user_id', 'channel', 'event_ts', 'event_id'],\n        na_position='last'\n    ).reset_index(drop=True)\n    \n    # Create session numbers per (user_id, channel)\n    # A new session starts if:\n    # 1. It's the first event for that (user_id, channel) pair\n    # 2. The time gap from the previous event exceeds 25 minutes (1500 seconds)\n    \n    events['session_id'] = None\n    session_counter = {}  # (user_id, channel) -> next session_num\n    \n    for idx, row in events.iterrows():\n        user_id = row['user_id']\n        channel = row['channel']\n        event_ts = row['event_ts']\n        \n        key = (user_id, channel)\n        \n        if key not in session_counter:\n            # First event for this (user_id, channel)\n            session_counter[key] = 1\n            events.at[idx, 'session_id'] = 1\n        else:\n            # Check if we need a new session based on time gap\n            # Find the previous event for this (user_id, channel)\n            prev_mask = (\n                (events['user_id'] == user_id) &\n                (events['channel'] == channel) &\n                (events.index < idx)\n            )\n            prev_indices = events[prev_mask].index\n            \n            if len(prev_indices) > 0:\n                prev_idx = prev_indices[-1]\n                prev_ts = events.at[prev_idx, 'event_ts']\n                time_gap = (event_ts - prev_ts).total_seconds()\n                \n                # 25 minutes = 1500 seconds\n                if time_gap > 1500:\n                    session_counter[key] += 1\n                else:\n                    # Same session as previous event\n                    session_counter[key] = events.at[prev_idx, 'session_id']\n            \n            events.at[idx, 'session_id'] = session_counter[key]\n    \n    # Aggregate by (user_id, channel, session_id)\n    grouped = events.groupby(['user_id', 'channel', 'session_id'], as_index=False).agg({\n        'event_ts': ['min', 'max', 'count']\n    })\n    \n    grouped.columns = ['user_id', 'channel', 'session_id', 'session_start', 'session_end', 'event_count']\n    \n    # Rename session_id to session_num and ensure it's 1-based per (user_id, channel)\n    # Actually, session_id already represents the session number within each (user_id, channel)\n    grouped = grouped.rename(columns={'session_id': 'session_num'})\n    \n    # Sort by user_id, channel, session_num\n    grouped = grouped.sort_values(\n        by=['user_id', 'channel', 'session_num']\n    ).reset_index(drop=True)\n    \n    # Ensure columns are in the correct order\n    result = grouped[['user_id', 'channel', 'session_num', 'session_start', 'session_end', 'event_count']]\n    \n    return {'channel_sessions': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 299,
+   "tokens_out": 1106,
+   "usd": 0.005829,
+   "wall_s": 7.547851324081421
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

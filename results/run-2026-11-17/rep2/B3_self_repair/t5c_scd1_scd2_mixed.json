@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "syntactic"
+  }
+ ],
+ "final_code": "```python\nimport pandas as pd\n\n\ndef _null_safe_eq(a, b):\n    \"\"\"NULL-aware equality: NaN/None vs NaN/None -> equal; NaN vs value -> not equal.\"\"\"\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return True\n    if a_null or b_null:\n        return False\n    return a == b\n\n\ndef run(inputs: dict) -> dict:\n    dim_acct = inputs[\"DIM_ACCT\"].copy()\n    stg_acct = inputs[\"STG_ACCT\"].copy()\n\n    cols = [\"acct_id\", \"email\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    for c in cols:\n        if c not in dim_ac",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 983,
+   "tokens_out": 4000,
+   "usd": 0.062949,
+   "wall_s": 36.51809811592102
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6795,
+  "tokens_out": 13655,
+  "usd": 0.22521,
+  "wall_s": 137.89444494247437
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

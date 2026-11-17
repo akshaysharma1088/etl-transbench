@@ -1,0 +1,51 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionization with forced midnight split.\n    A new session starts when:\n    - Gap from previous event of same user is STRICTLY > 45 minutes, OR\n    - Event falls on a DIFFERENT CALENDAR DATE than previous event\n    Session numbering restarts at 1 for each user.\n    \"\"\"\n\n    events = inputs['events'].copy()\n\n    # Ensure event_ts is datetime\n    if not pd.api.types.is_datetime64_any_dtype(events['event_ts']):\n        events['event_ts'] = pd.to_datetime(events['event_ts'])\n\n    # Sort by user_id, then event_ts, then event_id (stable ordering)\n    events = events.sort_values(\n        by=['user_id', 'event_ts', 'event_id'],\n        na_position='last',\n        kind='mergesort'\n    ).reset_index(drop=True)\n\n    # Calendar date of each event\n    events['event_date'] = events['event_ts'].dt.date\n\n    # Previous event's timestamp and date within the same user group\n    grp = events.groupby('user_id', sort=False)\n    prev_ts = grp['event_ts'].shift(1)\n    prev_date = grp['event_date'].shift(1)\n\n    # Gap in minutes from previous event (NaN for first event of each user)\n    gap_minutes = (events['event_ts'] - prev_ts).dt.total_seconds() / 60.0\n\n    # A new session starts if:\n    #  - it's the first event for that user (prev_ts is NaT), OR\n    #  - gap > 45 minutes, OR\n    #  - calendar date differs from previous event's date\n    is_first = prev_ts.isna()\n    is_new_session = (\n        is_first\n        | (gap_minutes > 45)\n        | (events['event_date'] != prev_date)\n    )\n\n    # Session number per user: cumulative count of new-session flags within user group\n    events['session_num'] = is_new_session.groupby(events['user_id']).cumsum().astype(int)\n\n    # Aggregate into sessions\n    sessions = events.groupby(['user_id', 'session_num'], as_index=False).agg(\n        session_date=('event_date', 'first'),\n        session_start=('event_ts', 'min'),\n        session_end=('event_ts', 'max'),\n        event_count=('event_ts', 'count'),\n    )\n\n    # Reorder columns as specified\n    sessions = sessions[\n        ['user_id', 'session_num', 'session_date', 'session_start', 'session_end', 'event_count']\n    ]\n\n    # Sort by user_id, then session_num\n    sessions = sessions.sort_values(\n        by=['user_id', 'session_num'], kind='mergesort'\n    ).reset_index(drop=True)\n\n    return {\n        'user_sessions': sessions\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 332,
+   "tokens_out": 1138,
+   "usd": 0.006022,
+   "wall_s": 6.850537300109863
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2029,
+  "tokens_out": 1197,
+  "usd": 0.024042,
+  "wall_s": 9.927496671676636
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

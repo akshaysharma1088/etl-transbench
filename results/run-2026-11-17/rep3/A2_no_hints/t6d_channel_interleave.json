@@ -1,0 +1,51 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import timedelta\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize events per (user_id, channel) independently.\n    - 25-minute STRICT gap rule within each (user_id, channel) stream\n    - Order: event_ts, then event_id\n    - Output: user_id, channel, session_num (1-based), session_start, session_end, event_count\n    \"\"\"\n\n    events = inputs['events'].copy()\n\n    # Preserve original dtypes for user_id and channel (do NOT force to str)\n    events['event_ts'] = pd.to_datetime(events['event_ts'])\n\n    # Build sort keys without mutating original dtypes of user_id/channel\n    sort_cols = ['user_id', 'channel', 'event_ts', 'event_id']\n    events = events.sort_values(\n        by=sort_cols,\n        na_position='last',\n        kind='mergesort'  # stable sort to respect tie-breaking deterministically\n    ).reset_index(drop=True)\n\n    # Detect group boundaries for (user_id, channel)\n    user_channel_change = (\n        (events['user_id'] != events['user_id'].shift(1)) |\n        (events['channel'] != events['channel'].shift(1))\n    )\n    # Treat NaN comparisons correctly: if both are NaN, shift comparison gives False incorrectly;\n    # but user_id/channel are typically non-null keys, so this is fine.\n\n    gap_threshold = timedelta(minutes=25)\n\n    # Compute time diff within same user/channel group\n    prev_ts = events['event_ts'].shift(1)\n    same_group = ~user_channel_change\n    time_diff = events['event_ts'] - prev_ts\n\n    # New session if group changed OR gap > 25 minutes (and both timestamps are valid)\n    new_session = user_channel_change | (\n        same_group & prev_ts.notna() & events['event_ts'].notna() & (time_diff > gap_threshold)\n    )\n\n    # Session number within each user/channel: cumulative sum of new_session flags per group,\n    # but reset at each user/channel boundary.\n    # First, assign a group id for (user_id, channel) to reset session counting properly.\n    group_id = user_channel_change.cumsum()\n\n    # Within each group_id, session_num increments on new_session (which is True at group start too)\n    events['_group_id'] = group_id\n    events['_new_session'] = new_session\n\n    # Compute session_num as cumulative count of new_session within each group_id\n    events['session_num'] = events.groupby('_group_id')['_new_session'].cumsum().astype('int64')\n\n    # Group by (user_id, channel, session_num) to get session summaries\n    session_groups = events.groupby(['user_id', 'channel', 'session_num'], as_index=False).agg(\n        session_start=('event_ts', 'min'),\n        session_end=('event_ts', 'max'),\n        event_count=('event_ts', 'count')\n    )\n\n    # Ensure dtypes\n    session_groups['session_num'] = session_groups['session_num'].astype('int64')\n    session_groups['session_start'] = pd.to_datetime(session_groups['session_start'])\n    session_groups['session_end'] = pd.to_datetime(session_groups['session_end'])\n    session_groups['event_count'] = session_groups['event_count'].astype('int64')\n\n    # Sort for consistent output\n    session_groups = session_groups.sort_values(\n        by=['user_id', 'channel', 'session_num']\n    ).reset_index(drop=True)\n\n    return {'channel_sessions': session_groups}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 299,
+   "tokens_out": 1042,
+   "usd": 0.005509,
+   "wall_s": 5.974901914596558
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2402,
+  "tokens_out": 1375,
+  "usd": 0.027831,
+  "wall_s": 12.157676458358765
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

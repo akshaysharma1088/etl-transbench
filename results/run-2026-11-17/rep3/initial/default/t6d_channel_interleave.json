@@ -1,0 +1,16 @@
+{
+ "task": "t6d_channel_interleave",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\nfrom typing import Dict\n\ndef run(inputs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize events per (user_id, channel) independently.\n    A 25-minute gap within the same (user_id, channel) pair starts a new session.\n    Events from different channels do not interact.\n    \"\"\"\n    \n    events = inputs['events'].copy()\n    \n    # Ensure proper types\n    events['event_ts'] = pd.to_datetime(events['event_ts'])\n    events['user_id'] = events['user_id'].astype(str)\n    events['channel'] = events['channel'].astype(str)\n    events['event_id'] = events['event_id'].astype(str)\n    \n    # Sort by (user_id, channel, event_ts, event_id) to establish order\n    events = events.sort_values(\n        by=['user_id', 'channel', 'event_ts', 'event_id'],\n        na_position='last'\n    ).reset_index(drop=True)\n    \n    # Group by (user_id, channel)\n    sessions_list = []\n    \n    for (user_id, channel), group in events.groupby(['user_id', 'channel'], sort=False):\n        group = group.reset_index(drop=True)\n        \n        # Calculate time gaps (in minutes) between consecutive events\n        group['time_diff'] = group['event_ts'].diff().dt.total_seconds() / 60\n        \n        # Session boundaries: gap > 25 minutes or first event\n        group['new_session'] = (group['time_diff'] > 25) | (group.index == 0)\n        \n        # Assign session numbers (1-based)\n        group['session_num'] = group['new_session'].cumsum()\n        \n        # Group by session and aggregate\n        for session_num, session_group in group.groupby('session_num', sort=False):\n            session_start = session_group['event_ts'].min()\n            session_end = session_group['event_ts'].max()\n            event_count = len(session_group)\n            \n            sessions_list.append({\n                'user_id': user_id,\n                'channel': channel,\n                'session_num': int(session_num),\n                'session_start': session_start,\n                'session_end': session_end,\n                'event_count': event_count\n            })\n    \n    channel_sessions = pd.DataFrame(sessions_list)\n    \n    # Ensure output column order and types\n    if len(channel_sessions) > 0:\n        channel_sessions = channel_sessions[[\n            'user_id', 'channel', 'session_num', 'session_start', 'session_end', 'event_count'\n        ]]\n        channel_sessions['session_num'] = channel_sessions['session_num'].astype('int64')\n        channel_sessions['event_count'] = channel_sessions['event_count'].astype('int64')\n    else:\n        channel_sessions = pd.DataFrame(columns=[\n            'user_id', 'channel', 'session_num', 'session_start', 'session_end', 'event_count'\n        ])\n    \n    return {'channel_sessions': channel_sessions}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 299,
+   "tokens_out": 819,
+   "usd": 0.004394,
+   "wall_s": 5.34492301940918
+  }
+ ]
+}

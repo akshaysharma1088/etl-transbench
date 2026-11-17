@@ -1,0 +1,46 @@
+{
+ "config": "B1_single_pass",
+ "rep": 2,
+ "task": "t1d_tsql_top_ties",
+ "category": "T1",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicates T-SQL TOP (5) WITH TIES semantics:\n    - Filters WHERE active = 1\n    - Orders by score DESC\n    - Returns top 5 rows plus any additional rows that tie at rank 5\n    - ISNULL(manager, 'UNASSIGNED') coalesces nulls\n    - String concatenation with '+' propagates NULL (NULL + anything = NULL)\n    \"\"\"\n    df = inputs['branch_scores'].copy()\n    \n    # Filter WHERE active = 1\n    df = df[df['active'] == 1].copy()\n    \n    # Sort by score DESC\n    df = df.sort_values('score', ascending=False, na_position='last').reset_index(drop=True)\n    \n    # Compute rank with standard competition ranking (1223 style)\n    # This matches SQL Server's ROW_NUMBER() OVER (ORDER BY score DESC)\n    # For WITH TIES, we need RANK() which gives same rank to ties\n    df['_rank'] = df['score'].rank(method='min', ascending=False)\n    \n    # Find the score value at rank 5\n    rank_5_rows = df[df['_rank'] <= 5]\n    if len(rank_5_rows) > 0:\n        cutoff_rank = 5\n        # Get the minimum score among rows with rank <= 5 (which is the score at rank 5)\n        cutoff_score = rank_5_rows[rank_5_rows['_rank'] == cutoff_rank]['score'].min()\n        \n        # Keep all rows with rank <= cutoff_rank (this includes ties at the boundary)\n        df = df[df['_rank'] <= cutoff_rank].copy()\n    else:\n        df = df.head(5).copy()\n    \n    # Apply ISNULL(manager, 'UNASSIGNED')\n    df['manager_norm'] = df['manager'].fillna('UNASSIGNED')\n    \n    # String concatenation with NULL propagation: branch_code + '-' + region_code\n    # In SQL Server, NULL + anything = NULL\n    def concat_with_null_propagation(branch_code, region_code):\n        if pd.isna(branch_code) or pd.isna(region_code):\n            return np.nan\n        return str(branch_code) + '-' + str(region_code)\n    \n    df['branch_label'] = df.apply(\n        lambda row: concat_with_null_propagation(row['branch_code'], row['region_code']),\n        axis=1\n    )\n    \n    # Select final columns in order\n    result = df[['branch_id', 'manager_norm', 'branch_label', 'score']].copy()\n    \n    # Sort by score DESC to maintain output order\n    result = result.sort_values('score', ascending=False, na_position='last').reset_index(drop=True)\n    \n    return {'top_branches': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 364,
+   "tokens_out": 759,
+   "usd": 0.004159,
+   "wall_s": 5.7297563552856445
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

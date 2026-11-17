@@ -1,0 +1,46 @@
+{
+ "config": "LEGATO",
+ "rep": 2,
+ "task": "t7c_crossfield_reference",
+ "category": "T7",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs['orders'].copy()\n    ref_customers = inputs['ref_customers'].copy()\n    ref_skus = inputs['ref_skus'].copy()\n\n    order_cols = list(orders.columns)\n\n    # Deduplicate reference tables on their key, keeping first occurrence\n    # (legacy semantics assume unique keys; this is a safe tie-break).\n    ref_customers_dedup = ref_customers.drop_duplicates(subset='customer_id', keep='first')\n    ref_skus_dedup = ref_skus.drop_duplicates(subset='sku', keep='first')\n\n    # Keep a stable row index to preserve original order of orders after merges\n    work = orders.copy()\n    work['_row_id'] = range(len(work))\n\n    # Merge with customer reference, tracking presence\n    merged = work.merge(\n        ref_customers_dedup[['customer_id', 'status']],\n        on='customer_id',\n        how='left',\n        indicator='cust_ind'\n    )\n\n    # Merge with sku reference, tracking presence\n    merged = merged.merge(\n        ref_skus_dedup[['sku', 'discontinued', 'allowed_countries']],\n        on='sku',\n        how='left',\n        indicator='sku_ind'\n    )\n\n    # Restore original order\n    merged = merged.sort_values('_row_id').reset_index(drop=True)\n\n    def classify(row):\n        # R1: customer unknown\n        if row['cust_ind'] == 'left_only':\n            return 'CUST_UNKNOWN'\n\n        # R2: customer status not ACTIVE\n        status = row['status']\n        if pd.isna(status) or status != 'ACTIVE':\n            return 'CUST_INACTIVE'\n\n        # R3: sku unknown\n        if row['sku_ind'] == 'left_only':\n            return 'SKU_UNKNOWN'\n\n        # R4: sku discontinued\n        disc = row['discontinued']\n        if pd.notna(disc):\n            try:\n                if int(disc) == 1:\n                    return 'SKU_DISC'\n            except (ValueError, TypeError):\n                pass\n\n        # R5: allowed_countries whitelist check (trimmed, comma-delimited)\n        allowed = row['allowed_countries']\n        if pd.notna(allowed):\n            allowed_str = str(allowed)\n            if allowed_str.strip() != '':\n                members = [m.strip() for m in allowed_str.split(',')]\n                ship_country = row['ship_country']\n                if ship_country not in members:\n                    return 'CTRY_BLOCKED'\n\n        return None\n\n    merged['reason_code'] = merged.apply(classify, axis=1)\n\n    clean_mask = merged['reason_code'].isna()\n\n    orders_clean = merged.loc[clean_mask, order_cols].reset_index(drop=True)\n\n    reject_cols = order_cols + ['reason_code']\n    orders_rejects = merged.loc[~clean_mask, reject_cols].reset_index(drop=True)\n\n    return {\n        'orders_clean': orders_clean,\n        'orders_rejects': orders_rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 704,
+   "tokens_out": 2675,
+   "usd": 0.042237,
+   "wall_s": 21.62746238708496
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

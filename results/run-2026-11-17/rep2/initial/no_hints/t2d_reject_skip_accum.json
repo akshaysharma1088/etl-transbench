@@ -1,0 +1,16 @@
+{
+ "task": "t2d_reject_skip_accum",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    postings = inputs[\"POSTINGS\"].copy()\n\n    # Preserve cursor ordering: ORDER BY account_id, post_date, post_seq\n    postings = postings.sort_values(\n        by=[\"account_id\", \"post_date\", \"post_seq\"],\n        kind=\"mergesort\"  # stable sort to keep deterministic tie-breaking\n    ).reset_index(drop=True)\n\n    posted_rows = []\n    reject_rows = []\n\n    prev_acct = None\n    tot = 0.0\n    rej = 0\n\n    for _, r in postings.iterrows():\n        acct = r[\"account_id\"]\n        post_seq = r[\"post_seq\"]\n        post_date = r[\"post_date\"]\n        qty = r[\"qty\"]\n        unit_price = r[\"unit_price\"]\n\n        if acct != prev_acct:\n            # flush previous account's reject count (even if zero)\n            if prev_acct is not None:\n                reject_rows.append({\"account_id\": prev_acct, \"reject_count\": rej})\n            tot = 0.0\n            rej = 0\n            prev_acct = acct\n\n        # TRY block\n        is_bad = (\n            pd.isna(qty) or qty <= 0 or\n            pd.isna(unit_price) or unit_price < 0\n        )\n\n        if is_bad:\n            # CATCH: counted, not posted, total unchanged\n            rej += 1\n        else:\n            v = qty * unit_price\n            tot = tot + v\n            posted_rows.append({\n                \"account_id\": acct,\n                \"post_seq\": post_seq,\n                \"post_date\": post_date,\n                \"post_value\": float(v),\n                \"running_total\": float(tot),\n            })\n\n    # flush final account's reject count\n    if prev_acct is not None:\n        reject_rows.append({\"account_id\": prev_acct, \"reject_count\": rej})\n\n    posted_totals = pd.DataFrame(\n        posted_rows,\n        columns=[\"account_id\", \"post_seq\", \"post_date\", \"post_value\", \"running_total\"],\n    )\n    if len(posted_totals) > 0:\n        posted_totals[\"post_value\"] = posted_totals[\"post_value\"].astype(float)\n        posted_totals[\"running_total\"] = posted_totals[\"running_total\"].astype(float)\n\n    reject_counts = pd.DataFrame(\n        reject_rows,\n        columns=[\"account_id\", \"reject_count\"],\n    )\n    if len(reject_counts) > 0:\n        reject_counts[\"reject_count\"] = reject_counts[\"reject_count\"].astype(int)\n\n    return {\n        \"posted_totals\": posted_totals,\n        \"reject_counts\": reject_counts,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 935,
+   "tokens_out": 1196,
+   "usd": 0.020745,
+   "wall_s": 9.573438882827759
+  }
+ ]
+}

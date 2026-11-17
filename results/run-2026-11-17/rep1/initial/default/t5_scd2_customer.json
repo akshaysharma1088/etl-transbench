@@ -1,0 +1,16 @@
+{
+ "task": "t5_scd2_customer",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_CUSTOMER'].copy()\n    stg = inputs['STG_CUSTOMER'].copy()\n\n    # Ensure dtypes are consistent for comparisons\n    if 'update_date' in stg.columns:\n        stg['update_date'] = pd.to_datetime(stg['update_date'])\n    if 'eff_start_date' in dim.columns:\n        dim['eff_start_date'] = pd.to_datetime(dim['eff_start_date'])\n    if 'eff_end_date' in dim.columns:\n        dim['eff_end_date'] = pd.to_datetime(dim['eff_end_date'])\n\n    # --- Step 1: Deduplicate STG_CUSTOMER ---\n    # Keep latest record per customer_id by update_date; tie-break by\n    # greater (name, segment) lexicographic pair (DESC order).\n    stg_sorted = stg.sort_values(\n        by=['customer_id', 'update_date', 'name', 'segment'],\n        ascending=[True, False, False, False],\n        na_position='last'\n    )\n    stg_dedup = stg_sorted.drop_duplicates(subset='customer_id', keep='first').reset_index(drop=True)\n\n    def eq_or_both_null(a, b):\n        a_null = pd.isna(a)\n        b_null = pd.isna(b)\n        if a_null and b_null:\n            return True\n        if a_null or b_null:\n            return False\n        return a == b\n\n    dim = dim.reset_index(drop=True)\n\n    new_rows = []\n\n    for _, s in stg_dedup.iterrows():\n        cid = s['customer_id']\n        mask_current = (dim['customer_id'] == cid) & (dim['is_current'] == 1)\n        current_rows = dim[mask_current]\n\n        if current_rows.empty:\n            new_rows.append({\n                'customer_id': cid,\n                'name': s['name'],\n                'segment': s['segment'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': pd.NaT,\n                'is_current': 1\n            })\n        else:\n            # Legacy assumes a single current row per customer_id; take first.\n            c = current_rows.iloc[0]\n\n            name_same = eq_or_both_null(c['name'], s['name'])\n            segment_same = eq_or_both_null(c['segment'], s['segment'])\n\n            changed = (not name_same) or (not segment_same)\n\n            if changed:\n                dim.loc[mask_current, 'eff_end_date'] = s['update_date']\n                dim.loc[mask_current, 'is_current'] = 0\n\n                new_rows.append({\n                    'customer_id': cid,\n                    'name': s['name'],\n                    'segment': s['segment'],\n                    'eff_start_date': s['update_date'],\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1\n                })\n            # else: no change, do nothing\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=[\n            'customer_id', 'name', 'segment', 'eff_start_date', 'eff_end_date', 'is_current'\n        ])\n        dim = pd.concat([dim, new_df], ignore_index=True)\n\n    # Ensure output column order matches input schema\n    cols = ['customer_id', 'name', 'segment', 'eff_start_date', 'eff_end_date', 'is_current']\n    dim = dim[cols]\n\n    return {'dim_customer_out': dim}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1017,
+   "tokens_out": 2848,
+   "usd": 0.045771,
+   "wall_s": 23.597105979919434
+  }
+ ]
+}

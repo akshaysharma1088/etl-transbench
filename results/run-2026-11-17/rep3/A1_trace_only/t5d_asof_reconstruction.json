@@ -1,0 +1,51 @@
+{
+ "config": "A1_trace_only",
+ "rep": 3,
+ "task": "t5d_asof_reconstruction",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _get_input(inputs: dict, *candidates):\n    \"\"\"Fetch an input dataframe trying several possible key spellings.\"\"\"\n    for name in candidates:\n        if name in inputs:\n            return inputs[name]\n    # fallback: case-insensitive match\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    for name in candidates:\n        if name.lower() in lower_map:\n            return inputs[lower_map[name.lower()]]\n    raise KeyError(f\"None of {candidates} found in inputs keys {list(inputs.keys())}\")\n\n\ndef run(inputs: dict) -> dict:\n    hist = _get_input(inputs, \"DIM_EMP_HIST\", \"dim_emp_hist\").copy()\n    queries = _get_input(inputs, \"ASOF_QUERIES\", \"asof_queries\").copy()\n\n    # Coerce types\n    hist[\"emp_id\"] = hist[\"emp_id\"]\n    hist[\"eff_start_date\"] = pd.to_datetime(hist[\"eff_start_date\"])\n    hist[\"eff_end_date\"] = pd.to_datetime(hist[\"eff_end_date\"])\n\n    queries[\"emp_id\"] = queries[\"emp_id\"]\n    queries[\"as_of_date\"] = pd.to_datetime(queries[\"as_of_date\"])\n\n    # Inner join on emp_id\n    merged = queries.merge(hist, on=\"emp_id\", how=\"inner\", suffixes=(\"\", \"_h\"))\n\n    # Apply interval conditions: as_of_date >= eff_start_date\n    #                             AND (eff_end_date IS NULL OR as_of_date < eff_end_date)\n    cond_start = merged[\"as_of_date\"] >= merged[\"eff_start_date\"]\n    cond_end = merged[\"eff_end_date\"].isna() | (merged[\"as_of_date\"] < merged[\"eff_end_date\"])\n\n    result = merged[cond_start & cond_end]\n\n    out = result[[\"query_id\", \"emp_id\", \"dept\", \"grade\"]].reset_index(drop=True)\n\n    return {\"asof_result\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 738,
+   "tokens_out": 685,
+   "usd": 0.012489,
+   "wall_s": 6.270246267318726
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1593,
+  "tokens_out": 867,
+  "usd": 0.017784,
+  "wall_s": 7.293442487716675
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

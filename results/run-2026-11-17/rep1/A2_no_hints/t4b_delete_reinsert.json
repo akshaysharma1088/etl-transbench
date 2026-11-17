@@ -1,0 +1,66 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    inbound = inputs[\"inbound\"]\n    target_snapshot = inputs[\"target_snapshot\"]\n\n    # Step 1: build STG_NEW\n    filtered = inbound[inbound[\"qty\"] > 0]\n\n    stg_new = (\n        filtered.groupby([\"product_id\", \"batch_date\"], dropna=False)\n        .agg(total_qty=(\"qty\", \"sum\"), max_unit_cost=(\"unit_cost\", \"max\"))\n        .reset_index()\n    )\n\n    stg_new = stg_new[[\"product_id\", \"batch_date\", \"total_qty\", \"max_unit_cost\"]]\n\n    # Step 2: delete rows from target_snapshot whose batch_date is in stg_new's batch_dates\n    arriving_dates = stg_new[\"batch_date\"].drop_duplicates()\n\n    if target_snapshot.empty:\n        remaining = target_snapshot.copy()\n    else:\n        mask_delete = target_snapshot[\"batch_date\"].isin(arriving_dates)\n        remaining = target_snapshot[~mask_delete].copy()\n\n    # Step 3: insert stg_new rows\n    result = pd.concat([remaining, stg_new], ignore_index=True)\n\n    result = result[[\"product_id\", \"batch_date\", \"total_qty\", \"max_unit_cost\"]]\n\n    return {\"target_snapshot\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 568,
+   "usd": 0.003238,
+   "wall_s": 3.5953173637390137
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5451,
+  "tokens_out": 6975,
+  "usd": 0.12097800000000002,
+  "wall_s": 69.16381883621216
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

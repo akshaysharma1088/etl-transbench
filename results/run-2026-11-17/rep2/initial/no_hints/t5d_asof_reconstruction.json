@@ -1,0 +1,16 @@
+{
+ "task": "t5d_asof_reconstruction",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    emp_hist = inputs[\"DIM_EMP_HIST\"].copy()\n    asof_queries = inputs[\"ASOF_QUERIES\"].copy()\n\n    # Coerce date columns to datetime for correct comparison semantics.\n    emp_hist[\"eff_start_date\"] = pd.to_datetime(emp_hist[\"eff_start_date\"])\n    emp_hist[\"eff_end_date\"] = pd.to_datetime(emp_hist[\"eff_end_date\"])\n    asof_queries[\"as_of_date\"] = pd.to_datetime(asof_queries[\"as_of_date\"])\n\n    # Inner join on emp_id (cartesian per matching emp_id), mirroring the SQL join.\n    merged = asof_queries.merge(\n        emp_hist,\n        on=\"emp_id\",\n        how=\"inner\",\n        suffixes=(\"\", \"_hist\"),\n    )\n\n    # Half-open interval filter: start inclusive, end exclusive (NULL end = open-ended).\n    cond = (merged[\"as_of_date\"] >= merged[\"eff_start_date\"]) & (\n        merged[\"eff_end_date\"].isna() | (merged[\"as_of_date\"] < merged[\"eff_end_date\"])\n    )\n\n    result = merged.loc[cond, [\"query_id\", \"emp_id\", \"dept\", \"grade\"]].reset_index(\n        drop=True\n    )\n\n    return {\"asof_result\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 683,
+   "tokens_out": 1179,
+   "usd": 0.019734,
+   "wall_s": 10.138310194015503
+  }
+ ]
+}

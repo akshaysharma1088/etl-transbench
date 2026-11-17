@@ -1,0 +1,51 @@
+{
+ "config": "LEGATO",
+ "rep": 2,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    # Resolve the ledger input key case-insensitively / robustly\n    key = None\n    for k in inputs.keys():\n        if k.strip().lower() == \"ledger\":\n            key = k\n            break\n    if key is None:\n        # fallback: if there's exactly one input, use it\n        if len(inputs) == 1:\n            key = next(iter(inputs.keys()))\n        else:\n            raise KeyError(\"LEDGER input not found among: \" + \", \".join(inputs.keys()))\n\n    df = inputs[key].copy()\n\n    # Preserve original columns, add working columns\n    df[\"_amount_filled\"] = df[\"amount\"].fillna(0)\n\n    # Sort exactly as the cursor would: ORDER BY account_id, entry_date, row_seq\n    df = df.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        kind=\"mergesort\"  # stable sort to keep deterministic tie-breaking\n    ).reset_index(drop=True)\n\n    # Indicator for STMT rows\n    is_stmt = (df[\"entry_type\"] == \"STMT\").astype(int)\n\n    # Within each account, cyc starts at 1 and increments by 1 at each STMT row\n    # (including that STMT row itself, since reset happens before add).\n    # So cyc = 1 + cumulative count of STMT rows up to and including current row.\n    cum_stmt = is_stmt.groupby(df[\"account_id\"]).cumsum()\n    df[\"cycle_no\"] = 1 + cum_stmt\n\n    # bal resets to 0 at each STMT row (before adding), so cumulative balance\n    # within a (account_id, cycle_no) group is just the running sum of amounts\n    # (coalesced to 0) within that group, since each STMT row starts a new group\n    # and its own amount is included in that new group's sum.\n    df[\"cycle_balance\"] = (\n        df.groupby([\"account_id\", \"cycle_no\"])[\"_amount_filled\"].cumsum()\n    )\n\n    result = df[\n        [\"account_id\", \"row_seq\", \"entry_date\", \"entry_type\", \"amount\",\n         \"cycle_no\", \"cycle_balance\"]\n    ].reset_index(drop=True)\n\n    return {\"cycle_balances\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 750,
+   "tokens_out": 1272,
+   "usd": 0.02133,
+   "wall_s": 12.871676683425903
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1730,
+  "tokens_out": 811,
+  "usd": 0.017355,
+  "wall_s": 6.6499083042144775
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

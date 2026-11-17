@@ -1,0 +1,16 @@
+{
+ "task": "t6b_capped_session",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    events = inputs['events'].copy()\n\n    # Coerce types\n    events['event_ts'] = pd.to_datetime(events['event_ts'], errors='coerce')\n\n    # Stable sort within user by event_ts then event_id (NaT timestamps sort last,\n    # matching typical SQL NULLS LAST ordering for ORDER BY on a non-null-expected key)\n    events = events.sort_values(\n        by=['user_id', 'event_ts', 'event_id'],\n        kind='mergesort',\n        na_position='last'\n    )\n\n    gap_threshold = pd.Timedelta(minutes=20)\n    cap_threshold = pd.Timedelta(hours=4)\n\n    out_rows = []\n\n    for user_id, group in events.groupby('user_id', sort=False):\n        session_num = 0\n        session_start = None\n        session_end = None\n        prev_ts = None\n        count = 0\n\n        for _, row in group.iterrows():\n            ts = row['event_ts']\n\n            if session_start is None:\n                # first event for this user -> starts session 1\n                session_num = 1\n                session_start = ts\n                session_end = ts\n                count = 1\n            else:\n                new_session = False\n\n                # inactivity gap check (strict >)\n                if pd.isna(ts) or pd.isna(prev_ts):\n                    # if either timestamp is null, treat as unable to compute gap;\n                    # no gap-triggered split, but cap check also skipped (NaT - NaT -> NaT)\n                    gap_exceeded = False\n                else:\n                    gap_exceeded = (ts - prev_ts) > gap_threshold\n\n                # hard cap check relative to current session start (strict >)\n                if pd.isna(ts) or pd.isna(session_start):\n                    cap_exceeded = False\n                else:\n                    cap_exceeded = (ts - session_start) > cap_threshold\n\n                if gap_exceeded or cap_exceeded:\n                    new_session = True\n\n                if new_session:\n                    out_rows.append({\n                        'user_id': user_id,\n                        'session_num': session_num,\n                        'session_start': session_start,\n                        'session_end': session_end,\n                        'event_count': count,\n                    })\n                    session_num += 1\n                    session_start = ts\n                    session_end = ts\n                    count = 1\n                else:\n                    session_end = ts\n                    count += 1\n\n            prev_ts = ts\n\n        if session_start is not None:\n            out_rows.append({\n                'user_id': user_id,\n                'session_num': session_num,\n                'session_start': session_start,\n                'session_end': session_end,\n                'event_count': count,\n            })\n\n    user_sessions = pd.DataFrame(\n        out_rows,\n        columns=['user_id', 'session_num', 'session_start', 'session_end', 'event_count']\n    )\n\n    return {'user_sessions': user_sessions}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 528,
+   "tokens_out": 1899,
+   "usd": 0.030069,
+   "wall_s": 16.37757134437561
+  }
+ ]
+}

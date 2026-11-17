@@ -1,0 +1,16 @@
+{
+ "task": "t2c_locf_carry_forward",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs['RATE_FEED'].copy()\n\n    # Preserve cursor ordering: account_id, obs_date, obs_seq\n    df = df.sort_values(['account_id', 'obs_date', 'obs_seq'], kind='mergesort')\n    df = df.reset_index(drop=True)\n\n    # Forward-fill rate within each account_id group (carry never crosses accounts)\n    df['rate_filled'] = df.groupby('account_id')['rate'].ffill()\n\n    # was_carried = 1 only when original rate was NULL but a prior non-null rate\n    # existed in the same account (i.e., rate_filled is not NULL)\n    df['was_carried'] = ((df['rate'].isna()) & (df['rate_filled'].notna())).astype('int64')\n\n    result = df[['account_id', 'obs_seq', 'obs_date', 'rate_filled', 'was_carried']].copy()\n\n    return {'rate_filled': result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 774,
+   "tokens_out": 698,
+   "usd": 0.012792,
+   "wall_s": 6.947598934173584
+  }
+ ]
+}

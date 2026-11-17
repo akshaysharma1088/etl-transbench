@@ -1,0 +1,66 @@
+{
+ "config": "B2_retranslate",
+ "rep": 1,
+ "task": "t1c_teradata_intdiv",
+ "category": "T1",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    \"\"\"\n    Reproduce the legacy Teradata SQL:\n\n        SELECT\n            account_id,\n            ZEROIFNULL(balance_cents) / 100                            AS balance_bucket,\n            CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER) AS fx_units\n        FROM acct_balance\n        WHERE acct_type <> 'CLOSED'\n\n    Teradata semantics replicated:\n      * ZEROIFNULL(balance_cents): NULL -> 0 before any arithmetic.\n      * INTEGER / INTEGER (balance_bucket) truncates toward zero\n        (NOT floor division -- e.g. -150/100 = -1, not -2).\n      * balance_cents * fx_rate / 100 is evaluated in floating point\n        (fx_rate is not an integer column), and the final\n        CAST(... AS INTEGER) truncates the float result toward zero.\n        If fx_rate is NULL, the product/CAST result is NULL.\n      * WHERE acct_type <> 'CLOSED': Teradata's three-valued logic means\n        rows where acct_type IS NULL are NOT returned (NULL <> 'CLOSED'\n        evaluates to NULL / unknown, which fails the WHERE predicate).\n    \"\"\"\n    df = inputs['acct_balance'].copy()\n\n    # ---- WHERE acct_type <> 'CLOSED' (NULLs excluded, Teradata 3VL) ----\n    mask = df['acct_type'].notna() & (df['acct_type'] != 'CLOSED')\n    df = df[mask].reset_index(drop=True)\n\n    # ---- ZEROIFNULL(balance_cents) ----\n    balance = pd.to_numeric(df['balance_cents'], errors='coerce').fillna(0)\n    balance_int = balance.astype('int64')\n\n    # ---- balance_bucket: INTEGER / INTEGER truncated toward zero ----\n    q = balance_int // 100                     # floor division (Python default)\n    r = balance_int % 100                      # Python modulo (non-negative for positive divisor)\n    # Floor division already matches truncation for non-negative dividends;\n    # for negative dividends with a nonzero remainder, adjust by +1 toward zero.\n    needs_adjust = (r != 0) & (balance_int < 0)\n    balance_bucket = (q + needs_adjust.astype('int64')).astype('int64')\n\n    # ---- fx_units: float computation, then CAST AS INTEGER (trunc toward zero) ----\n    fx_rate = df['fx_rate']\n    product = balance_int.astype('float64') * pd.to_numeric(fx_rate, errors='coerce')\n    fx_raw = product / 100.0\n\n    fx_trunc = np.trunc(fx_raw)  # np.trunc truncates toward zero, NaN stays NaN\n    fx_units = pd.Series(fx_trunc, index=df.index).astype('Int64')  # NaN -> <NA>\n\n    result = pd.DataFrame({\n        'account_id': df['account_id'],\n        'balance_bucket': balance_bucket,\n        'fx_units': fx_units,\n    })\n\n    return {'balance_buckets': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 373,
+   "tokens_out": 444,
+   "usd": 0.002593,
+   "wall_s": 3.217682361602783
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2300,
+  "tokens_out": 9746,
+  "usd": 0.15309,
+  "wall_s": 92.84723973274231
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

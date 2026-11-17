@@ -1,0 +1,16 @@
+{
+ "task": "t2c_locf_carry_forward",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"RATE_FEED\"].copy()\n\n    # Preserve legacy cursor ordering: ORDER BY account_id, obs_date, obs_seq\n    df = df.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        kind=\"mergesort\"  # stable sort to mimic deterministic cursor fetch order\n    ).reset_index(drop=True)\n\n    # Forward-fill rate within each account_id group (carry never crosses accounts)\n    filled = df.groupby(\"account_id\", sort=False)[\"rate\"].ffill()\n\n    # carried = 1 only when original rate was NULL but a prior non-null existed in same account\n    was_carried = (df[\"rate\"].isna() & filled.notna()).astype(\"int64\")\n\n    out = pd.DataFrame({\n        \"account_id\": df[\"account_id\"],\n        \"obs_seq\": df[\"obs_seq\"],\n        \"obs_date\": df[\"obs_date\"],\n        \"rate_filled\": filled,\n        \"was_carried\": was_carried,\n    })\n\n    return {\"rate_filled\": out}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 774,
+   "tokens_out": 795,
+   "usd": 0.014247,
+   "wall_s": 8.222192525863647
+  }
+ ]
+}

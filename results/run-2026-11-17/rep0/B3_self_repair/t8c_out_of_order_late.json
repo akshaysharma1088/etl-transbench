@@ -1,0 +1,46 @@
+{
+ "config": "B3_self_repair",
+ "rep": 0,
+ "task": "t8c_out_of_order_late",
+ "category": "T8",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n\n    # Build per-device watermark and current reading maps from target_snapshot.\n    # If duplicate device_id rows exist, later rows (by original order) win.\n    watermark = {}\n    reading_map = {}\n    for _, row in target.iterrows():\n        device_id = row[\"device_id\"]\n        watermark[device_id] = row[\"applied_event_ts\"]\n        reading_map[device_id] = row[\"reading\"]\n\n    # Determine which cdc events qualify for their device:\n    # event_ts must be STRICTLY greater than the device's current watermark.\n    # Devices with no existing watermark (new devices) qualify unconditionally.\n    def qualifies(row):\n        device_id = row[\"device_id\"]\n        if device_id in watermark:\n            wm = watermark[device_id]\n            if pd.isna(wm):\n                return True\n            event_ts = row[\"event_ts\"]\n            if pd.isna(event_ts):\n                return False\n            return event_ts > wm\n        return True\n\n    if not cdc.empty:\n        mask = cdc.apply(qualifies, axis=1)\n        qualified = cdc[mask].copy()\n    else:\n        qualified = cdc.copy()\n\n    # Among surviving events per device, latest by (event_ts, event_seq) wins.\n    # Deterministic tie-break: stable sort preserves original row order, and\n    # among exact ties on (event_ts, event_seq), the row that appears last\n    # in the original ordering is the winner.\n    winners_dict = {}\n    if not qualified.empty:\n        qualified_sorted = qualified.sort_values(\n            by=[\"device_id\", \"event_ts\", \"event_seq\"],\n            kind=\"mergesort\",\n        )\n        winners = qualified_sorted.groupby(\"device_id\", as_index=False).tail(1)\n        for _, row in winners.iterrows():\n            winners_dict[row[\"device_id\"]] = (row[\"reading\"], row[\"event_ts\"])\n\n    # Union of all device ids: existing snapshot devices + any device_ids seen in cdc.\n    all_device_ids = set(watermark.keys())\n    if not cdc.empty:\n        all_device_ids |= set(cdc[\"device_id\"].unique())\n\n    result_rows = []\n    for device_id in sorted(all_device_ids, key=lambda x: (str(type(x)), x)):\n        if device_id in winners_dict:\n            reading, applied_ts = winners_dict[device_id]\n        elif device_id in reading_map:\n            reading = reading_map[device_id]\n            applied_ts = watermark[device_id]\n        else:\n            # Should not happen: device only appears in cdc but had no\n            # qualifying event and no prior snapshot entry.\n            continue\n\n        result_rows.append(\n            {\n                \"device_id\": device_id,\n                \"reading\": reading,\n                \"applied_event_ts\": applied_ts,\n            }\n        )\n\n    new_snapshot = pd.DataFrame(\n        result_rows, columns=[\"device_id\", \"reading\", \"applied_event_ts\"]\n    )\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 749,
+   "tokens_out": 2826,
+   "usd": 0.044637,
+   "wall_s": 24.313836812973022
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

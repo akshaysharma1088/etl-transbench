@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 0,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _differs(a, b):\n    \"\"\"Compare two scalar values with legacy NULL semantics:\n    NULL vs NULL -> no change; NULL vs non-NULL -> change; otherwise normal compare.\"\"\"\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_CUSTOMER'].copy()\n    stg = inputs['STG_CUSTOMER'].copy()\n\n    orig_cols = list(dim.columns)\n    orig_dtypes = dim.dtypes.to_dict()\n\n    dim = dim.reset_index(drop=True)\n\n    if stg.empty:\n        return {'dim_customer_out': dim[orig_cols]}\n\n    # Step 1: Deduplicate staging to latest record per customer_id,\n    # tie-break by greater (name, segment) lexicographically.\n    stg_sorted = stg.sort_values(\n        by=['customer_id', 'update_date', 'name', 'segment'],\n        ascending=[True, False, False, False],\n        kind='mergesort'\n    )\n    stg_dedup = stg_sorted.drop_duplicates(subset='customer_id', keep='first')\n    # process in deterministic order\n    stg_dedup = stg_dedup.sort_values('customer_id', kind='mergesort')\n\n    new_rows = []\n\n    for _, s in stg_dedup.iterrows():\n        cust_id = s['customer_id']\n        mask_current = (dim['customer_id'] == cust_id) & (dim['is_current'] == 1)\n        current_idx = dim.index[mask_current]\n\n        if len(current_idx) == 0:\n            # No current row exists -> insert new current version\n            new_rows.append({\n                'customer_id': cust_id,\n                'name': s['name'],\n                'segment': s['segment'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': pd.NaT,\n                'is_current': 1\n            })\n        else:\n            idx = current_idx[0]\n            c_name = dim.at[idx, 'name']\n            c_segment = dim.at[idx, 'segment']\n\n            if _differs(c_name, s['name']) or _differs(c_segment, s['segment']):\n                # Tracked attribute changed -> expire old row, insert new version\n                dim.at[idx, 'eff_end_date'] = s['update_date']\n                dim.at[idx, 'is_current'] = 0\n\n                new_rows.append({\n                    'customer_id': cust_id,\n                    'name': s['name'],\n                    'segment': s['segment'],\n                    'eff_start_date': s['update_date'],\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1\n                })\n            # else: no change -> do nothing (must NOT create a new version)\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=orig_cols)\n        dim = pd.concat([dim, new_df], ignore_index=True)\n\n    # Restore original dtypes where possible\n    for col, dtype in orig_dtypes.items():\n        try:\n            dim[col] = dim[col].astype(dtype)\n        except (TypeError, ValueError):\n            pass\n\n    dim = dim[orig_cols]\n\n    return {'dim_customer_out': dim}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1017,
+   "tokens_out": 2207,
+   "usd": 0.036156,
+   "wall_s": 18.976224660873413
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5666,
+  "tokens_out": 13749,
+  "usd": 0.22323300000000001,
+  "wall_s": 136.88945055007935
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

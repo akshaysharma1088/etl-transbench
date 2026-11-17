@@ -1,0 +1,66 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_CUSTOMER\"].copy()\n    stg = inputs[\"STG_CUSTOMER\"].copy()\n\n    # Ensure dim has a clean integer index to work with for in-place updates\n    dim = dim.reset_index(drop=True)\n\n    # --------------------------------------------------------------\n    # Step 1: Deduplicate staging to latest record per customer_id.\n    # Latest = max update_date; ties broken by greater (name, segment)\n    # lexicographic pair (legacy ORDER BY ... DESC semantics).\n    # --------------------------------------------------------------\n    stg_sorted = stg.sort_values(\n        by=[\"customer_id\", \"update_date\", \"name\", \"segment\"],\n        ascending=[True, False, False, False],\n        kind=\"mergesort\",  # stable sort to keep deterministic behavior\n    )\n    stg_dedup = (\n        stg_sorted.drop_duplicates(subset=\"customer_id\", keep=\"first\")\n        .reset_index(drop=True)\n    )\n\n    def changed(a, b):\n        a_na = pd.isna(a)\n        b_na = pd.isna(b)\n        if a_na and b_na:\n            return False\n        if a_na != b_na:\n            return True\n        return a != b\n\n    new_rows = []\n\n    # --------------------------------------------------------------\n    # Step 2: Process each deduplicated staged record.\n    # --------------------------------------------------------------\n    for _, s in stg_dedup.iterrows():\n        cust_id = s[\"customer_id\"]\n        mask_current = (dim[\"customer_id\"] == cust_id) & (dim[\"is_current\"] == 1)\n        current_idx = dim.index[mask_current]\n\n        if len(current_idx) == 0:\n            # No current row exists -> insert new version\n            new_rows.append(\n                {\n                    \"customer_id\": cust_id,\n                    \"name\": s[\"name\"],\n                    \"segment\": s[\"segment\"],\n                    \"eff_start_date\": s[\"update_date\"],\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            )\n        else:\n            idx = current_idx[0]\n            c_name = dim.at[idx, \"name\"]\n            c_segment = dim.at[idx, \"segment\"]\n            s_name = s[\"name\"]\n            s_segment = s[\"segment\"]\n\n            if changed(c_name, s_name) or changed(c_segment, s_segment):\n                # Expire the prior current row\n                dim.at[idx, \"eff_end_date\"] = s[\"update_date\"]\n                dim.at[idx, \"is_current\"] = 0\n\n                # Insert the new current version\n                new_rows.append(\n                    {\n                        \"customer_id\": cust_id,\n                        \"name\": s_name,\n                        \"segment\": s_segment,\n                        \"eff_start_date\": s[\"update_date\"],\n                        \"eff_end_date\": pd.NaT,\n                        \"is_current\": 1,\n                    }\n                )\n            # else: attributes unchanged -> do nothing, no new version\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows)\n        dim_out = pd.concat([dim, new_df], ignore_index=True)\n    else:\n        dim_out = dim\n\n    cols = [\n        \"customer_id\",\n        \"name\",\n        \"segment\",\n        \"eff_start_date\",\n        \"eff_end_date\",\n        \"is_current\",\n    ]\n    dim_out = dim_out[cols].reset_index(drop=True)\n\n    return {\"dim_customer_out\": dim_out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1017,
+   "tokens_out": 2624,
+   "usd": 0.042411,
+   "wall_s": 24.381205558776855
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4068,
+  "tokens_out": 12128,
+  "usd": 0.19412400000000002,
+  "wall_s": 103.51519799232483
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 3,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "syntactic"
+  }
+ ],
+ "final_code": "```python\nimport pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_ACCT'].copy()\n    stg = inputs['STG_ACCT'].copy()\n\n    cols = list(dim.columns)\n\n    # Step 1: Dedup STG_ACCT to latest per acct_id by update_date.\n    # Tie-break: greater (email, tier) lexicographic pair wins.\n    # Sorting ascending by (update_date, email, tier) and taking the last\n    # row per acct_id yields exactly this semantics (stable sort).\n    stg_sorted = stg.sort_values(by=['update_date', 'email', 'tier'],\n                                  kind='mergesort')\n    stg_dedup = stg_sorted.groupby('acct_id', as_index=False).tail(1)\n    stg_dedup = stg_dedup.reset_index(drop=True)\n\n    # Working representation of DIM_ACCT as list of dict rows.\n    rows = dim.to_dict('records')\n\n    def differs(a, b):\n        a_na = pd.isna(a)\n        b_na = pd.isna(b)\n        if a_na and b_na:\n            return False\n        if a_na or b_na:\n            return True\n        return a != b\n\n    # Map acct_id -> index of its current row (is_current == 1).\n    current_idx = {}\n    for i, r in enumerate(rows):\n        if r.get('is_current') == 1:\n            current_idx[r['acct_id']] = i\n\n    for _, s in stg_dedup.iterrows():\n        acct_id = s['acct_id']\n        s_email = s['email']\n        s_tier = s['tier']\n        s_date = s['update_date']\n\n        if acct_id not in current_idx:\n            new_row = {\n                'acct_id': acct_id,\n                'email': s_email,\n                'tier': s_tier,\n                'eff_start_date': s_date,\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            }\n            rows.append(new_row)\n            current_idx[acct_id] = len(rows) - 1\n            continue\n\n        c_idx = current_idx[acct_id]\n        c_email_old = rows[c_idx]['email']\n        c_tier_old = rows[c_idx]['tier']\n\n        tier_changed = differs(c_tier_old, s_tier)\n        if tier_changed:\n            # Expire current row.\n            rows[c_idx]['eff_end_date'] = s_date\n            rows[c_idx]['is_current'] = 0\n\n            # Insert new current version.\n            new_row = {\n                'acct_id': acct_id,\n                'email': s_email,\n                'tier': s_tier,\n                'eff_start_date': s_date,\n                'eff_end_date': pd.N",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 983,
+   "tokens_out": 3564,
+   "usd": 0.056409,
+   "wall_s": 32.1282160282135
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5592,
+  "tokens_out": 14489,
+  "usd": 0.234111,
+  "wall_s": 138.26355481147766
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

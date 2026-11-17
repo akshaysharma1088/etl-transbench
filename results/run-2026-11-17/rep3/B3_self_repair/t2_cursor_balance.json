@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 3,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 4,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"transactions\"].copy()\n\n    # Preserve original columns, add helper for cumulative sum treating NULL as 0\n    df[\"_amt_filled\"] = df[\"amount\"].fillna(0)\n\n    # Sort to replicate cursor ORDER BY account_id, txn_date, txn_seq\n    df = df.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        kind=\"mergesort\"  # stable sort to preserve tie behavior deterministically\n    ).reset_index(drop=True)\n\n    # Running balance resets per account_id (new account -> bal starts at 0)\n    df[\"running_balance\"] = df.groupby(\"account_id\")[\"_amt_filled\"].cumsum()\n\n    # Overdraft flag: 1 if running_balance < 0 else 0\n    df[\"overdraft_flag\"] = (df[\"running_balance\"] < 0).astype(int)\n\n    result = df[[\n        \"account_id\",\n        \"txn_seq\",\n        \"txn_date\",\n        \"amount\",\n        \"running_balance\",\n        \"overdraft_flag\",\n    ]].copy()\n\n    return {\"acct_balance_flags\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 713,
+   "tokens_out": 627,
+   "usd": 0.011544,
+   "wall_s": 5.848212718963623
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4284,
+  "tokens_out": 7725,
+  "usd": 0.128727,
+  "wall_s": 82.04383635520935
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

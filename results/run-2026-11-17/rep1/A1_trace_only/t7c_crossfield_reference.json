@@ -1,0 +1,46 @@
+{
+ "config": "A1_trace_only",
+ "rep": 1,
+ "task": "t7c_crossfield_reference",
+ "category": "T7",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs['orders'].copy()\n    ref_customers = inputs['ref_customers'].copy()\n    ref_skus = inputs['ref_skus'].copy()\n\n    # Deduplicate reference tables on key, keep first occurrence (deterministic tie-break)\n    ref_customers_dedup = ref_customers.drop_duplicates(subset='customer_id', keep='first')\n    ref_skus_dedup = ref_skus.drop_duplicates(subset='sku', keep='first')\n\n    known_customers = set(ref_customers_dedup['customer_id'])\n    known_skus = set(ref_skus_dedup['sku'])\n\n    cust_status_map = dict(zip(ref_customers_dedup['customer_id'], ref_customers_dedup['status']))\n    sku_disc_map = dict(zip(ref_skus_dedup['sku'], ref_skus_dedup['discontinued']))\n    sku_allowed_map = dict(zip(ref_skus_dedup['sku'], ref_skus_dedup['allowed_countries']))\n\n    def classify(row):\n        cust = row['customer_id']\n        sku = row['sku']\n\n        # R1: unknown customer\n        if cust not in known_customers:\n            return 'CUST_UNKNOWN'\n\n        # R2: customer not ACTIVE\n        status = cust_status_map.get(cust)\n        if status != 'ACTIVE':\n            return 'CUST_INACTIVE'\n\n        # R3: unknown sku\n        if sku not in known_skus:\n            return 'SKU_UNKNOWN'\n\n        # R4: sku discontinued\n        disc = sku_disc_map.get(sku)\n        if pd.notna(disc):\n            try:\n                if int(disc) == 1:\n                    return 'SKU_DISC'\n            except (ValueError, TypeError):\n                pass\n\n        # R5: ship_country not in trimmed whitelist (empty/null = allow all)\n        allowed_raw = sku_allowed_map.get(sku)\n        if pd.notna(allowed_raw):\n            allowed_str = str(allowed_raw)\n            if allowed_str.strip() != '':\n                allowed_list = [c.strip() for c in allowed_str.split(',')]\n                allowed_list = [c for c in allowed_list if c != '']\n                if allowed_list:\n                    ship_country = row['ship_country']\n                    if ship_country not in allowed_list:\n                        return 'CTRY_BLOCKED'\n\n        return None\n\n    reason_codes = orders.apply(classify, axis=1)\n    mask_fail = reason_codes.notna()\n\n    orders_rejects = orders[mask_fail].copy()\n    orders_rejects['reason_code'] = reason_codes[mask_fail]\n\n    orders_clean = orders[~mask_fail].copy()\n\n    return {\n        'orders_clean': orders_clean,\n        'orders_rejects': orders_rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 704,
+   "tokens_out": 3255,
+   "usd": 0.050937,
+   "wall_s": 26.50826597213745
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

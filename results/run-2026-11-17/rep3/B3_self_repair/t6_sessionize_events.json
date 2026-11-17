@@ -1,0 +1,46 @@
+{
+ "config": "B3_self_repair",
+ "rep": 3,
+ "task": "t6_sessionize_events",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import timedelta\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize user events based on 30-minute inactivity gap.\n    A new session starts when gap from previous event > 30 minutes.\n    \"\"\"\n    events = inputs['events'].copy()\n    \n    # Ensure event_ts is datetime\n    events['event_ts'] = pd.to_datetime(events['event_ts'])\n    \n    # Sort by user_id, event_ts, event_id\n    events = events.sort_values(by=['user_id', 'event_ts', 'event_id']).reset_index(drop=True)\n    \n    # Calculate time gap from previous event (within same user)\n    events['prev_event_ts'] = events.groupby('user_id')['event_ts'].shift(1)\n    \n    # Calculate time difference\n    events['time_gap'] = events['event_ts'] - events['prev_event_ts']\n    \n    # Determine if new session starts\n    # New session if: gap > 30 minutes OR previous event is NULL (first event)\n    events['new_sess'] = (\n        (events['time_gap'] > timedelta(minutes=30)) | \n        (events['prev_event_ts'].isna())\n    ).astype(int)\n    \n    # Cumulative sum of new_sess within each user gives session_num\n    events['session_num'] = events.groupby('user_id')['new_sess'].cumsum()\n    \n    # Group by user_id and session_num to get session-level aggregates\n    user_sessions = events.groupby(['user_id', 'session_num'], as_index=False).agg(\n        session_start=('event_ts', 'min'),\n        session_end=('event_ts', 'max'),\n        event_count=('event_ts', 'size')\n    )\n    \n    # Rename session_num to be 1-based per user (it already is due to cumsum starting at 1)\n    user_sessions = user_sessions[['user_id', 'session_num', 'session_start', 'session_end', 'event_count']]\n    \n    return {'user_sessions': user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 424,
+   "tokens_out": 571,
+   "usd": 0.003279,
+   "wall_s": 5.198915481567383
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

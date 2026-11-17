@@ -1,0 +1,16 @@
+{
+ "task": "t2_cursor_balance",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    df = inputs[\"transactions\"].copy()\n\n    df = df.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    amount_filled = df[\"amount\"].fillna(0)\n    running_balance = amount_filled.groupby(df[\"account_id\"]).cumsum()\n\n    overdraft_flag = (running_balance < 0).astype(\"int64\")\n\n    result = pd.DataFrame({\n        \"account_id\": df[\"account_id\"],\n        \"txn_seq\": df[\"txn_seq\"],\n        \"txn_date\": df[\"txn_date\"],\n        \"amount\": df[\"amount\"],\n        \"running_balance\": running_balance,\n        \"overdraft_flag\": overdraft_flag,\n    }).reset_index(drop=True)\n\n    return {\"acct_balance_flags\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 713,
+   "tokens_out": 434,
+   "usd": 0.008649,
+   "wall_s": 3.9680473804473877
+  }
+ ]
+}

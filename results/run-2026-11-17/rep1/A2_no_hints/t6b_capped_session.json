@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t6b_capped_session",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    events = inputs['events'].copy()\n\n    # Ensure proper dtypes for sorting/comparison\n    events['event_ts'] = pd.to_datetime(events['event_ts'])\n\n    # Sort by user_id, then event_ts, then event_id (stable ordering)\n    events = events.sort_values(\n        by=['user_id', 'event_ts', 'event_id'],\n        kind='mergesort'\n    ).reset_index(drop=True)\n\n    gap_threshold = pd.Timedelta(minutes=20)\n    cap_threshold = pd.Timedelta(hours=4)\n\n    records = []\n\n    for user_id, group in events.groupby('user_id', sort=False):\n        session_num = 0\n        session_start = None\n        prev_ts = None\n        cur_start = None\n        cur_end = None\n        count = 0\n\n        for _, row in group.iterrows():\n            ts = row['event_ts']\n\n            if session_start is None:\n                # First event for this user starts the first session\n                session_num += 1\n                session_start = ts\n                cur_start = ts\n                cur_end = ts\n                count = 1\n                prev_ts = ts\n                continue\n\n            gap = ts - prev_ts\n            # Cap check: exceeding (strictly greater than) 4h from current session start\n            cap_exceeded = (ts - session_start) > cap_threshold\n\n            if gap > gap_threshold or cap_exceeded:\n                # Close out current session\n                records.append({\n                    'user_id': user_id,\n                    'session_num': session_num,\n                    'session_start': cur_start,\n                    'session_end': cur_end,\n                    'event_count': count\n                })\n\n                # Start a new session at this event\n                session_num += 1\n                session_start = ts\n                cur_start = ts\n                cur_end = ts\n                count = 1\n            else:\n                cur_end = ts\n                count += 1\n\n            prev_ts = ts\n\n        # Flush last open session for this user\n        if session_start is not None:\n            records.append({\n                'user_id': user_id,\n                'session_num': session_num,\n                'session_start': cur_start,\n                'session_end': cur_end,\n                'event_count': count\n            })\n\n    result = pd.DataFrame(\n        records,\n        columns=['user_id', 'session_num', 'session_start', 'session_end', 'event_count']\n    )\n\n    if not result.empty:\n        result['session_num'] = result['session_num'].astype('int64')\n        result['event_count'] = result['event_count'].astype('int64')\n\n    return {'user_sessions': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 528,
+   "tokens_out": 1839,
+   "usd": 0.029169,
+   "wall_s": 15.74354887008667
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

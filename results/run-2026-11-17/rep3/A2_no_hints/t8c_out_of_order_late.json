@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t8c_out_of_order_late",
+ "category": "T8",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n\n    # Build per-device watermark map from the target snapshot.\n    # (device_id assumed unique key in target_snapshot; if duplicates exist,\n    # the last occurrence in iteration order determines the watermark.)\n    watermark = {}\n    for _, row in target.iterrows():\n        watermark[row[\"device_id\"]] = row[\"applied_event_ts\"]\n\n    # Determine which events survive the per-device watermark check:\n    # event applies only if event_ts > device's current applied_event_ts.\n    # New devices (no watermark) accept all events.\n    def _survives(row):\n        wm = watermark.get(row[\"device_id\"], None)\n        if wm is None:\n            return True\n        return row[\"event_ts\"] > wm\n\n    if len(cdc) > 0:\n        mask = cdc.apply(_survives, axis=1)\n        surviving = cdc[mask].copy()\n    else:\n        surviving = cdc.copy()\n\n    # Among surviving events per device, the latest by (event_ts, event_seq) wins.\n    if not surviving.empty:\n        surviving = surviving.sort_values([\"device_id\", \"event_ts\", \"event_seq\"])\n        winners = surviving.groupby(\"device_id\", as_index=False).tail(1)\n        winners = winners[[\"device_id\", \"reading\", \"event_ts\"]].rename(\n            columns={\"event_ts\": \"applied_event_ts\"}\n        )\n    else:\n        winners = pd.DataFrame(columns=[\"device_id\", \"reading\", \"applied_event_ts\"])\n\n    # Start from the existing snapshot (carry-forward semantics), then apply\n    # winners: updates existing devices' reading/applied_event_ts, and adds\n    # rows for brand-new devices.\n    result = target.set_index(\"device_id\")\n\n    for _, w in winners.iterrows():\n        dev = w[\"device_id\"]\n        result.loc[dev, \"reading\"] = w[\"reading\"]\n        result.loc[dev, \"applied_event_ts\"] = w[\"applied_event_ts\"]\n\n    result = result.reset_index()[[\"device_id\", \"reading\", \"applied_event_ts\"]]\n\n    return {\"new_snapshot\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 698,
+   "tokens_out": 2108,
+   "usd": 0.033714,
+   "wall_s": 44.35903573036194
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

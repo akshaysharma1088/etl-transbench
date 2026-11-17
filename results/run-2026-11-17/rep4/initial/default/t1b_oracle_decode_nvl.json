@@ -1,0 +1,16 @@
+{
+ "task": "t1b_oracle_decode_nvl",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\nfrom datetime import datetime\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Legacy Oracle SQL translation: Monthly regional transaction rollup with\n    DECODE-based null matching and NVL coalescing.\n    \n    Semantics:\n    - DECODE(region, NULL, 'MISSING', 'XX', 'UNKNOWN', region) treats NULL=NULL as match\n    - NVL(amount, 0) coalesces nulls to 0\n    - TRUNC(txn_ts, 'MM') truncates to month start (first day of month)\n    - Filters to status='POSTED' before aggregation\n    \"\"\"\n    df = inputs['regional_txn'].copy()\n    \n    # Filter: WHERE status = 'POSTED'\n    df = df[df['status'] == 'POSTED'].copy()\n    \n    # TRUNC(txn_ts, 'MM') - truncate timestamp to first day of month\n    df['txn_month'] = pd.to_datetime(df['txn_ts']).dt.to_period('M').dt.to_timestamp()\n    \n    # DECODE(region, NULL, 'MISSING', 'XX', 'UNKNOWN', region)\n    # Oracle DECODE matches NULL=NULL, so we need explicit null checking\n    def decode_region(val):\n        if pd.isna(val):\n            return 'MISSING'\n        elif val == 'XX':\n            return 'UNKNOWN'\n        else:\n            return val\n    \n    df['region_norm'] = df['region'].apply(decode_region)\n    \n    # NVL(amount, 0) - coalesce nulls to 0\n    df['amount_coalesced'] = df['amount'].fillna(0)\n    \n    # GROUP BY txn_month, region_norm\n    grouped = df.groupby(['txn_month', 'region_norm'], as_index=False)\n    \n    # Aggregate: SUM(amount_coalesced) and COUNT(*)\n    result = grouped.agg({\n        'amount_coalesced': 'sum',\n        'region_norm': 'size'  # COUNT(*)\n    }).rename(columns={\n        'amount_coalesced': 'total_amount',\n        'region_norm': 'txn_count'\n    })\n    \n    # Explicit column ordering to match legacy output\n    result = result[['txn_month', 'region_norm', 'total_amount', 'txn_count']]\n    \n    # Rename region_norm back to match typical output naming if needed\n    result = result.rename(columns={'region_norm': 'region_norm'})\n    \n    return {'monthly_region_rollup': result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 421,
+   "tokens_out": 691,
+   "usd": 0.003876,
+   "wall_s": 4.921940088272095
+  }
+ ]
+}

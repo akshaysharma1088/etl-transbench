@@ -1,0 +1,51 @@
+{
+ "config": "A1_trace_only",
+ "rep": 3,
+ "task": "t2d_reject_skip_accum",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    # Be robust to case variations in the input key name.\n    postings = None\n    for key in (\"POSTINGS\", \"postings\", \"Postings\"):\n        if key in inputs:\n            postings = inputs[key]\n            break\n    if postings is None:\n        # Fallback: find case-insensitively\n        for k, v in inputs.items():\n            if k.lower() == \"postings\":\n                postings = v\n                break\n    if postings is None:\n        raise KeyError(\"POSTINGS input not found\")\n\n    postings = postings.copy()\n\n    # Preserve cursor ordering: ORDER BY account_id, post_date, post_seq\n    df = postings.sort_values(\n        by=[\"account_id\", \"post_date\", \"post_seq\"],\n        kind=\"mergesort\"  # stable sort to keep deterministic tie behavior\n    ).reset_index(drop=True)\n\n    # Row validity check (mirrors the TRY block's reject condition)\n    qty = df[\"qty\"]\n    price = df[\"unit_price\"]\n    valid = qty.notna() & (qty > 0) & price.notna() & (price >= 0)\n\n    df[\"_valid\"] = valid\n    df[\"post_value\"] = pd.NA\n    df.loc[valid, \"post_value\"] = df.loc[valid, \"qty\"] * df.loc[valid, \"unit_price\"]\n\n    # Build POSTED_TOTALS: only valid rows contribute, running total accumulates\n    # only over valid rows per account, in cursor order.\n    posted = df.loc[valid, [\"account_id\", \"post_seq\", \"post_date\", \"post_value\"]].copy()\n    posted[\"post_value\"] = posted[\"post_value\"].astype(float)\n    posted[\"running_total\"] = posted.groupby(\"account_id\")[\"post_value\"].cumsum()\n\n    posted_totals = posted[\n        [\"account_id\", \"post_seq\", \"post_date\", \"post_value\", \"running_total\"]\n    ].reset_index(drop=True)\n\n    # Build REJECT_COUNTS: one row per account that appeared in the cursor,\n    # including accounts with zero rejects.\n    reject_counts = (\n        df.groupby(\"account_id\")[\"_valid\"]\n        .apply(lambda s: int((~s).sum()))\n        .reset_index(name=\"reject_count\")\n    )\n    reject_counts[\"reject_count\"] = reject_counts[\"reject_count\"].astype(int)\n\n    return {\n        \"posted_totals\": posted_totals,\n        \"reject_counts\": reject_counts,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 975,
+   "tokens_out": 1437,
+   "usd": 0.02448,
+   "wall_s": 13.56697416305542
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2035,
+  "tokens_out": 870,
+  "usd": 0.019155,
+  "wall_s": 6.829130172729492
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

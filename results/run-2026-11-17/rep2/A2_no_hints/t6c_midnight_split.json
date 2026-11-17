@@ -1,0 +1,51 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionization with forced midnight split.\n    A new session starts when:\n    1. Gap from previous event of same user is STRICTLY > 45 minutes, OR\n    2. The event falls on a DIFFERENT CALENDAR DATE than the previous event.\n\n    Sessions never cross midnight. session_num is per-user, starting at 1.\n    \"\"\"\n\n    events = inputs['events'].copy()\n\n    # Ensure event_ts is datetime\n    events['event_ts'] = pd.to_datetime(events['event_ts'])\n\n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(by=['user_id', 'event_ts', 'event_id']).reset_index(drop=True)\n\n    # Extract calendar date\n    events['event_date'] = events['event_ts'].dt.date\n\n    # Compute previous event's ts/date within same user\n    prev_ts = events.groupby('user_id')['event_ts'].shift(1)\n    prev_date = events.groupby('user_id')['event_date'].shift(1)\n\n    time_diff_minutes = (events['event_ts'] - prev_ts).dt.total_seconds() / 60\n\n    # New session if: first event for user (prev_ts is NaT), OR gap > 45 min, OR different date\n    new_session = (\n        prev_ts.isna()\n        | (time_diff_minutes > 45)\n        | (events['event_date'] != prev_date)\n    )\n\n    # session_num: cumulative sum of new_session flags within each user group\n    events['session_num'] = new_session.groupby(events['user_id']).cumsum().astype(int)\n\n    # Group by user_id and session_num to aggregate\n    grouped = events.groupby(['user_id', 'session_num']).agg(\n        session_date=('event_date', 'first'),\n        session_start=('event_ts', 'min'),\n        session_end=('event_ts', 'max'),\n        event_count=('event_id', 'count')\n    ).reset_index()\n\n    user_sessions = grouped[['user_id', 'session_num', 'session_date', 'session_start', 'session_end', 'event_count']].copy()\n\n    return {'user_sessions': user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 332,
+   "tokens_out": 873,
+   "usd": 0.004697,
+   "wall_s": 5.474897384643555
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2126,
+  "tokens_out": 894,
+  "usd": 0.019788,
+  "wall_s": 7.476634979248047
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "task": "t2_cursor_balance",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    df = inputs[\"TRANSACTIONS\"].copy()\n\n    # Preserve original columns, sort per cursor ORDER BY clause\n    df = df.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        kind=\"mergesort\"  # stable sort to preserve any residual ordering\n    ).reset_index(drop=True)\n\n    running_balances = []\n    overdraft_flags = []\n\n    prev_acct = None\n    bal = 0.0\n\n    for _, row in df.iterrows():\n        acct = row[\"account_id\"]\n        if acct != prev_acct:\n            bal = 0.0\n            prev_acct = acct\n\n        amt = row[\"amount\"]\n        if pd.isna(amt):\n            amt_val = 0.0\n        else:\n            amt_val = float(amt)\n\n        bal = bal + amt_val\n        flag = 1 if bal < 0 else 0\n\n        running_balances.append(bal)\n        overdraft_flags.append(flag)\n\n    df[\"running_balance\"] = running_balances\n    df[\"overdraft_flag\"] = overdraft_flags\n\n    out = df[[\"account_id\", \"txn_seq\", \"txn_date\", \"amount\",\n              \"running_balance\", \"overdraft_flag\"]].copy()\n\n    return {\"acct_balance_flags\": out}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 673,
+   "tokens_out": 553,
+   "usd": 0.010314,
+   "wall_s": 5.208249807357788
+  }
+ ]
+}

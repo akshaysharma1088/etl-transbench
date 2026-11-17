@@ -1,0 +1,46 @@
+{
+ "config": "B1_single_pass",
+ "rep": 2,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Multi-step partition refresh: DELETE whole arriving partitions then INSERT.\n    \n    Step 1: Create staging table with aggregated inbound data (qty > 0)\n    Step 2: Delete from target_snapshot all rows matching batch_dates in staging\n    Step 3: Insert staging data into target_snapshot\n    \n    This ensures entire partitions are refreshed, not upserted.\n    \"\"\"\n    \n    inbound = inputs['inbound'].copy()\n    target_snapshot = inputs['target_snapshot'].copy()\n    \n    # Step 1: CREATE STG_NEW - filter qty > 0 and aggregate\n    stg_new = inbound[inbound['qty'] > 0].copy()\n    stg_new = stg_new.groupby(['product_id', 'batch_date'], as_index=False).agg({\n        'total_qty': 'sum',  # SUM(qty)\n        'max_unit_cost': 'max'  # MAX(unit_cost)\n    })\n    \n    # Rename 'qty' column to 'total_qty' if needed (depends on inbound schema)\n    # Assuming inbound has columns: product_id, batch_date, qty, unit_cost\n    if 'qty' in inbound.columns and 'total_qty' not in stg_new.columns:\n        # Re-aggregate properly\n        stg_new = inbound[inbound['qty'] > 0].copy()\n        stg_new = stg_new.groupby(['product_id', 'batch_date'], as_index=False).agg({\n            'qty': 'sum',\n            'unit_cost': 'max'\n        })\n        stg_new = stg_new.rename(columns={'qty': 'total_qty', 'unit_cost': 'max_unit_cost'})\n    \n    # Step 2: DELETE FROM TARGET_SNAPSHOT where batch_date IN (SELECT DISTINCT batch_date FROM STG_NEW)\n    batch_dates_to_delete = stg_new['batch_date'].unique()\n    target_snapshot = target_snapshot[~target_snapshot['batch_date'].isin(batch_dates_to_delete)]\n    \n    # Step 3: INSERT INTO TARGET_SNAPSHOT SELECT * FROM STG_NEW\n    target_snapshot = pd.concat([target_snapshot, stg_new], ignore_index=True)\n    \n    return {'target_snapshot': target_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 626,
+   "usd": 0.003528,
+   "wall_s": 4.149228096008301
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

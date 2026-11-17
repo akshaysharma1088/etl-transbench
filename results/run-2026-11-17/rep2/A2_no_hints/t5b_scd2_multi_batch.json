@@ -1,0 +1,51 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _get_input(inputs: dict, name: str):\n    \"\"\"Robustly fetch an input dataframe by name, tolerating case/formatting\n    differences in the keys of the `inputs` dict.\"\"\"\n    if name in inputs:\n        return inputs[name]\n    lname = name.lower()\n    for k, v in inputs.items():\n        if isinstance(k, str) and k.lower() == lname:\n            return v\n    # fallback: try stripped/underscore-insensitive match\n    norm = lname.replace(\"_\", \"\")\n    for k, v in inputs.items():\n        if isinstance(k, str) and k.lower().replace(\"_\", \"\") == norm:\n            return v\n    return None\n\n\ndef _differs(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim_product = _get_input(inputs, \"DIM_PRODUCT\")\n    stg_product = _get_input(inputs, \"STG_PRODUCT\")\n\n    if dim_product is None:\n        dim_product = pd.DataFrame(\n            columns=[\n                \"product_id\",\n                \"category\",\n                \"price_band\",\n                \"eff_start_date\",\n                \"eff_end_date\",\n                \"is_current\",\n            ]\n        )\n    if stg_product is None:\n        stg_product = pd.DataFrame(\n            columns=[\"product_id\", \"category\", \"price_band\", \"update_date\"]\n        )\n\n    # Ensure expected columns exist (defensive, in case of extra/renamed cols)\n    for col in [\"product_id\", \"category\", \"price_band\", \"eff_start_date\",\n                \"eff_end_date\", \"is_current\"]:\n        if col not in dim_product.columns:\n            dim_product[col] = pd.NA\n    for col in [\"product_id\", \"category\", \"price_band\", \"update_date\"]:\n        if col not in stg_product.columns:\n            stg_product[col] = pd.NA\n\n    # Build mutable list of output rows (as dicts) from existing dim table.\n    output_rows = []\n    current_map = {}\n\n    for _, row in dim_product.iterrows():\n        rec = {\n            \"product_id\": row[\"product_id\"],\n            \"category\": row[\"category\"],\n            \"price_band\": row[\"price_band\"],\n            \"eff_start_date\": row[\"eff_start_date\"],\n            \"eff_end_date\": row[\"eff_end_date\"],\n            \"is_current\": row[\"is_current\"],\n        }\n        output_rows.append(rec)\n        if pd.notna(rec[\"is_current\"]) and int(rec[\"is_current\"]) == 1:\n            current_map[rec[\"product_id\"]] = rec\n\n    # Sort staging data by product_id, update_date ascending (NOT deduplicated).\n    if len(stg_product) > 0:\n        stg_sorted = stg_product.sort_values(\n            by=[\"product_id\", \"update_date\"], kind=\"mergesort\"\n        )\n    else:\n        stg_sorted = stg_product\n\n    for _, s in stg_sorted.iterrows():\n        pid = s[\"product_id\"]\n        cat = s[\"category\"]\n        pb = s[\"price_band\"]\n        upd_date = s[\"update_date\"]\n\n        cur = current_map.get(pid)\n\n        if cur is None:\n            new_row = {\n                \"product_id\": pid,\n                \"category\": cat,\n                \"price_band\": pb,\n                \"eff_start_date\": upd_date,\n                \"eff_end_date\": None,\n                \"is_current\": 1,\n            }\n            output_rows.append(new_row)\n            current_map[pid] = new_row\n        else:\n            changed = _differs(cur[\"category\"], cat) or _differs(\n                cur[\"price_band\"], pb\n            )\n            if changed:\n                cur[\"eff_end_date\"] = upd_date\n                cur[\"is_current\"] = 0\n\n                new_row = {\n                    \"product_id\": pid,\n                    \"category\": cat,\n                    \"price_band\": pb,\n                    \"eff_start_date\": upd_date,\n                    \"eff_end_date\": None,\n                    \"is_current\": 1,\n                }\n                output_rows.append(new_row)\n                current_map[pid] = new_row\n            # else no-op\n\n    out_cols = [\n        \"product_id\",\n        \"category\",\n        \"price_band\",\n        \"eff_start_date\",\n        \"eff_end_date\",\n        \"is_current\",\n    ]\n\n    result = pd.DataFrame(output_rows, columns=out_cols)\n\n    if not result.empty:\n        # Determine product_id dtype preference\n        pid_dtype = None\n        if \"product_id\" in dim_product.columns and len(dim_product) > 0:\n            pid_dtype = dim_product[\"product_id\"].dtype\n        elif \"product_id\" in stg_product.columns and len(stg_product) > 0:\n            pid_dtype = stg_product[\"product_id\"].dtype\n        else:\n            pid_dtype = \"int64\"\n\n        try:\n            result[\"product_id\"] = result[\"product_id\"].astype(pid_dtype)\n        except (ValueError, TypeError):\n            result[\"product_id\"] = pd.to_numeric(\n                result[\"product_id\"], errors=\"coerce\"\n            ).astype(\"int64\")\n\n        result[\"eff_start_date\"] = pd.to_datetime(\n            result[\"eff_start_date\"], errors=\"coerce\"\n        )\n        result[\"eff_end_date\"] = pd.to_datetime(\n            result[\"eff_end_date\"], errors=\"coerce\"\n        )\n        result[\"is_current\"] = result[\"is_current\"].astype(\"int64\")\n    else:\n        result = result.astype(\n            {\n                \"product_id\": \"int64\",\n                \"category\": \"object\",\n                \"price_band\": \"object\",\n                \"eff_start_date\": \"datetime64[ns]\",\n                \"eff_end_date\": \"datetime64[ns]\",\n                \"is_current\": \"int64\",\n            }\n        )\n\n    return {\"dim_product_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 778,
+   "tokens_out": 3035,
+   "usd": 0.047859,
+   "wall_s": 27.37402892112732
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2700,
+  "tokens_out": 3566,
+  "usd": 0.06159,
+  "wall_s": 32.00813150405884
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

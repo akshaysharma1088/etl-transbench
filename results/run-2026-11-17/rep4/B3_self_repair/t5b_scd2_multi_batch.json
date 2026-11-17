@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 4,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_null(v):\n    try:\n        return pd.isna(v)\n    except Exception:\n        return v is None\n\n\ndef _eq_nullable(a, b):\n    a_null = _is_null(a)\n    b_null = _is_null(b)\n    if a_null and b_null:\n        return True\n    if a_null != b_null:\n        return False\n    return a == b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_PRODUCT\"].copy()\n    stg = inputs[\"STG_PRODUCT\"].copy()\n\n    dim_cols = list(dim.columns)\n\n    # Build mutable list of rows from existing DIM_PRODUCT\n    rows = dim.to_dict(\"records\")\n\n    # Map product_id -> index of its current row (is_current == 1), if any.\n    current_idx = {}\n    for i, r in enumerate(rows):\n        pid = r.get(\"product_id\")\n        is_cur = r.get(\"is_current\")\n        if is_cur == 1 or is_cur == \"1\":\n            current_idx[pid] = i\n\n    # Sort staged records by product_id, update_date ascending (stable sort\n    # preserves original order for ties, though dates are unique per product).\n    stg_sorted = stg.sort_values(\n        by=[\"product_id\", \"update_date\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    for _, s in stg_sorted.iterrows():\n        pid = s[\"product_id\"]\n        s_category = s[\"category\"]\n        s_price_band = s[\"price_band\"]\n        s_date = s[\"update_date\"]\n\n        if pid not in current_idx:\n            new_row = {\n                \"product_id\": pid,\n                \"category\": s_category,\n                \"price_band\": s_price_band,\n                \"eff_start_date\": s_date,\n                \"eff_end_date\": None,\n                \"is_current\": 1,\n            }\n            rows.append(new_row)\n            current_idx[pid] = len(rows) - 1\n        else:\n            idx = current_idx[pid]\n            c = rows[idx]\n\n            changed = (not _eq_nullable(c.get(\"category\"), s_category)) or (\n                not _eq_nullable(c.get(\"price_band\"), s_price_band)\n            )\n\n            if changed:\n                rows[idx][\"eff_end_date\"] = s_date\n                rows[idx][\"is_current\"] = 0\n\n                new_row = {\n                    \"product_id\": pid,\n                    \"category\": s_category,\n                    \"price_band\": s_price_band,\n                    \"eff_start_date\": s_date,\n                    \"eff_end_date\": None,\n                    \"is_current\": 1,\n                }\n                rows.append(new_row)\n                current_idx[pid] = len(rows) - 1\n            # else: no-op, unchanged attributes -> no new version\n\n    out = pd.DataFrame(rows, columns=dim_cols)\n\n    return {\"dim_product_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 833,
+   "tokens_out": 2530,
+   "usd": 0.040449,
+   "wall_s": 22.489020824432373
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5270,
+  "tokens_out": 11563,
+  "usd": 0.18925499999999998,
+  "wall_s": 112.53026962280273
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

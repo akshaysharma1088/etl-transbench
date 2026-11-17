@@ -1,0 +1,46 @@
+{
+ "config": "B2_retranslate",
+ "rep": 2,
+ "task": "t7d_quarantine_threshold",
+ "category": "T7",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs['readings'].copy()\n\n    # Preserve original column order for later use\n    orig_cols = list(df.columns)\n\n    # Row-level bad check: value IS NULL OR value < 0 OR value > 1000\n    is_bad = df['value'].isna() | (df['value'] < 0) | (df['value'] > 1000)\n    df['_is_bad'] = is_bad\n\n    # Per-batch aggregation\n    grp = df.groupby('batch_id')['_is_bad'].agg(\n        bad_count='sum',\n        total_count='count'\n    ).reset_index()\n\n    grp['reject_pct'] = grp['bad_count'] * 100.0 / grp['total_count']\n    # Strictly over 20% triggers quarantine\n    grp['quarantine'] = (grp['bad_count'] * 100) > (grp['total_count'] * 20)\n\n    df = df.merge(grp[['batch_id', 'quarantine', 'reject_pct']], on='batch_id', how='left')\n\n    quarantine_mask = df['quarantine'].fillna(False)\n\n    # Quarantined batches: all rows go to quarantine output\n    quarantined = df[quarantine_mask].copy()\n    quarantined['batch_reject_pct'] = quarantined['reject_pct'].round(2)\n    quarantined = quarantined[orig_cols + ['batch_reject_pct']]\n\n    # Non-quarantined batches: split by row rule\n    rest = df[~quarantine_mask]\n\n    clean = rest[~rest['_is_bad']][orig_cols].reset_index(drop=True)\n    rejects = rest[rest['_is_bad']][orig_cols].reset_index(drop=True)\n\n    return {\n        'readings_clean': clean,\n        'readings_rejects': rejects,\n        'readings_quarantine': quarantined.reset_index(drop=True)\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 558,
+   "tokens_out": 1757,
+   "usd": 0.028029,
+   "wall_s": 14.909010887145996
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

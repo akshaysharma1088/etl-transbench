@@ -1,0 +1,66 @@
+{
+ "config": "B2_retranslate",
+ "rep": 1,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_diff(a, b):\n    \"\"\"NULL vs NULL -> not different; NULL vs non-NULL -> different;\n    otherwise compare by equality.\"\"\"\n    a_na = pd.isna(a)\n    b_na = pd.isna(b)\n    if a_na and b_na:\n        return False\n    if a_na != b_na:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_PRODUCT\"].copy()\n    stg = inputs[\"STG_PRODUCT\"].copy()\n\n    # Process staged records strictly in (product_id, update_date) ascending\n    # order, exactly as the legacy cursor did (no dedup).\n    stg = stg.sort_values([\"product_id\", \"update_date\"], kind=\"mergesort\")\n\n    # Materialize dimension rows as mutable dicts, preserving column order.\n    cols = [\"product_id\", \"category\", \"price_band\",\n            \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    # Make sure all expected columns exist even if source frame is empty.\n    for c in cols:\n        if c not in dim.columns:\n            dim[c] = pd.NA\n    dim = dim[cols]\n\n    rows = dim.to_dict(\"records\")\n\n    # Track index of the current (is_current == 1) row per product_id.\n    current_idx = {}\n    for i, r in enumerate(rows):\n        if r.get(\"is_current\") == 1:\n            current_idx[r[\"product_id\"]] = i\n\n    for _, s in stg.iterrows():\n        pid = s[\"product_id\"]\n        s_category = s[\"category\"]\n        s_price_band = s[\"price_band\"]\n        s_update_date = s[\"update_date\"]\n\n        idx = current_idx.get(pid)\n\n        if idx is None:\n            # No current row exists -> insert new current version.\n            new_row = {\n                \"product_id\": pid,\n                \"category\": s_category,\n                \"price_band\": s_price_band,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            }\n            rows.append(new_row)\n            current_idx[pid] = len(rows) - 1\n        else:\n            c = rows[idx]\n            changed = (\n                _is_diff(c[\"category\"], s_category)\n                or _is_diff(c[\"price_band\"], s_price_band)\n            )\n            if changed:\n                # Expire the current row.\n                c[\"eff_end_date\"] = s_update_date\n                c[\"is_current\"] = 0\n\n                # Insert the new current version (even if it flips back\n                # to a previously seen value, e.g. A -> B -> A).\n                new_row = {\n                    \"product_id\": pid,\n                    \"category\": s_category,\n                    \"price_band\": s_price_band,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n                rows.append(new_row)\n                current_idx[pid] = len(rows) - 1\n            # else: unchanged -> no-op, no new version created.\n\n    out = pd.DataFrame(rows, columns=cols)\n\n    return {\"dim_product_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 833,
+   "tokens_out": 2085,
+   "usd": 0.033774,
+   "wall_s": 18.237015962600708
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3332,
+  "tokens_out": 10879,
+  "usd": 0.173181,
+  "wall_s": 96.88689255714417
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

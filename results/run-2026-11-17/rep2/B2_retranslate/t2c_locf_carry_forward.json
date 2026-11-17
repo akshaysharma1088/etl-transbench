@@ -1,0 +1,66 @@
+{
+ "config": "B2_retranslate",
+ "rep": 2,
+ "task": "t2c_locf_carry_forward",
+ "category": "T2",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs['RATE_FEED'].copy()\n\n    # Reproduce cursor ORDER BY account_id, obs_date, obs_seq (stable to preserve\n    # tie-break order identical to a stable cursor scan over equal sort keys).\n    df = df.sort_values(\n        by=['account_id', 'obs_date', 'obs_seq'],\n        kind='mergesort'\n    ).reset_index(drop=True)\n\n    # Carry-forward last non-null rate, resetting at each account boundary.\n    rate_filled = df.groupby('account_id', sort=False)['rate'].ffill()\n\n    # carried = 1 only when original rate was NULL and a prior rate existed\n    # to carry forward (i.e. the fill actually happened).\n    was_carried = ((df['rate'].isna()) & (rate_filled.notna())).astype('int16')\n\n    out = pd.DataFrame({\n        'account_id': df['account_id'],\n        'obs_seq': df['obs_seq'],\n        'obs_date': df['obs_date'],\n        'rate_filled': rate_filled,\n        'was_carried': was_carried,\n    })\n\n    return {'rate_filled': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 774,
+   "tokens_out": 661,
+   "usd": 0.012237,
+   "wall_s": 7.606861114501953
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3096,
+  "tokens_out": 4222,
+  "usd": 0.072618,
+  "wall_s": 43.05964183807373
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

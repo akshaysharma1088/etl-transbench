@@ -1,0 +1,51 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    \"\"\"Fetch an input DataFrame by name, tolerating case/whitespace\n    differences in the key naming used by the harness.\"\"\"\n    if name in inputs:\n        return inputs[name]\n    target = name.strip().lower()\n    for k, v in inputs.items():\n        if k.strip().lower() == target:\n            return v\n    raise KeyError(name)\n\n\ndef run(inputs: dict) -> dict:\n    dim = _get_input(inputs, 'DIM_PRODUCT').copy()\n    stg = _get_input(inputs, 'STG_PRODUCT').copy()\n\n    cols = ['product_id', 'category', 'price_band',\n            'eff_start_date', 'eff_end_date', 'is_current']\n\n    # Ensure all expected columns exist even if dim is empty\n    for c in cols:\n        if c not in dim.columns:\n            dim[c] = pd.Series(dtype='object')\n\n    # Sort staging records by product_id, then update_date ascending.\n    # Stable sort preserves original relative order for equal keys.\n    stg_sorted = stg.sort_values(\n        by=['product_id', 'update_date'], kind='mergesort'\n    ).reset_index(drop=True)\n\n    # Working list of records (dicts) representing the evolving DIM_PRODUCT.\n    records = dim.to_dict('records')\n\n    # Index mapping product_id -> position of its current (is_current==1) row.\n    current_idx = {}\n    for i, r in enumerate(records):\n        if r.get('is_current') == 1:\n            current_idx[r['product_id']] = i\n\n    def is_diff(a, b):\n        a_null = pd.isna(a)\n        b_null = pd.isna(b)\n        if a_null and b_null:\n            return False\n        if a_null != b_null:\n            return True\n        return a != b\n\n    for _, s in stg_sorted.iterrows():\n        pid = s['product_id']\n        upd_date = s['update_date']\n        idx = current_idx.get(pid)\n\n        if idx is None:\n            new_rec = {\n                'product_id': pid,\n                'category': s['category'],\n                'price_band': s['price_band'],\n                'eff_start_date': upd_date,\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            }\n            records.append(new_rec)\n            current_idx[pid] = len(records) - 1\n        else:\n            c = records[idx]\n            changed = is_diff(c.get('category'), s['category']) or \\\n                      is_diff(c.get('price_band'), s['price_band'])\n\n            if changed:\n                # Expire the current version.\n                records[idx] = {**c, 'eff_end_date': upd_date, 'is_current': 0}\n                # Insert new current version.\n                new_rec = {\n                    'product_id': pid,\n                    'category': s['category'],\n                    'price_band': s['price_band'],\n                    'eff_start_date': upd_date,\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                }\n                records.append(new_rec)\n                current_idx[pid] = len(records) - 1\n            # else: no-op, no changes needed\n\n    out = pd.DataFrame(records, columns=cols)\n\n    # Normalize dtypes to be consistent with legacy schema expectations.\n    if not out.empty:\n        out['product_id'] = out['product_id'].astype(\n            dim['product_id'].dtype if len(dim) else out['product_id'].dtype\n        )\n        out['eff_start_date'] = pd.to_datetime(out['eff_start_date'])\n        out['eff_end_date'] = pd.to_datetime(out['eff_end_date'])\n        out['is_current'] = out['is_current'].astype(int)\n\n    return {'dim_product_out': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 778,
+   "tokens_out": 2514,
+   "usd": 0.040044,
+   "wall_s": 21.311229705810547
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2280,
+  "tokens_out": 1464,
+  "usd": 0.0288,
+  "wall_s": 11.026556015014648
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

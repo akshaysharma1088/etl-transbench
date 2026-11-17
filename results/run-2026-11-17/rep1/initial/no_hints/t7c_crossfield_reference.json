@@ -1,0 +1,16 @@
+{
+ "task": "t7c_crossfield_reference",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 704,
+   "tokens_out": 4000,
+   "usd": 0.062112,
+   "wall_s": 40.21917414665222
+  }
+ ]
+}

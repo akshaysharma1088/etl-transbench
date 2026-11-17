@@ -1,0 +1,46 @@
+{
+ "config": "B1_single_pass",
+ "rep": 0,
+ "task": "t7b_multi_reason_collect",
+ "category": "T7",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"invoices\"].copy()\n\n    n = len(df)\n\n    amount = df[\"amount\"]\n    tax = df[\"tax\"]\n    due_date = df[\"due_date\"]\n    customer_ref = df[\"customer_ref\"]\n\n    amount_null = amount.isna()\n    tax_null = tax.isna()\n\n    r1 = amount_null | (amount < 0)\n    r2 = tax_null | (tax < 0)\n\n    both_present = (~amount_null) & (~tax_null)\n    r3 = pd.Series(False, index=df.index)\n    r3[both_present] = tax[both_present] > (amount[both_present] * 0.5)\n\n    r4 = due_date.isna()\n\n    ref_null = customer_ref.isna()\n    ref_blank = pd.Series(False, index=df.index)\n    not_null_ref = ~ref_null\n    ref_blank[not_null_ref] = customer_ref[not_null_ref].astype(str).str.strip() == \"\"\n    r5 = ref_null | ref_blank\n\n    rules = [\n        (r1, \"AMT_BAD\"),\n        (r2, \"TAX_BAD\"),\n        (r3, \"TAX_EXCESS\"),\n        (r4, \"DUE_NULL\"),\n        (r5, \"REF_EMPTY\"),\n    ]\n\n    reason_codes = pd.Series([\"\"] * n, index=df.index, dtype=object)\n    for mask, code in rules:\n        mask_filled = mask.fillna(False)\n        sel = mask_filled\n        reason_codes[sel] = reason_codes[sel].apply(\n            lambda existing, c=code: (existing + \"|\" + c) if existing else c\n        )\n\n    has_failure = reason_codes != \"\"\n\n    clean = df[~has_failure].copy()\n    rejects = df[has_failure].copy()\n    rejects[\"reason_codes\"] = reason_codes[has_failure]\n\n    return {\n        \"invoices_clean\": clean.reset_index(drop=True),\n        \"invoices_rejects\": rejects.reset_index(drop=True),\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 667,
+   "tokens_out": 991,
+   "usd": 0.016866,
+   "wall_s": 7.837481260299683
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

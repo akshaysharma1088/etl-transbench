@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 0,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_PRODUCT'].copy()\n    stg = inputs['STG_PRODUCT'].copy()\n\n    # Convert DIM_PRODUCT to list-of-dict so we can mutate rows in place\n    # while also appending brand new rows (new versions) to the same list,\n    # preserving all historical rows untouched.\n    output_rows = dim.to_dict('records')\n\n    # Track the current (is_current == 1) row object per product_id.\n    current_state = {}\n    for row in output_rows:\n        if row.get('is_current') == 1:\n            current_state[row['product_id']] = row\n\n    # Sort staged records by product_id, update_date ascending, stable sort\n    # (cursor order), WITHOUT deduplication.\n    stg_sorted = stg.sort_values(\n        by=['product_id', 'update_date'],\n        kind='mergesort'\n    )\n\n    def _eq(x, y):\n        x_na = pd.isna(x)\n        y_na = pd.isna(y)\n        if x_na and y_na:\n            return True\n        if x_na or y_na:\n            return False\n        return x == y\n\n    def attrs_equal(cur_row, s_row):\n        return (\n            _eq(cur_row['category'], s_row['category']) and\n            _eq(cur_row['price_band'], s_row['price_band'])\n        )\n\n    for _, s in stg_sorted.iterrows():\n        pid = s['product_id']\n        cur = current_state.get(pid)\n\n        if cur is None:\n            new_row = {\n                'product_id': pid,\n                'category': s['category'],\n                'price_band': s['price_band'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            }\n            output_rows.append(new_row)\n            current_state[pid] = new_row\n        else:\n            if not attrs_equal(cur, s):\n                # Expire current version\n                cur['eff_end_date'] = s['update_date']\n                cur['is_current'] = 0\n\n                # Insert new current version\n                new_row = {\n                    'product_id': pid,\n                    'category': s['category'],\n                    'price_band': s['price_band'],\n                    'eff_start_date': s['update_date'],\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                }\n                output_rows.append(new_row)\n                current_state[pid] = new_row\n            # else: attributes unchanged -> no-op, no new version created\n\n    out_df = pd.DataFrame(\n        output_rows,\n        columns=[\n            'product_id', 'category', 'price_band',\n            'eff_start_date', 'eff_end_date', 'is_current'\n        ]\n    )\n\n    return {'dim_product_out': out_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 833,
+   "tokens_out": 1899,
+   "usd": 0.030984,
+   "wall_s": 16.731669425964355
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5516,
+  "tokens_out": 13018,
+  "usd": 0.211818,
+  "wall_s": 124.07301473617554
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

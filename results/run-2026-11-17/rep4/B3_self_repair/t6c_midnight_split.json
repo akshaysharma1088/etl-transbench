@@ -1,0 +1,51 @@
+{
+ "config": "B3_self_repair",
+ "rep": 4,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize events with gap rule (>45 min) and forced midnight split.\n    Sessions never cross calendar dates. Session numbering restarts at 1\n    for each user (per-user sequential session numbers), ordered by\n    event_ts then event_id within each user.\n    \"\"\"\n\n    events = inputs['events'].copy()\n\n    # Ensure event_ts is datetime\n    if not pd.api.types.is_datetime64_any_dtype(events['event_ts']):\n        events['event_ts'] = pd.to_datetime(events['event_ts'])\n\n    # Sort by user_id, then event_ts, then event_id (defines ordering within user)\n    events = events.sort_values(\n        by=['user_id', 'event_ts', 'event_id'],\n        na_position='last'\n    ).reset_index(drop=True)\n\n    # Extract calendar date (local) from event_ts - normalized timestamp for grouping\n    events['event_date'] = events['event_ts'].dt.normalize()\n\n    # Shifted values for comparison with previous row (globally, since sorted by user first)\n    prev_user = events['user_id'].shift(1)\n    prev_ts = events['event_ts'].shift(1)\n    prev_date = events['event_date'].shift(1)\n\n    # Condition: different user -> always new session\n    diff_user = events['user_id'] != prev_user\n\n    # Condition (b): different calendar date -> forced new session\n    diff_date = events['event_date'] != prev_date\n\n    # Condition (a): gap strictly greater than 45 minutes -> new session\n    time_diff_minutes = (events['event_ts'] - prev_ts).dt.total_seconds() / 60.0\n    gap_exceeded = time_diff_minutes > 45\n\n    # New session starts if any condition holds.\n    # For the very first row overall, prev_user is NaN, so diff_user is True -> correctly starts session 1.\n    new_session = diff_user | diff_date | gap_exceeded\n    new_session = new_session.fillna(True)  # safety, though diff_user already handles first row\n\n    events['new_session_flag'] = new_session.astype(int)\n\n    # Per-user cumulative session numbering (resets to 1 for each user's first event)\n    events['session_num'] = events.groupby('user_id')['new_session_flag'].cumsum().astype('int64')\n\n    # Aggregate per user_id, session_num\n    grouped = events.groupby(['user_id', 'session_num'], as_index=False).agg(\n        session_date=('event_date', 'first'),\n        session_start=('event_ts', 'min'),\n        session_end=('event_ts', 'max'),\n        event_count=('event_id', 'count')\n    )\n\n    # Ensure correct dtypes\n    grouped['session_num'] = grouped['session_num'].astype('int64')\n    grouped['session_date'] = pd.to_datetime(grouped['session_date']).dt.date\n    grouped['session_start'] = pd.to_datetime(grouped['session_start'])\n    grouped['session_end'] = pd.to_datetime(grouped['session_end'])\n    grouped['event_count'] = grouped['event_count'].astype('int64')\n\n    # Sort by user_id and session_num\n    user_sessions = grouped.sort_values(\n        by=['user_id', 'session_num']\n    ).reset_index(drop=True)\n\n    user_sessions = user_sessions[['user_id', 'session_num', 'session_date',\n                                    'session_start', 'session_end', 'event_count']]\n\n    return {'user_sessions': user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 332,
+   "tokens_out": 1115,
+   "usd": 0.005907,
+   "wall_s": 6.834763050079346
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2029,
+  "tokens_out": 2126,
+  "usd": 0.037977,
+  "wall_s": 19.846064805984497
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

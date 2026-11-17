@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t3c_router_first_match",
+ "category": "T3",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Router component that splits claims into three ports based on ordered rules.\n    Rules are evaluated in order; a row matches the FIRST matching rule only.\n    Unmatched rows go to the default port (standard).\n    \"\"\"\n    claims = inputs['claims'].copy()\n    \n    # Initialize output dataframes\n    fast_track = []\n    high_value = []\n    manual_review = []\n    standard = []\n    \n    # Track which rows have been matched\n    matched = set()\n    \n    # Rule 1: amount <= 500 and photos_attached == 1 \u2192 fast_track\n    mask1 = (claims['amount'] <= 500) & (claims['photos_attached'] == 1)\n    fast_track_indices = claims[mask1].index.tolist()\n    fast_track = claims.loc[fast_track_indices].copy()\n    matched.update(fast_track_indices)\n    \n    # Rule 2: amount > 10000 \u2192 high_value (only for unmatched rows)\n    remaining_indices = [i for i in claims.index if i not in matched]\n    remaining = claims.loc[remaining_indices]\n    mask2 = remaining['amount'] > 10000\n    high_value_indices = remaining[mask2].index.tolist()\n    high_value = remaining.loc[high_value_indices].copy()\n    matched.update(high_value_indices)\n    \n    # Rule 3: photos_attached == 0 or amount > 500 \u2192 manual_review (only for unmatched rows)\n    remaining_indices = [i for i in claims.index if i not in matched]\n    remaining = claims.loc[remaining_indices]\n    mask3 = (remaining['photos_attached'] == 0) | (remaining['amount'] > 500)\n    manual_review_indices = remaining[mask3].index.tolist()\n    manual_review = remaining.loc[manual_review_indices].copy()\n    matched.update(manual_review_indices)\n    \n    # Default port: standard (unmatched rows)\n    remaining_indices = [i for i in claims.index if i not in matched]\n    standard = claims.loc[remaining_indices].copy()\n    \n    # Select only the specified columns\n    columns = ['claim_id', 'amount', 'photos_attached']\n    \n    fast_track = fast_track[columns] if len(fast_track) > 0 else pd.DataFrame(columns=columns)\n    high_value = high_value[columns] if len(high_value) > 0 else pd.DataFrame(columns=columns)\n    manual_review = manual_review[columns] if len(manual_review) > 0 else pd.DataFrame(columns=columns)\n    \n    # Ensure dtypes are preserved\n    for col in columns:\n        if col in claims.columns:\n            if len(fast_track) > 0:\n                fast_track[col] = fast_track[col].astype(claims[col].dtype)\n            if len(high_value) > 0:\n                high_value[col] = high_value[col].astype(claims[col].dtype)\n            if len(manual_review) > 0:\n                manual_review[col] = manual_review[col].astype(claims[col].dtype)\n    \n    return {\n        'claims_fast_track': fast_track.reset_index(drop=True),\n        'claims_high_value': high_value.reset_index(drop=True),\n        'claims_manual_review': manual_review.reset_index(drop=True)\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 549,
+   "tokens_out": 900,
+   "usd": 0.005049,
+   "wall_s": 5.452395915985107
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

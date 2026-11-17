@@ -1,0 +1,46 @@
+{
+ "config": "B1_single_pass",
+ "rep": 4,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  }
+ ],
+ "final_code": "```python\nimport pandas as pd\n\n\ndef _is_null(v):\n    try:\n        return pd.isna(v)\n    except (TypeError, ValueError):\n        return v is None\n\n\ndef _neq(a, b):\n    \"\"\"NULL-aware inequality: NULL vs NULL -> not changed; NULL vs value -> changed.\"\"\"\n    a_null = _is_null(a)\n    b_null = _is_null(b)\n    if a_null and b_null:\n        return False\n    if a_null or b_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_ACCT'].copy()\n    stg = inputs['STG_ACCT'].copy()\n\n    # Normalize is_current to int\n    if 'is_current' in dim.columns:\n        dim['is_current'] = dim['is_current'].astype(int)\n\n    # ---- Step 1: Dedup STG_ACCT to latest per acct_id by update_date,\n    # ties broken by greater (email, tier) lexicographic pair ----\n    if len(stg) > 0:\n        stg_sorted = stg.sort_values(\n            by=['update_date', 'email', 'tier'],\n            na_position='last',\n            kind='mergesort'\n        )\n        stg_dedup = stg_sorted.groupby('acct_id', as_index=False, sort=False).tail(1)\n    else:\n        stg_dedup = stg.copy()\n\n    # ---- Prepare mutable working set of DIM_ACCT rows ----\n    dim = dim.reset_index(drop=True)\n    rows = dim.to_dict('records')\n\n    def get_current_idx(acct_id):\n        for i, r in enumerate(rows):\n            if r['acct_id'] == acct_id and int(r.get('is_current', 0)) == 1:\n                return i\n        return None\n\n    new_rows = []\n\n    for _, s in stg_dedup.iterrows():\n        acct_id = s['acct_id']\n        s_email = s['email']\n        s_tier = s['tier']\n        s_update_date = s['update_date']\n\n        idx = get_current_idx(acct_id)\n\n        if idx is None:\n            # No current row -> insert new current version\n            new_rows.append({\n                'acct_id': acct_id,\n                'email': s_email,\n                'tier': s_tier,\n                'eff_start_date': s_update_date,\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n        else:\n            c = rows[idx]\n            tier_changed = _neq(c.get('tier'), s_tier)\n            email_changed = _neq(c.get('email'), s_email)\n\n            if tier_changed:\n                # Expire current row (Type-2 versioning)\n                rows[idx]['eff_end_date'] = s_update_date\n                rows[idx]['is_current'] = 0\n\n                new_rows.append({\n                    'acct_id': acct_id,\n                    'email': s_email,\n                    'tier': s",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 983,
+   "tokens_out": 4000,
+   "usd": 0.062949,
+   "wall_s": 36.52679228782654
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

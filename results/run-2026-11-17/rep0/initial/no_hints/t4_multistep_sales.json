@@ -1,0 +1,16 @@
+{
+ "task": "t4_multistep_sales",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces the legacy multi-step ETL pipeline:\n    1. Create STG_DAILY: aggregate sales by store_id, sale_date (excluding nulls)\n    2. Create store_daily: join STG_DAILY with store_dim on store_id (INNER JOIN)\n    3. Create region_daily: aggregate store_daily by region, sale_date\n    \n    Outputs: store_daily, region_daily\n    \"\"\"\n    \n    sales = inputs['sales']\n    store_dim = inputs['store_dim']\n    \n    # Step 1: Create STG_DAILY\n    # SELECT store_id, sale_date, SUM(amount) AS gross, COUNT(*) AS txn_cnt\n    # FROM sales WHERE amount IS NOT NULL GROUP BY store_id, sale_date\n    stg_daily = sales[sales['amount'].notna()].groupby(\n        ['store_id', 'sale_date'], as_index=False\n    ).agg({\n        'amount': 'sum',\n        'amount': 'count'  # This will be overridden; use a different approach\n    })\n    \n    # Correct approach for Step 1\n    stg_daily = sales[sales['amount'].notna()].groupby(\n        ['store_id', 'sale_date'], as_index=False\n    ).agg(\n        gross=('amount', 'sum'),\n        txn_cnt=('amount', 'count')\n    )\n    \n    # Step 2: Create store_daily\n    # SELECT s.store_id, s.sale_date, s.gross, s.txn_cnt, d.region\n    # FROM STG_DAILY s JOIN store_dim d ON s.store_id = d.store_id (INNER JOIN)\n    store_daily = stg_daily.merge(\n        store_dim,\n        on='store_id',\n        how='inner'\n    )\n    \n    # Step 3: Create region_daily\n    # SELECT region, sale_date, SUM(gross) AS region_gross,\n    #        SUM(txn_cnt) AS region_txn_cnt\n    # FROM store_daily GROUP BY region, sale_date\n    region_daily = store_daily.groupby(\n        ['region', 'sale_date'], as_index=False\n    ).agg(\n        region_gross=('gross', 'sum'),\n        region_txn_cnt=('txn_cnt', 'sum')\n    )\n    \n    return {\n        'store_daily': store_daily,\n        'region_daily': region_daily\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 418,
+   "tokens_out": 665,
+   "usd": 0.003743,
+   "wall_s": 5.411620855331421
+  }
+ ]
+}

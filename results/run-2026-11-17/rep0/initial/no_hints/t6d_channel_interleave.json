@@ -1,0 +1,16 @@
+{
+ "task": "t6d_channel_interleave",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\nfrom typing import Dict\n\ndef run(inputs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize events per (user_id, channel) independently.\n    A 25-minute gap within the same (user_id, channel) stream starts a new session.\n    Events from different channels do NOT affect each other's sessions.\n    \"\"\"\n    \n    events = inputs['events'].copy()\n    \n    # Ensure event_ts is datetime\n    if not pd.api.types.is_datetime64_any_dtype(events['event_ts']):\n        events['event_ts'] = pd.to_datetime(events['event_ts'])\n    \n    # Sort by (user_id, channel, event_ts, event_id) to establish order\n    events = events.sort_values(\n        by=['user_id', 'channel', 'event_ts', 'event_id'],\n        na_position='last'\n    ).reset_index(drop=True)\n    \n    # Calculate time gaps within each (user_id, channel) group\n    events['time_diff'] = events.groupby(['user_id', 'channel'])['event_ts'].diff()\n    \n    # A new session starts if:\n    # 1. It's the first event in a (user_id, channel) group, OR\n    # 2. The gap since the last event is > 25 minutes\n    gap_threshold = pd.Timedelta(minutes=25)\n    events['is_new_session'] = (\n        events['time_diff'].isna() | (events['time_diff'] > gap_threshold)\n    )\n    \n    # Assign session numbers within each (user_id, channel) group\n    events['session_num'] = events.groupby(['user_id', 'channel'])['is_new_session'].cumsum() + 1\n    \n    # Aggregate to create channel_sessions\n    channel_sessions = events.groupby(['user_id', 'channel', 'session_num']).agg(\n        session_start=('event_ts', 'min'),\n        session_end=('event_ts', 'max'),\n        event_count=('event_id', 'count')\n    ).reset_index()\n    \n    # Ensure columns are in the expected order\n    channel_sessions = channel_sessions[['user_id', 'channel', 'session_num', 'session_start', 'session_end', 'event_count']]\n    \n    return {'channel_sessions': channel_sessions}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 299,
+   "tokens_out": 621,
+   "usd": 0.003404,
+   "wall_s": 4.213189363479614
+  }
+ ]
+}

@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 4,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    ledger = inputs[\"LEDGER\"].copy()\n\n    # Preserve original row order info in case we need stable tie-break,\n    # but legacy cursor explicitly orders by account_id, entry_date, row_seq.\n    ledger = ledger.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        kind=\"mergesort\"  # stable sort to mimic deterministic cursor order\n    ).reset_index(drop=True)\n\n    cycle_no_list = []\n    cycle_balance_list = []\n\n    prev_acct = None\n    bal = 0.0\n    cyc = 1\n\n    for row in ledger.itertuples(index=False):\n        acct = row.account_id\n        entry_type = row.entry_type\n        amount = row.amount\n\n        if acct != prev_acct:\n            bal = 0.0\n            cyc = 1\n            prev_acct = acct\n\n        if entry_type == \"STMT\":\n            bal = 0.0\n            cyc = cyc + 1\n\n        amt = amount if pd.notna(amount) else 0.0\n        bal = bal + amt\n\n        cycle_no_list.append(cyc)\n        cycle_balance_list.append(bal)\n\n    result = ledger.copy()\n    result[\"cycle_no\"] = cycle_no_list\n    result[\"cycle_balance\"] = cycle_balance_list\n\n    cols = [\"account_id\", \"row_seq\", \"entry_date\", \"entry_type\", \"amount\",\n            \"cycle_no\", \"cycle_balance\"]\n    result = result[cols]\n\n    return {\"cycle_balances\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 750,
+   "tokens_out": 1989,
+   "usd": 0.032085,
+   "wall_s": 19.857125520706177
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4084,
+  "tokens_out": 7261,
+  "usd": 0.121167,
+  "wall_s": 76.1664674282074
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

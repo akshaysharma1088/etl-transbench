@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t8d_soft_delete_tombstone",
+ "category": "T8",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs['target_snapshot'].copy()\n    cdc = inputs['cdc_events'].copy()\n    watermark = inputs['watermark'].copy()\n\n    # Determine high watermark timestamp\n    if len(watermark) > 0:\n        high_ts = watermark['high_ts'].iloc[0]\n    else:\n        high_ts = None\n\n    # Filter events strictly after the watermark\n    if high_ts is not None:\n        events = cdc[cdc['event_ts'] > high_ts].copy()\n    else:\n        events = cdc.copy()\n\n    # Apply events sequentially by (event_ts, event_seq), stable ordering\n    events = events.sort_values(['event_ts', 'event_seq'], kind='mergesort')\n\n    # Build initial state from target_snapshot (last row wins if duplicate user_id)\n    state = {}\n    for row in target.itertuples(index=False):\n        state[row.user_id] = {\n            'email': row.email,\n            'status': row.status,\n            'status_ts': row.status_ts,\n        }\n\n    seven_days = pd.Timedelta(days=7)\n\n    for row in events.itertuples(index=False):\n        uid = row.user_id\n        op = row.op\n        ts = row.event_ts\n        email = row.email\n\n        cur = state.get(uid)\n\n        if op == 'D':\n            if cur is None:\n                # No prior record: deletion creates a row; no prior email to\n                # preserve, fall back to the event's email value.\n                state[uid] = {\n                    'email': email,\n                    'status': 'DELETED',\n                    'status_ts': ts,\n                }\n            else:\n                # Soft delete: email preserved as of deletion (i.e. the\n                # email value already held, NOT the event's email field).\n                state[uid] = {\n                    'email': cur['email'],\n                    'status': 'DELETED',\n                    'status_ts': ts,\n                }\n\n        elif op == 'U':\n            if cur is None or cur['status'] == 'ACTIVE':\n                # Upsert for new user or active user\n                state[uid] = {\n                    'email': email,\n                    'status': 'ACTIVE',\n                    'status_ts': ts,\n                }\n            elif cur['status'] == 'DELETED':\n                threshold = cur['status_ts'] + seven_days\n                if ts > threshold:\n                    # Resurrection: strictly more than 7 days after deletion\n                    state[uid] = {\n                        'email': email,\n                        'status': 'ACTIVE',\n                        'status_ts': ts,\n                    }\n                # else: discard, deletion remains sticky within the window\n            # else: unknown status value, leave state unchanged defensively\n\n    rows = []\n    for uid, info in state.items():\n        rows.append({\n            'user_id': uid,\n            'email': info['email'],\n            'status': info['status'],\n            'status_ts': info['status_ts'],\n        })\n\n    new_snapshot = pd.DataFrame(rows, columns=['user_id', 'email', 'status', 'status_ts'])\n\n    return {'new_snapshot': new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 681,
+   "tokens_out": 2999,
+   "usd": 0.047028,
+   "wall_s": 25.935781717300415
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

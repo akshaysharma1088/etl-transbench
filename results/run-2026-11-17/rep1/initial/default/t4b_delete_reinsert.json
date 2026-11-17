@@ -1,0 +1,16 @@
+{
+ "task": "t4b_delete_reinsert",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy partition refresh ETL:\n    1. CREATE STG_NEW: aggregate inbound data (qty > 0) by product_id, batch_date\n    2. DELETE from target_snapshot: remove all rows matching arriving batch_dates\n    3. INSERT into target_snapshot: add aggregated rows from STG_NEW\n    \"\"\"\n    \n    inbound = inputs.get('inbound', pd.DataFrame())\n    target_snapshot = inputs.get('target_snapshot', pd.DataFrame()).copy()\n    \n    # Step 1: Create STG_NEW by aggregating inbound where qty > 0\n    stg_new = inbound[inbound['qty'] > 0].copy()\n    \n    if len(stg_new) > 0:\n        stg_new = stg_new.groupby(['product_id', 'batch_date'], as_index=False).agg({\n            'total_qty': 'sum',\n            'max_unit_cost': 'max'\n        })\n        # Handle case where agg columns might be named differently in input\n        if 'total_qty' not in stg_new.columns and 'qty' in stg_new.columns:\n            stg_new = stg_new.rename(columns={'qty': 'total_qty'})\n        if 'max_unit_cost' not in stg_new.columns and 'unit_cost' in stg_new.columns:\n            stg_new = stg_new.rename(columns={'unit_cost': 'max_unit_cost'})\n    else:\n        # Empty result with correct schema\n        stg_new = pd.DataFrame(columns=['product_id', 'batch_date', 'total_qty', 'max_unit_cost'])\n    \n    # Step 2: Delete from target_snapshot rows with batch_dates in STG_NEW\n    if len(stg_new) > 0:\n        arriving_batch_dates = stg_new['batch_date'].unique()\n        target_snapshot = target_snapshot[~target_snapshot['batch_date'].isin(arriving_batch_dates)]\n    \n    # Step 3: Insert rows from STG_NEW into target_snapshot\n    if len(stg_new) > 0:\n        target_snapshot = pd.concat([target_snapshot, stg_new], ignore_index=True)\n    \n    # Ensure correct column order and types\n    if len(target_snapshot) > 0:\n        target_snapshot = target_snapshot[['product_id', 'batch_date', 'total_qty', 'max_unit_cost']]\n    \n    return {'target_snapshot': target_snapshot}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 678,
+   "usd": 0.003788,
+   "wall_s": 4.595280647277832
+  }
+ ]
+}

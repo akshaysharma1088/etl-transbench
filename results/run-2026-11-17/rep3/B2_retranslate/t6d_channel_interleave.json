@@ -1,0 +1,51 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs['events'].copy()\n\n    # Ensure correct dtypes\n    df['event_ts'] = pd.to_datetime(df['event_ts'])\n    # user_id, channel, event_id assumed to already have proper dtypes from source\n\n    # Sort within each (user_id, channel) stream by event_ts then event_id\n    df = df.sort_values(\n        by=['user_id', 'channel', 'event_ts', 'event_id'],\n        kind='mergesort'\n    ).reset_index(drop=True)\n\n    # Compute time gap from previous event within the same (user_id, channel) group\n    grp = df.groupby(['user_id', 'channel'], sort=False)\n    prev_ts = grp['event_ts'].shift(1)\n    gap = df['event_ts'] - prev_ts\n\n    # New session starts when there's no previous event (first in group)\n    # or when the gap strictly exceeds 25 minutes\n    new_session = prev_ts.isna() | (gap > pd.Timedelta(minutes=25))\n\n    # Session number per (user_id, channel): cumulative count of new_session flags\n    df['_new_session'] = new_session.astype(int)\n    df['session_num'] = df.groupby(['user_id', 'channel'], sort=False)['_new_session'].cumsum()\n\n    # Aggregate into sessions\n    result = (\n        df.groupby(['user_id', 'channel', 'session_num'], sort=False)\n          .agg(\n              session_start=('event_ts', 'min'),\n              session_end=('event_ts', 'max'),\n              event_count=('event_ts', 'size')\n          )\n          .reset_index()\n    )\n\n    # Order output deterministically: by user_id, channel, session_num\n    result = result.sort_values(\n        by=['user_id', 'channel', 'session_num'],\n        kind='mergesort'\n    ).reset_index(drop=True)\n\n    result = result[['user_id', 'channel', 'session_num', 'session_start', 'session_end', 'event_count']]\n\n    return {'channel_sessions': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 299,
+   "tokens_out": 819,
+   "usd": 0.004394,
+   "wall_s": 5.34492301940918
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 444,
+  "tokens_out": 1057,
+  "usd": 0.017187,
+  "wall_s": 9.146260499954224
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

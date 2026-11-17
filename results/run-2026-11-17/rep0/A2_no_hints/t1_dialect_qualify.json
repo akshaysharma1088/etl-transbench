@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t1_dialect_qualify",
+ "category": "T1",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces Teradata-style QUALIFY: latest high-value transaction per account.\n    \n    Semantics:\n    1. Filter WHERE amount > 100\n    2. Add size_band column based on amount\n    3. Apply window function ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC)\n    4. QUALIFY filters to keep only rows where row_number = 1 (latest per account)\n    \"\"\"\n    acct_txn = inputs['acct_txn'].copy()\n    \n    # Step 1: Filter WHERE amount > 100\n    acct_txn = acct_txn[acct_txn['amount'] > 100].copy()\n    \n    # Step 2: Add size_band column\n    acct_txn['size_band'] = pd.cut(\n        acct_txn['amount'],\n        bins=[float('-inf'), 500, 1000, float('inf')],\n        labels=['STANDARD', 'LARGE', 'JUMBO'],\n        right=False\n    ).astype(str)\n    \n    # Correct the binning logic for the case statement\n    acct_txn['size_band'] = acct_txn['amount'].apply(\n        lambda x: 'JUMBO' if x >= 1000 else ('LARGE' if x >= 500 else 'STANDARD')\n    )\n    \n    # Step 3: Apply window function\n    # ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC)\n    acct_txn['_row_num'] = acct_txn.groupby('account_id', sort=False).cumcount()\n    \n    # Sort properly for row numbering: descending by txn_ts, then descending by txn_id\n    # We need to sort within each partition and assign row numbers\n    acct_txn = acct_txn.sort_values(\n        by=['account_id', 'txn_ts', 'txn_id'],\n        ascending=[True, False, False],\n        na_position='last'\n    ).reset_index(drop=True)\n    \n    acct_txn['_row_num'] = acct_txn.groupby('account_id', sort=False).cumcount() + 1\n    \n    # Step 4: QUALIFY - filter where row_number = 1\n    result = acct_txn[acct_txn['_row_num'] == 1].copy()\n    \n    # Select output columns in order\n    result = result[[\n        'account_id',\n        'txn_id',\n        'txn_ts',\n        'amount',\n        'channel',\n        'size_band'\n    ]].reset_index(drop=True)\n    \n    return {'latest_high_value_txn': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 338,
+   "tokens_out": 739,
+   "usd": 0.004033,
+   "wall_s": 4.960229158401489
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

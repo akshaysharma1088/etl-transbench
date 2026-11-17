@@ -1,0 +1,46 @@
+{
+ "config": "B2_retranslate",
+ "rep": 2,
+ "task": "t8b_delete_reinsert_cdc",
+ "category": "T8",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n\n    # Determine high watermark timestamp (events with ts <= high_ts are already applied)\n    if len(watermark) > 0:\n        high_ts = watermark[\"high_ts\"].iloc[0]\n    else:\n        high_ts = None\n\n    # Only events strictly after the watermark need to be applied\n    if high_ts is not None:\n        events = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n    else:\n        events = cdc_events.copy()\n\n    # Sequential application requires deterministic ordering per item:\n    # by event_ts ascending, then event_seq ascending as tie-break.\n    events = events.sort_values([\"item_id\", \"event_ts\", \"event_seq\"], kind=\"mergesort\")\n\n    # Build initial state from target_snapshot\n    state = {}\n    for _, row in target_snapshot.iterrows():\n        state[row[\"item_id\"]] = {\n            \"qty_on_hand\": row[\"qty_on_hand\"],\n            \"last_event_ts\": row[\"last_event_ts\"],\n            \"exists\": True,\n        }\n\n    for _, ev in events.iterrows():\n        item = ev[\"item_id\"]\n        op = ev[\"op\"]\n        qty = ev[\"qty\"]\n        ts = ev[\"event_ts\"]\n\n        if item not in state:\n            state[item] = {\"qty_on_hand\": 0, \"last_event_ts\": None, \"exists\": False}\n\n        s = state[item]\n\n        if op == \"R\":\n            if not s[\"exists\"]:\n                s[\"qty_on_hand\"] = 0\n            s[\"qty_on_hand\"] = s[\"qty_on_hand\"] + qty\n            s[\"exists\"] = True\n            s[\"last_event_ts\"] = ts\n        elif op == \"A\":\n            s[\"qty_on_hand\"] = qty\n            s[\"exists\"] = True\n            s[\"last_event_ts\"] = ts\n        elif op == \"D\":\n            s[\"exists\"] = False\n            s[\"qty_on_hand\"] = 0\n            s[\"last_event_ts\"] = ts\n\n        state[item] = s\n\n    rows = []\n    for item, s in state.items():\n        if s[\"exists\"]:\n            rows.append(\n                {\n                    \"item_id\": item,\n                    \"qty_on_hand\": s[\"qty_on_hand\"],\n                    \"last_event_ts\": s[\"last_event_ts\"],\n                }\n            )\n\n    new_snapshot = pd.DataFrame(rows, columns=[\"item_id\", \"qty_on_hand\", \"last_event_ts\"])\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 742,
+   "tokens_out": 2095,
+   "usd": 0.033651,
+   "wall_s": 17.670875072479248
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

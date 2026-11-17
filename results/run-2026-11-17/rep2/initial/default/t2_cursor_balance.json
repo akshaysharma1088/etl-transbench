@@ -1,0 +1,16 @@
+{
+ "task": "t2_cursor_balance",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    df = inputs[\"TRANSACTIONS\"].copy()\n\n    # Preserve original dtypes/values for output columns\n    df = df.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        kind=\"mergesort\"  # stable sort to mimic deterministic cursor order\n    ).reset_index(drop=True)\n\n    # Coalesce amount to 0 for running balance computation only\n    amt_filled = df[\"amount\"].fillna(0)\n\n    # Running balance resets per account_id (cursor logic: bal resets when account changes)\n    running_balance = amt_filled.groupby(df[\"account_id\"]).cumsum()\n\n    overdraft_flag = (running_balance < 0).astype(\"int64\")\n    # Match SMALLINT semantics (small integer), use int16-like values but keep as int\n    overdraft_flag = overdraft_flag.astype(\"int64\")\n\n    out = pd.DataFrame({\n        \"account_id\": df[\"account_id\"],\n        \"txn_seq\": df[\"txn_seq\"],\n        \"txn_date\": df[\"txn_date\"],\n        \"amount\": df[\"amount\"],\n        \"running_balance\": running_balance.astype(\"float64\"),\n        \"overdraft_flag\": overdraft_flag\n    })\n\n    return {\"acct_balance_flags\": out}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 713,
+   "tokens_out": 614,
+   "usd": 0.011349,
+   "wall_s": 6.873511791229248
+  }
+ ]
+}

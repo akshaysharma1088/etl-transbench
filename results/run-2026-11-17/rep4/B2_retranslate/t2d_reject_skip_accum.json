@@ -1,0 +1,51 @@
+{
+ "config": "B2_retranslate",
+ "rep": 4,
+ "task": "t2d_reject_skip_accum",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs['postings'].copy()\n\n    # Preserve original row order as a tiebreaker (stable sort)\n    df = df.reset_index(drop=True)\n    df['_orig_order'] = df.index\n\n    # Sort according to cursor ORDER BY account_id, post_date, post_seq\n    df_sorted = df.sort_values(\n        by=['account_id', 'post_date', 'post_seq', '_orig_order'],\n        kind='mergesort'\n    ).reset_index(drop=True)\n\n    # Determine validity per row (per-row TRY/CATCH condition)\n    qty = df_sorted['qty']\n    price = df_sorted['unit_price']\n\n    valid_mask = (\n        qty.notna() & (qty > 0) &\n        price.notna() & (price >= 0)\n    )\n\n    df_sorted['_valid'] = valid_mask\n\n    # Compute post_value only for valid rows\n    df_sorted['post_value'] = np.where(\n        valid_mask,\n        df_sorted['qty'] * df_sorted['unit_price'],\n        np.nan\n    )\n\n    # Running total: cumulative sum of post_value within account,\n    # but only over valid rows (rejected rows do not affect running total\n    # and are not included in the output at all).\n    valid_rows = df_sorted[df_sorted['_valid']].copy()\n\n    if len(valid_rows) > 0:\n        valid_rows['running_total'] = (\n            valid_rows.groupby('account_id')['post_value'].cumsum()\n        )\n    else:\n        valid_rows['running_total'] = pd.Series(dtype='float64')\n\n    posted_totals = valid_rows[\n        ['account_id', 'post_seq', 'post_date', 'post_value', 'running_total']\n    ].reset_index(drop=True)\n\n    posted_totals['post_value'] = posted_totals['post_value'].astype(float)\n    posted_totals['running_total'] = posted_totals['running_total'].astype(float)\n\n    # Reject counts: one row per distinct account_id present in POSTINGS,\n    # including accounts with zero rejects, in ascending account_id order\n    # (matching the cursor's ORDER BY account_id traversal order).\n    reject_per_row = (~df_sorted['_valid']).astype(int)\n    df_sorted['_reject'] = reject_per_row\n\n    reject_counts = (\n        df_sorted.groupby('account_id')['_reject']\n        .sum()\n        .reset_index()\n        .rename(columns={'_reject': 'reject_count'})\n    )\n\n    reject_counts['reject_count'] = reject_counts['reject_count'].astype(int)\n    reject_counts = reject_counts.sort_values('account_id', kind='mergesort').reset_index(drop=True)\n\n    return {\n        'posted_totals': posted_totals,\n        'reject_counts': reject_counts,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 975,
+   "tokens_out": 1024,
+   "usd": 0.018285,
+   "wall_s": 9.701078414916992
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 975,
+  "tokens_out": 1794,
+  "usd": 0.029835,
+  "wall_s": 16.71809983253479
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

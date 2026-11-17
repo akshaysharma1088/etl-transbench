@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim_product = inputs['DIM_PRODUCT'].copy()\n    stg_product = inputs['STG_PRODUCT'].copy()\n\n    # Materialize existing dimension rows as a list of mutable dict records\n    rows = dim_product.to_dict('records')\n\n    # Track index of the current (is_current == 1) row per product_id\n    current = {}\n    for i, r in enumerate(rows):\n        if r.get('is_current') == 1:\n            current[r['product_id']] = i\n\n    # Process staged records strictly ordered by product_id, update_date ascending\n    stg_sorted = stg_product.sort_values(\n        ['product_id', 'update_date'], kind='mergesort'\n    )\n\n    def value_changed(old_val, new_val):\n        old_null = pd.isna(old_val)\n        new_null = pd.isna(new_val)\n        if old_null and new_null:\n            return False\n        if old_null != new_null:\n            return True\n        return old_val != new_val\n\n    def attrs_changed(c, s):\n        return (\n            value_changed(c.get('category'), s['category'])\n            or value_changed(c.get('price_band'), s['price_band'])\n        )\n\n    for _, s in stg_sorted.iterrows():\n        pid = s['product_id']\n        idx = current.get(pid)\n\n        if idx is None:\n            # No current row exists -> insert new current version\n            new_row = {\n                'product_id': pid,\n                'category': s['category'],\n                'price_band': s['price_band'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            }\n            rows.append(new_row)\n            current[pid] = len(rows) - 1\n        else:\n            c = rows[idx]\n            if attrs_changed(c, s):\n                # Expire current row\n                c['eff_end_date'] = s['update_date']\n                c['is_current'] = 0\n\n                # Insert new current version\n                new_row = {\n                    'product_id': pid,\n                    'category': s['category'],\n                    'price_band': s['price_band'],\n                    'eff_start_date': s['update_date'],\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                }\n                rows.append(new_row)\n                current[pid] = len(rows) - 1\n            # else: unchanged -> no-op, no new version created\n\n    out_cols = [\n        'product_id',\n        'category',\n        'price_band',\n        'eff_start_date',\n        'eff_end_date',\n        'is_current',\n    ]\n    out = pd.DataFrame(rows, columns=out_cols)\n\n    return {'dim_product_out': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 833,
+   "tokens_out": 3600,
+   "usd": 0.056499,
+   "wall_s": 32.709590673446655
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5094,
+  "tokens_out": 9946,
+  "usd": 0.164472,
+  "wall_s": 100.37350583076477
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

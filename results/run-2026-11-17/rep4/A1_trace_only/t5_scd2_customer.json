@@ -1,0 +1,66 @@
+{
+ "config": "A1_trace_only",
+ "rep": 4,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_null(v):\n    try:\n        return pd.isna(v)\n    except (TypeError, ValueError):\n        return v is None\n\n\ndef _differs(a, b):\n    a_null = _is_null(a)\n    b_null = _is_null(b)\n    if a_null and b_null:\n        return False\n    if a_null or b_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_CUSTOMER'].copy()\n    stg = inputs['STG_CUSTOMER'].copy()\n\n    if stg.empty:\n        return {'dim_customer_out': dim}\n\n    # Step 1: Deduplicate staging to latest record per customer_id by\n    # update_date, tie-broken by greater (name, segment) lexicographically.\n    stg_sorted = stg.sort_values(\n        by=['customer_id', 'update_date', 'name', 'segment'],\n        ascending=[True, False, False, False],\n        kind='mergesort'\n    )\n    stg_dedup = stg_sorted.groupby('customer_id', as_index=False, sort=False).first()\n\n    new_rows = []\n\n    for _, s in stg_dedup.iterrows():\n        cust_id = s['customer_id']\n        mask_current = (dim['customer_id'] == cust_id) & (dim['is_current'] == 1)\n        current_idxs = dim.index[mask_current]\n\n        if len(current_idxs) == 0:\n            # No current row exists -> insert new version\n            new_rows.append({\n                'customer_id': cust_id,\n                'name': s['name'],\n                'segment': s['segment'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': None,\n                'is_current': 1\n            })\n        else:\n            c = dim.loc[current_idxs[0]]\n            name_diff = _differs(c['name'], s['name'])\n            segment_diff = _differs(c['segment'], s['segment'])\n\n            if name_diff or segment_diff:\n                # Tracked-attribute change: expire existing current row(s)\n                dim.loc[current_idxs, 'eff_end_date'] = s['update_date']\n                dim.loc[current_idxs, 'is_current'] = 0\n\n                new_rows.append({\n                    'customer_id': cust_id,\n                    'name': s['name'],\n                    'segment': s['segment'],\n                    'eff_start_date': s['update_date'],\n                    'eff_end_date': None,\n                    'is_current': 1\n                })\n            # else: no change -> do nothing, no new version created\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=dim.columns)\n        dim = pd.concat([dim, new_df], ignore_index=True)\n\n    return {'dim_customer_out': dim}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1017,
+   "tokens_out": 2723,
+   "usd": 0.043896,
+   "wall_s": 23.755216121673584
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 7050,
+  "tokens_out": 11260,
+  "usd": 0.19005,
+  "wall_s": 108.53819799423218
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

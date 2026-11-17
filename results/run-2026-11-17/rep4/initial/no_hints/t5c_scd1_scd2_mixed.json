@@ -1,0 +1,16 @@
+{
+ "task": "t5c_scd1_scd2_mixed",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "```python\nimport pandas as pd\n\n\ndef _differs(a, b):\n    \"\"\"NULL-aware inequality: NULL vs NULL -> not differs; NULL vs non-NULL -> differs;\n    non-NULL vs non-NULL -> standard inequality.\"\"\"\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef _pick_latest(group: pd.DataFrame) -> pd.Series:\n    max_date = group['update_date'].max()\n    candidates = group[group['update_date'] == max_date]\n    if len(candidates) == 1:\n        return candidates.iloc[0]\n    # Tie-break: greater (email, tier) lexicographic pair wins.\n    candidates = candidates.sort_values(by=['email', 'tier'], ascending=[False, False])\n    return candidates.iloc[0]\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_ACCT'].copy()\n    stg = inputs['STG_ACCT'].copy()\n\n    # --- Step 1: Dedup STG_ACCT to latest per acct_id by update_date,\n    #     ties broken by greater (email, tier) lexicographic pair.\n    if len(stg) == 0:\n        stg_dedup = stg.copy()\n    else:\n        stg_dedup = (\n            stg.groupby('acct_id', as_index=False, group_keys=False)\n               .apply(_pick_latest)\n               .reset_index(drop=True)\n        )\n\n    # Working mutable representation of DIM_ACCT rows.\n    work = dim.to_dict('records')\n\n    stg_list = stg_dedup.to_dict('records')\n\n    for s in stg_list:\n        acct_id = s['acct_id']\n\n        # Find the current row for this acct_id (is_current == 1), if any.\n        current_idx = None\n        for i, r in enumerate(work):\n            if r['acct_id'] == acct_id and r.get('is_current') == 1:\n                current_idx = i\n                break\n\n        if current_idx is None:\n            # No current row exists -",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 928,
+   "tokens_out": 4000,
+   "usd": 0.062784,
+   "wall_s": 36.37567973136902
+  }
+ ]
+}

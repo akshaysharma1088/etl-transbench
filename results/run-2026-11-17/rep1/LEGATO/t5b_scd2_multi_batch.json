@@ -1,0 +1,51 @@
+{
+ "config": "LEGATO",
+ "rep": 1,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _is_null(v):\n    if v is None:\n        return True\n    try:\n        if isinstance(v, float) and np.isnan(v):\n            return True\n    except Exception:\n        pass\n    try:\n        if pd.isna(v):\n            return True\n    except Exception:\n        pass\n    return False\n\n\ndef _changed(a, b):\n    a_null = _is_null(a)\n    b_null = _is_null(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    # Try exact match first\n    if name in inputs:\n        return inputs[name]\n    # Try case-insensitive match\n    lname = name.lower()\n    for k, v in inputs.items():\n        if k.lower() == lname:\n            return v\n    # Try stripped/normalized match (e.g. remove spaces/underscores differences)\n    norm_target = lname.replace(\"_\", \"\")\n    for k, v in inputs.items():\n        if k.lower().replace(\"_\", \"\") == norm_target:\n            return v\n    raise KeyError(f\"Could not find input matching '{name}' in provided inputs: {list(inputs.keys())}\")\n\n\ndef run(inputs: dict) -> dict:\n    dim = _get_input(inputs, \"DIM_PRODUCT\").copy()\n    stg = _get_input(inputs, \"STG_PRODUCT\").copy()\n\n    # Normalize dim columns/types\n    dim_cols = [\"product_id\", \"category\", \"price_band\",\n                \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    for c in dim_cols:\n        if c not in dim.columns:\n            dim[c] = pd.NA\n    dim = dim[dim_cols].copy()\n\n    # Coerce date columns to datetime for correct comparisons/output\n    if not pd.api.types.is_datetime64_any_dtype(dim[\"eff_start_date\"]):\n        dim[\"eff_start_date\"] = pd.to_datetime(dim[\"eff_start_date\"], errors=\"coerce\")\n    if not pd.api.types.is_datetime64_any_dtype(dim[\"eff_end_date\"]):\n        dim[\"eff_end_date\"] = pd.to_datetime(dim[\"eff_end_date\"], errors=\"coerce\")\n\n    dim[\"is_current\"] = dim[\"is_current\"].astype(\"Int64\")\n\n    # Build working state: list of row dicts (mutable)\n    records = dim.to_dict(\"records\")\n\n    # Index of current row position per product_id -> index in records list\n    current_index = {}\n    for idx, r in enumerate(records):\n        if not _is_null(r.get(\"is_current\")) and int(r[\"is_current\"]) == 1:\n            pid = r[\"product_id\"]\n            # In case of multiple currents (shouldn't happen), keep last seen\n            current_index[pid] = idx\n\n    # Prepare staging: ensure update_date is datetime, sort by product_id, update_date asc\n    stg[\"update_date\"] = pd.to_datetime(stg[\"update_date\"], errors=\"coerce\")\n    stg_sorted = stg.sort_values(\n        by=[\"product_id\", \"update_date\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    for _, s in stg_sorted.iterrows():\n        pid = s[\"product_id\"]\n        s_cat = s[\"category\"]\n        s_pb = s[\"price_band\"]\n        s_date = s[\"update_date\"]\n\n        if pid in current_index:\n            idx = current_index[pid]\n            c = records[idx]\n            cat_changed = _changed(c[\"category\"], s_cat)\n            pb_changed = _changed(c[\"price_band\"], s_pb)\n            if cat_changed or pb_changed:\n                # expire current\n                records[idx][\"eff_end_date\"] = s_date\n                records[idx][\"is_current\"] = 0\n                # insert new current version\n                new_row = {\n                    \"product_id\": pid,\n                    \"category\": s_cat,\n                    \"price_band\": s_pb,\n                    \"eff_start_date\": s_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n                records.append(new_row)\n                current_index[pid] = len(records) - 1\n            else:\n                # no-op\n                pass\n        else:\n            # no current row exists -> insert new current version\n            new_row = {\n                \"product_id\": pid,\n                \"category\": s_cat,\n                \"price_band\": s_pb,\n                \"eff_start_date\": s_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            }\n            records.append(new_row)\n            current_index[pid] = len(records) - 1\n\n    out = pd.DataFrame(records, columns=dim_cols)\n    out[\"is_current\"] = out[\"is_current\"].astype(\"Int64\")\n    out[\"eff_start_date\"] = pd.to_datetime(out[\"eff_start_date\"], errors=\"coerce\")\n    out[\"eff_end_date\"] = pd.to_datetime(out[\"eff_end_date\"], errors=\"coerce\")\n\n    return {\"dim_product_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 833,
+   "tokens_out": 2085,
+   "usd": 0.033774,
+   "wall_s": 18.237015962600708
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2665,
+  "tokens_out": 1884,
+  "usd": 0.036255,
+  "wall_s": 13.462887287139893
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

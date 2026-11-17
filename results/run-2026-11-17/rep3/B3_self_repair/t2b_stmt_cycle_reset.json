@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 3,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"LEDGER\"].copy()\n\n    # Preserve the cursor's ordering: account_id, entry_date, row_seq\n    df = df.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        kind=\"mergesort\"  # stable sort to keep deterministic tie-breaking\n    ).reset_index(drop=True)\n\n    # cycle_no: starts at 1 per account, incremented BEFORE the add\n    # whenever entry_type == 'STMT' is encountered.\n    is_stmt = (df[\"entry_type\"] == \"STMT\")\n\n    def _cycle_no(group):\n        return 1 + group.cumsum()\n\n    df[\"cycle_no\"] = (\n        is_stmt.groupby(df[\"account_id\"]).cumsum() + 1\n    )\n\n    # amount coalesced to 0 for balance accumulation purposes\n    amt_filled = df[\"amount\"].fillna(0)\n\n    # cycle_balance: running sum of amounts within each (account_id, cycle_no)\n    # group, in the established row order. Since the STMT row's reset happens\n    # before its own amount is added, grouping by cycle_no (computed above)\n    # and cumsum'ing naturally reproduces that: the STMT row starts the new\n    # cycle group and its own amount is the first value summed into it.\n    df[\"cycle_balance\"] = (\n        amt_filled.groupby([df[\"account_id\"], df[\"cycle_no\"]]).cumsum()\n    )\n\n    out = df[\n        [\n            \"account_id\",\n            \"row_seq\",\n            \"entry_date\",\n            \"entry_type\",\n            \"amount\",\n            \"cycle_no\",\n            \"cycle_balance\",\n        ]\n    ].reset_index(drop=True)\n\n    return {\"cycle_balances\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 750,
+   "tokens_out": 838,
+   "usd": 0.01482,
+   "wall_s": 7.089852571487427
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3935,
+  "tokens_out": 7534,
+  "usd": 0.12481500000000001,
+  "wall_s": 77.96760439872742
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

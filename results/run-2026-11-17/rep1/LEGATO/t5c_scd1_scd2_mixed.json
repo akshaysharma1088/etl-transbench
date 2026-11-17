@@ -1,0 +1,51 @@
+{
+ "config": "LEGATO",
+ "rep": 1,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    \"\"\"Case-insensitive lookup for input relation name.\"\"\"\n    if name in inputs:\n        return inputs[name]\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    key = lower_map.get(name.lower())\n    if key is not None:\n        return inputs[key]\n    raise KeyError(name)\n\n\ndef _null_safe_eq(a, b):\n    \"\"\"Null-safe equality: NaN/None vs NaN/None -> True (no change);\n    NaN/None vs non-null -> False (change); otherwise normal equality.\"\"\"\n    a_is_null = pd.isna(a)\n    b_is_null = pd.isna(b)\n    if a_is_null and b_is_null:\n        return True\n    if a_is_null != b_is_null:\n        return False\n    return a == b\n\n\ndef _dedup_stage(stg: pd.DataFrame) -> pd.DataFrame:\n    \"\"\"Dedup STG_ACCT to latest per acct_id by update_date.\n    Ties broken by greater (email, tier) lexicographic pair.\"\"\"\n    if stg.empty:\n        return stg.copy()\n\n    df = stg.copy()\n    # Ensure update_date comparable\n    df[\"_update_date_key\"] = pd.to_datetime(df[\"update_date\"])\n\n    results = []\n    for acct_id, grp in df.groupby(\"acct_id\", sort=False):\n        max_date = grp[\"_update_date_key\"].max()\n        tied = grp[grp[\"_update_date_key\"] == max_date]\n        if len(tied) == 1:\n            winner = tied.iloc[0]\n        else:\n            # pick greatest (email, tier) lexicographic pair\n            def sort_key(row):\n                email = row[\"email\"]\n                tier = row[\"tier\"]\n                email_key = (\"\" if pd.isna(email) else str(email))\n                tier_key = (\"\" if pd.isna(tier) else str(tier))\n                return (email_key, tier_key)\n\n            tied_sorted = tied.loc[\n                sorted(tied.index, key=lambda idx: sort_key(tied.loc[idx]))\n            ]\n            winner = tied_sorted.iloc[-1]\n        results.append(winner)\n\n    out = pd.DataFrame(results).drop(columns=[\"_update_date_key\"])\n    out = out.reset_index(drop=True)\n    return out\n\n\ndef run(inputs: dict) -> dict:\n    dim_acct = _get_input(inputs, \"DIM_ACCT\").copy()\n    stg_acct = _get_input(inputs, \"STG_ACCT\").copy()\n\n    # Normalize column presence / order safety\n    dim_cols = [\"acct_id\", \"email\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    for c in dim_cols:\n        if c not in dim_acct.columns:\n            dim_acct[c] = pd.NA\n    dim_acct = dim_acct[dim_cols]\n\n    # Build working list of row-dicts for mutability\n    records = dim_acct.to_dict(orient=\"records\")\n\n    # Dedup staged records\n    stg_dedup = _dedup_stage(stg_acct)\n\n    # Process each staged record (one per acct_id after dedup)\n    for _, s in stg_dedup.iterrows():\n        acct_id = s[\"acct_id\"]\n        s_email = s[\"email\"]\n        s_tier = s[\"tier\"]\n        s_update_date = s[\"update_date\"]\n\n        # find current row for this acct_id\n        current_idx = None\n        for idx, r in enumerate(records):\n            if r[\"acct_id\"] == acct_id and r.get(\"is_current\") == 1:\n                current_idx = idx\n                break\n\n        if current_idx is None:\n            # Insert new current version\n            new_row = {\n                \"acct_id\": acct_id,\n                \"email\": s_email,\n                \"tier\": s_tier,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            }\n            records.append(new_row)\n            continue\n\n        c = records[current_idx]\n\n        tier_changed = not _null_safe_eq(c[\"tier\"], s_tier)\n        email_changed = not _null_safe_eq(c[\"email\"], s_email)\n\n        if tier_changed:\n            # expire current row\n            c[\"eff_end_date\"] = s_update_date\n            c[\"is_current\"] = 0\n\n            new_row = {\n                \"acct_id\": acct_id,\n                \"email\": s_email,\n                \"tier\": s_tier,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            }\n            records.append(new_row)\n\n        if email_changed:\n            # retro-overwrite email across ALL rows of this acct_id\n            for r in records:\n                if r[\"acct_id\"] == acct_id:\n                    r[\"email\"] = s_email\n\n    out_df = pd.DataFrame(records, columns=dim_cols)\n\n    # Type coercion to match legacy types as closely as possible\n    out_df[\"acct_id\"] = out_df[\"acct_id\"].astype(\"Int64\")\n    out_df[\"is_current\"] = out_df[\"is_current\"].astype(\"Int64\")\n\n    if \"eff_start_date\" in out_df.columns:\n        out_df[\"eff_start_date\"] = pd.to_datetime(out_df[\"eff_start_date\"]).dt.date\n    if \"eff_end_date\" in out_df.columns:\n        out_df[\"eff_end_date\"] = pd.to_datetime(out_df[\"eff_end_date\"]).dt.date\n        out_df[\"eff_end_date\"] = out_df[\"eff_end_date\"].where(\n            out_df[\"eff_end_date\"].notna(), None\n        )\n\n    out_df = out_df.sort_values(\n        by=[\"acct_id\", \"eff_start_date\", \"is_current\"],\n        ascending=[True, True, False],\n        kind=\"stable\",\n    ).reset_index(drop=True)\n\n    return {\"dim_acct_out\": out_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 983,
+   "tokens_out": 3366,
+   "usd": 0.053439,
+   "wall_s": 29.840678453445435
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3215,
+  "tokens_out": 2092,
+  "usd": 0.041025,
+  "wall_s": 14.829855918884277
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

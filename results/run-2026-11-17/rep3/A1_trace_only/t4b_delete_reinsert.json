@@ -1,0 +1,66 @@
+{
+ "config": "A1_trace_only",
+ "rep": 3,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    inbound = inputs[\"inbound\"].copy()\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n\n    # Step 1: STG_NEW\n    # Filter qty > 0 (nulls are excluded since qty > 0 is unknown/false for NaN)\n    stg = inbound[inbound[\"qty\"] > 0].copy()\n\n    stg_new = (\n        stg.groupby([\"product_id\", \"batch_date\"], dropna=False, as_index=False)\n        .agg(\n            total_qty=(\"qty\", \"sum\"),\n            max_unit_cost=(\"unit_cost\", \"max\"),\n        )\n    )\n\n    # Ensure column order\n    stg_new = stg_new[[\"product_id\", \"batch_date\", \"total_qty\", \"max_unit_cost\"]]\n\n    # Step 2: DELETE FROM TARGET_SNAPSHOT WHERE batch_date IN (distinct batch_date FROM STG_NEW)\n    arriving_dates = set(stg_new[\"batch_date\"].dropna().unique().tolist())\n    has_null_date = stg_new[\"batch_date\"].isna().any()\n\n    if has_null_date:\n        # SQL \"IN\" with NULL in the subquery list: a row with NULL batch_date\n        # in TARGET_SNAPSHOT compared against IN (...) containing NULL still\n        # yields UNKNOWN unless there's a matching non-null value, since\n        # NULL = NULL is UNKNOWN in SQL. So NULL batch_date rows in target\n        # are never deleted via IN, even if STG_NEW has NULL batch_date rows,\n        # UNLESS target's NULL matches a non-null value (impossible).\n        keep_mask = ~target_snapshot[\"batch_date\"].isin(arriving_dates)\n    else:\n        keep_mask = ~target_snapshot[\"batch_date\"].isin(arriving_dates)\n\n    remaining = target_snapshot[keep_mask].copy()\n\n    # Step 3: INSERT INTO TARGET_SNAPSHOT SELECT * FROM STG_NEW\n    result = pd.concat([remaining, stg_new], ignore_index=True)\n\n    # Ensure column order matches target schema\n    result = result[[\"product_id\", \"batch_date\", \"total_qty\", \"max_unit_cost\"]]\n\n    return {\"target_snapshot\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 402,
+   "usd": 0.002408,
+   "wall_s": 2.612542152404785
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4656,
+  "tokens_out": 7160,
+  "usd": 0.121368,
+  "wall_s": 66.56194806098938
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

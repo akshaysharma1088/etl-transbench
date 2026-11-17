@@ -1,0 +1,56 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    \"\"\"Case-insensitive / flexible lookup for input relations.\"\"\"\n    if name in inputs:\n        return inputs[name]\n    lname = name.lower()\n    for k, v in inputs.items():\n        if k.lower() == lname:\n            return v\n    raise KeyError(name)\n\n\ndef _is_null(v):\n    try:\n        return pd.isna(v)\n    except Exception:\n        return v is None\n\n\ndef _is_change(a, b):\n    \"\"\"NULL-safe inequality: NULL vs NULL -> no change; NULL vs non-NULL -> change.\"\"\"\n    a_null = _is_null(a)\n    b_null = _is_null(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef _tie_key(email, tier):\n    \"\"\"Build a NULL-safe sort key for lexicographic (email, tier) comparison.\n    Treat NULL as sorting below any non-null value.\"\"\"\n    e_key = (0, \"\") if _is_null(email) else (1, email)\n    t_key = (0, \"\") if _is_null(tier) else (1, tier)\n    return (e_key, t_key)\n\n\ndef _pick_latest(group: pd.DataFrame) -> pd.Series:\n    max_date = group[\"update_date\"].max()\n    candidates = group[group[\"update_date\"] == max_date]\n    if len(candidates) == 1:\n        return candidates.iloc[0]\n\n    best_row = None\n    best_key = None\n    for _, row in candidates.iterrows():\n        k = _tie_key(row[\"email\"], row[\"tier\"])\n        if best_key is None or k > best_key:\n            best_key = k\n            best_row = row\n    return best_row\n\n\ndef run(inputs: dict) -> dict:\n    dim_acct = _get_input(inputs, \"DIM_ACCT\").copy()\n    stg_acct = _get_input(inputs, \"STG_ACCT\").copy()\n\n    # ---------------------------------------------------------------\n    # Step 1: Dedup STG_ACCT to latest per acct_id by update_date;\n    # ties broken by greater (email, tier) lexicographic pair.\n    # ---------------------------------------------------------------\n    if len(stg_acct) == 0:\n        dedup_rows = stg_acct\n    else:\n        picked = []\n        for acct_id, group in stg_acct.groupby(\"acct_id\", sort=False):\n            picked.append(_pick_latest(group))\n        dedup_rows = pd.DataFrame(picked).reset_index(drop=True)\n\n    # ---------------------------------------------------------------\n    # Working state: list of dict rows mirroring DIM_ACCT structure.\n    # ---------------------------------------------------------------\n    records = dim_acct.to_dict(\"records\")\n\n    for _, s in dedup_rows.iterrows():\n        acct_id = s[\"acct_id\"]\n        email_s = s[\"email\"]\n        tier_s = s[\"tier\"]\n        update_date = s[\"update_date\"]\n\n        # locate current row for this acct_id (is_current == 1)\n        cur_idx = None\n        for i, r in enumerate(records):\n            if r.get(\"acct_id\") == acct_id and r.get(\"is_current\") == 1:\n                cur_idx = i\n                break\n\n        if cur_idx is None:\n            # No current row -> insert new current version\n            records.append(\n                {\n                    \"acct_id\": acct_id,\n                    \"email\": email_s,\n                    \"tier\": tier_s,\n                    \"eff_start_date\": update_date,\n                    \"eff_end_date\": None,\n                    \"is_current\": 1,\n                }\n            )\n            continue\n\n        c = records[cur_idx]\n        tier_changed = _is_change(c.get(\"tier\"), tier_s)\n        email_changed = _is_change(c.get(\"email\"), email_s)\n\n        if tier_changed:\n            # expire current, insert new current version (TYPE-2)\n            records[cur_idx][\"eff_end_date\"] = update_date\n            records[cur_idx][\"is_current\"] = 0\n            records.append(\n                {\n                    \"acct_id\": acct_id,\n                    \"email\": email_s,\n                    \"tier\": tier_s,\n                    \"eff_start_date\": update_date,\n                    \"eff_end_date\": None,\n                    \"is_current\": 1,\n                }\n            )\n\n        if email_changed:\n            # retro-overwrite email across ALL rows (history + current) (TYPE-1)\n            for r in records:\n                if r.get(\"acct_id\") == acct_id:\n                    r[\"email\"] = email_s\n\n    dim_acct_out = pd.DataFrame(\n        records,\n        columns=[\n            \"acct_id\",\n            \"email\",\n            \"tier\",\n            \"eff_start_date\",\n            \"eff_end_date\",\n            \"is_current\",\n        ],\n    )\n\n    return {\"dim_acct_out\": dim_acct_out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 928,
+   "tokens_out": 4000,
+   "usd": 0.062784,
+   "wall_s": 35.93025732040405
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5478,
+  "tokens_out": 3243,
+  "usd": 0.065079,
+  "wall_s": 23.45885682106018
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

@@ -1,0 +1,56 @@
+{
+ "config": "B3_self_repair",
+ "rep": 3,
+ "task": "t2c_locf_carry_forward",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    # Accept either key name just in case\n    df = inputs.get('RATE_FEED')\n    if df is None:\n        # fallback - find first input\n        df = next(iter(inputs.values()))\n\n    df = df.copy()\n\n    # Ensure stable, deterministic ordering exactly as the legacy cursor:\n    # ORDER BY account_id, obs_date, obs_seq\n    df = df.sort_values(\n        by=['account_id', 'obs_date', 'obs_seq'],\n        kind='mergesort'  # stable sort to preserve input order on ties\n    ).reset_index(drop=True)\n\n    # Forward-fill rate within each account_id group only (never crosses accounts).\n    # groupby().ffill() naturally resets at each group boundary.\n    last_rate = df.groupby('account_id', sort=False)['rate'].ffill()\n\n    # rate_filled = original rate if present, otherwise carried-forward last_rate\n    rate_filled = df['rate'].where(df['rate'].notna(), last_rate)\n\n    # carried = 1 only when original rate was NULL AND a prior value existed to carry\n    was_carried = ((df['rate'].isna()) & (last_rate.notna())).astype(int)\n\n    out = pd.DataFrame({\n        'account_id': df['account_id'],\n        'obs_seq': df['obs_seq'],\n        'obs_date': df['obs_date'],\n        'rate_filled': rate_filled,\n        'was_carried': was_carried,\n    })\n\n    return {'rate_filled': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 774,
+   "tokens_out": 822,
+   "usd": 0.014652,
+   "wall_s": 8.220586776733398
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2317,
+  "tokens_out": 5565,
+  "usd": 0.09042599999999999,
+  "wall_s": 63.593913316726685
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "task": "t1d_tsql_top_ties",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces T-SQL TOP (5) WITH TIES semantics with NULL-propagating concatenation.\n    \n    Key behaviors:\n    1. Filter active = 1\n    2. Order by score DESC\n    3. Take TOP 5 WITH TIES: include all rows that tie at the 5th rank's score\n    4. ISNULL(manager, 'UNASSIGNED'): replace NULL manager with 'UNASSIGNED'\n    5. branch_code + '-' + region_code: NULL-propagating concat (NULL + anything = NULL)\n    \"\"\"\n    df = inputs['branch_scores'].copy()\n    \n    # Filter active = 1\n    df = df[df['active'] == 1].copy()\n    \n    # Sort by score DESC to establish ranking\n    df = df.sort_values('score', ascending=False, na_position='last')\n    \n    # Identify the 5th rank's score value for WITH TIES logic\n    if len(df) >= 5:\n        cutoff_score = df.iloc[4]['score']\n        # Include all rows with score >= cutoff_score (WITH TIES behavior)\n        df = df[df['score'] >= cutoff_score]\n    \n    # Apply transformations\n    df = df.reset_index(drop=True)\n    \n    # ISNULL(manager, 'UNASSIGNED')\n    df['manager_norm'] = df['manager'].fillna('UNASSIGNED')\n    \n    # branch_code + '-' + region_code with NULL propagation\n    # In T-SQL, NULL + anything = NULL\n    def concat_with_null_propagation(row):\n        if pd.isna(row['branch_code']) or pd.isna(row['region_code']):\n            return pd.NA\n        return str(row['branch_code']) + '-' + str(row['region_code'])\n    \n    df['branch_label'] = df.apply(concat_with_null_propagation, axis=1)\n    \n    # Select and order output columns\n    result = df[['branch_id', 'manager_norm', 'branch_label', 'score']]\n    \n    return {'top_branches': result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 333,
+   "tokens_out": 568,
+   "usd": 0.003173,
+   "wall_s": 4.2248375415802
+  }
+ ]
+}

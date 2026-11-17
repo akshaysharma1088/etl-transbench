@@ -1,0 +1,46 @@
+{
+ "config": "B1_single_pass",
+ "rep": 0,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"transactions\"].copy()\n\n    # Preserve original order info, sort per cursor ORDER BY account_id, txn_date, txn_seq\n    df = df.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # Running balance resets to 0 at each new account_id, NULL amounts treated as 0\n    amt_filled = df[\"amount\"].fillna(0)\n    bal = amt_filled.groupby(df[\"account_id\"]).cumsum()\n\n    df[\"running_balance\"] = bal\n    df[\"overdraft_flag\"] = (df[\"running_balance\"] < 0).astype(\"int64\")\n\n    out = df[\n        [\n            \"account_id\",\n            \"txn_seq\",\n            \"txn_date\",\n            \"amount\",\n            \"running_balance\",\n            \"overdraft_flag\",\n        ]\n    ].copy()\n\n    return {\"acct_balance_flags\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 713,
+   "tokens_out": 410,
+   "usd": 0.008289,
+   "wall_s": 4.044183254241943
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

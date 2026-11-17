@@ -1,0 +1,51 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    events = inputs[\"events\"].copy()\n\n    # --- Type coercion -----------------------------------------------------\n    events[\"event_ts\"] = pd.to_datetime(events[\"event_ts\"])\n    # user_id, event_id kept as-is but ensure consistent sort behaviour\n    # (no forced cast beyond what's needed for ordering/grouping)\n\n    # Drop rows with null user_id or event_ts - cannot be sessionized\n    events = events.dropna(subset=[\"user_id\", \"event_ts\"])\n\n    # --- Ordering: user_id, then event_ts, then event_id -------------------\n    events = events.sort_values(\n        by=[\"user_id\", \"event_ts\", \"event_id\"],\n        kind=\"mergesort\"  # stable sort to respect deterministic tie-breaking\n    ).reset_index(drop=True)\n\n    # --- Compute calendar date (server local, i.e. date part of event_ts) --\n    events[\"event_date\"] = events[\"event_ts\"].dt.date\n\n    # --- Determine session breaks ------------------------------------------\n    # Previous event's ts and date within same user\n    prev_ts = events.groupby(\"user_id\")[\"event_ts\"].shift(1)\n    prev_date = events.groupby(\"user_id\")[\"event_date\"].shift(1)\n\n    gap_minutes = (events[\"event_ts\"] - prev_ts).dt.total_seconds() / 60.0\n\n    is_new_user = prev_ts.isna()\n    is_gap_break = gap_minutes > 45\n    is_date_break = events[\"event_date\"] != prev_date\n\n    new_session_flag = is_new_user | is_gap_break | is_date_break\n\n    # --- Assign session numbers per user ------------------------------------\n    events[\"session_flag\"] = new_session_flag.astype(int)\n    events[\"session_num\"] = events.groupby(\"user_id\")[\"session_flag\"].cumsum()\n\n    # --- Aggregate into sessions ---------------------------------------------\n    grouped = events.groupby([\"user_id\", \"session_num\"], as_index=False).agg(\n        session_date=(\"event_date\", \"first\"),\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_ts\", \"size\"),\n    )\n\n    # Ensure column order matches spec\n    grouped = grouped[\n        [\"user_id\", \"session_num\", \"session_date\", \"session_start\", \"session_end\", \"event_count\"]\n    ]\n\n    # Sort final output deterministically by user_id, session_num\n    grouped = grouped.sort_values(\n        by=[\"user_id\", \"session_num\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    return {\"user_sessions\": grouped}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 332,
+   "tokens_out": 835,
+   "usd": 0.004507,
+   "wall_s": 5.293508291244507
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 486,
+  "tokens_out": 1215,
+  "usd": 0.019683,
+  "wall_s": 12.16603684425354
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

@@ -1,0 +1,46 @@
+{
+ "config": "LEGATO",
+ "rep": 1,
+ "task": "t8c_out_of_order_late",
+ "category": "T8",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n\n    # ------------------------------------------------------------------\n    # Build per-device watermark (applied_event_ts) lookup from the\n    # current snapshot.\n    # ------------------------------------------------------------------\n    wm_map = target.set_index(\"device_id\")[\"applied_event_ts\"]\n\n    cdc = cdc.merge(\n        wm_map.rename(\"watermark\"),\n        on=\"device_id\",\n        how=\"left\",\n    )\n\n    # A device with no row in target_snapshot has no watermark (NaN) ->\n    # every event for it survives. Otherwise an event survives only if\n    # its event_ts is STRICTLY greater than the device's watermark\n    # (replays / late events with event_ts <= watermark are discarded).\n    cdc[\"survives\"] = cdc[\"watermark\"].isna() | (cdc[\"event_ts\"] > cdc[\"watermark\"])\n\n    surviving = cdc.loc[cdc[\"survives\"], [\"device_id\", \"event_seq\", \"event_ts\", \"reading\"]].copy()\n\n    # ------------------------------------------------------------------\n    # Among surviving events per device, pick the winner: latest by\n    # (event_ts, event_seq), deterministic tie-break on event_seq.\n    # ------------------------------------------------------------------\n    surviving = surviving.sort_values(\n        by=[\"device_id\", \"event_ts\", \"event_seq\"],\n        ascending=[True, False, False],\n        kind=\"mergesort\",  # stable sort for determinism\n    )\n    winners = surviving.drop_duplicates(subset=\"device_id\", keep=\"first\")\n\n    # ------------------------------------------------------------------\n    # Merge winners back into the snapshot:\n    #   - devices with a winning event -> update reading & applied_event_ts\n    #   - devices without a winning event -> carry forward unchanged\n    #   - brand-new devices (not previously in target) -> apply winner\n    # ------------------------------------------------------------------\n    merged = target.merge(\n        winners[[\"device_id\", \"reading\", \"event_ts\"]],\n        on=\"device_id\",\n        how=\"outer\",\n        suffixes=(\"_old\", \"_new\"),\n    )\n\n    merged[\"reading\"] = merged[\"reading_new\"].combine_first(merged[\"reading_old\"])\n    merged[\"applied_event_ts\"] = merged[\"event_ts\"].combine_first(merged[\"applied_event_ts\"])\n\n    result = merged[[\"device_id\", \"reading\", \"applied_event_ts\"]].sort_values(\n        by=\"device_id\", kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    return {\"new_snapshot\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 749,
+   "tokens_out": 3107,
+   "usd": 0.048852,
+   "wall_s": 26.850335597991943
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

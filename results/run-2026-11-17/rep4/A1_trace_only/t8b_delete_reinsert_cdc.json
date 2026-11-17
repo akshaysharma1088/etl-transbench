@@ -1,0 +1,46 @@
+{
+ "config": "A1_trace_only",
+ "rep": 4,
+ "task": "t8b_delete_reinsert_cdc",
+ "category": "T8",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs['target_snapshot'].copy()\n    events = inputs['cdc_events'].copy()\n    watermark = inputs['watermark'].copy()\n\n    # Extract watermark high_ts (single value)\n    if len(watermark) > 0:\n        high_ts = watermark['high_ts'].iloc[0]\n    else:\n        high_ts = None\n\n    # Keep only events strictly after the watermark (events <= high_ts already applied)\n    if high_ts is not None:\n        events = events[events['event_ts'] > high_ts]\n    else:\n        events = events.iloc[0:0]\n\n    # Deterministic sequential application order: per item, by (event_ts, event_seq)\n    events = events.sort_values(\n        by=['item_id', 'event_ts', 'event_seq'],\n        kind='mergesort'\n    )\n\n    # Initialize state from the target snapshot\n    state = {}\n    for _, row in target.iterrows():\n        state[row['item_id']] = {\n            'qty_on_hand': row['qty_on_hand'],\n            'last_event_ts': row['last_event_ts'],\n            'present': True,\n        }\n\n    # Apply events sequentially per item\n    for _, ev in events.iterrows():\n        item_id = ev['item_id']\n        op = ev['op']\n        qty = ev['qty']\n        ts = ev['event_ts']\n\n        if item_id not in state:\n            state[item_id] = {\n                'qty_on_hand': 0,\n                'last_event_ts': None,\n                'present': False,\n            }\n\n        s = state[item_id]\n\n        if op == 'R':\n            if not s['present']:\n                s['qty_on_hand'] = 0\n            s['qty_on_hand'] = s['qty_on_hand'] + qty\n            s['present'] = True\n        elif op == 'A':\n            s['qty_on_hand'] = qty\n            s['present'] = True\n        elif op == 'D':\n            s['present'] = False\n            # qty_on_hand value is irrelevant once removed; keep as-is\n\n        s['last_event_ts'] = ts\n\n    # Build output: only items currently present\n    rows = []\n    for item_id, s in state.items():\n        if s['present']:\n            rows.append({\n                'item_id': item_id,\n                'qty_on_hand': s['qty_on_hand'],\n                'last_event_ts': s['last_event_ts'],\n            })\n\n    new_snapshot = pd.DataFrame(rows, columns=['item_id', 'qty_on_hand', 'last_event_ts'])\n\n    return {'new_snapshot': new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 742,
+   "tokens_out": 2388,
+   "usd": 0.038046,
+   "wall_s": 20.092631578445435
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

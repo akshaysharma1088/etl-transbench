@@ -1,0 +1,66 @@
+{
+ "config": "LEGATO",
+ "rep": 4,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    inbound = inputs[\"inbound\"]\n    target_snapshot = inputs[\"target_snapshot\"]\n\n    # ---- Step 1: STG_NEW ----\n    # SELECT product_id, batch_date, SUM(qty) AS total_qty, MAX(unit_cost) AS max_unit_cost\n    # FROM inbound WHERE qty > 0 GROUP BY product_id, batch_date\n    filtered = inbound[inbound[\"qty\"] > 0]\n\n    stg_new = (\n        filtered.groupby([\"product_id\", \"batch_date\"], dropna=False)\n        .agg(total_qty=(\"qty\", \"sum\"), max_unit_cost=(\"unit_cost\", \"max\"))\n        .reset_index()\n    )\n\n    stg_new = stg_new[[\"product_id\", \"batch_date\", \"total_qty\", \"max_unit_cost\"]]\n\n    # ---- Step 2: DELETE FROM TARGET_SNAPSHOT WHERE batch_date IN (SELECT DISTINCT batch_date FROM STG_NEW) ----\n    arriving_batch_dates = stg_new[\"batch_date\"].unique()\n\n    if len(arriving_batch_dates) > 0:\n        remaining = target_snapshot[\n            ~target_snapshot[\"batch_date\"].isin(arriving_batch_dates)\n        ]\n    else:\n        remaining = target_snapshot.copy()\n\n    # ---- Step 3: INSERT INTO TARGET_SNAPSHOT SELECT * FROM STG_NEW ----\n    result = pd.concat([remaining, stg_new], ignore_index=True)\n\n    # Ensure final column order matches target schema\n    result = result[[\"product_id\", \"batch_date\", \"total_qty\", \"max_unit_cost\"]]\n\n    return {\"target_snapshot\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 508,
+   "usd": 0.002938,
+   "wall_s": 3.1398861408233643
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5189,
+  "tokens_out": 6074,
+  "usd": 0.10667700000000001,
+  "wall_s": 55.47672724723816
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

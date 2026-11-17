@@ -1,0 +1,51 @@
+{
+ "config": "B2_retranslate",
+ "rep": 0,
+ "task": "t3d_dedup_null_group",
+ "category": "T3",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"meter_reads\"].copy()\n\n    # Step 1: sort by meter_id ASC, read_ts ASC, read_seq ASC (stable sort)\n    sort_cols = [\"meter_id\", \"read_ts\", \"read_seq\"]\n    df_sorted = df.sort_values(\n        by=sort_cols,\n        ascending=[True, True, True],\n        kind=\"mergesort\",\n        na_position=\"last\",\n    )\n\n    # Step 2: dedup on meter_id, keep LAST occurrence in sorted order\n    df_dedup = df_sorted.drop_duplicates(subset=[\"meter_id\"], keep=\"last\")\n\n    # Step 3: aggregate by zone, treating NULL zone as a real group\n    grouped = df_dedup.groupby(\"zone\", dropna=False).agg(\n        total_kwh=(\"kwh\", \"sum\"),\n        meter_count=(\"meter_id\", \"count\"),\n    ).reset_index()\n\n    # Step 4: select/order output columns\n    result = grouped[[\"zone\", \"total_kwh\", \"meter_count\"]]\n\n    return {\"zone_totals\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 477,
+   "tokens_out": 957,
+   "usd": 0.005262,
+   "wall_s": 5.95686936378479
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 661,
+  "tokens_out": 801,
+  "usd": 0.013998,
+  "wall_s": 8.027336120605469
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

@@ -1,0 +1,46 @@
+{
+ "config": "LEGATO",
+ "rep": 2,
+ "task": "t1_dialect_qualify",
+ "category": "T1",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicates Teradata-style QUALIFY: filters on window results after computation.\n    Selects the latest (most recent) high-value transaction per account.\n    \n    - WHERE amount > 100: filter transactions\n    - QUALIFY ROW_NUMBER() = 1: keep only the first row per account\n      when ordered by txn_ts DESC, txn_id DESC (most recent first)\n    - Computes size_band CASE expression\n    \"\"\"\n    \n    acct_txn = inputs['acct_txn'].copy()\n    \n    # Step 1: WHERE amount > 100\n    filtered = acct_txn[acct_txn['amount'] > 100].copy()\n    \n    # Step 2: Compute size_band CASE WHEN expression\n    filtered['size_band'] = filtered['amount'].apply(\n        lambda x: (\n            'JUMBO' if x >= 1000 else\n            'LARGE' if x >= 500 else\n            'STANDARD'\n        )\n    )\n    \n    # Step 3: Apply window function ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC)\n    # Then QUALIFY to keep only rows where ROW_NUMBER() = 1\n    filtered['_rn'] = filtered.groupby('account_id', sort=False).cumcount(\n        ascending=False\n    ) + 1\n    \n    # For proper ordering, we need to sort by account_id, txn_ts DESC, txn_id DESC\n    # then apply ROW_NUMBER within each account_id partition\n    filtered = filtered.sort_values(\n        by=['account_id', 'txn_ts', 'txn_id'],\n        ascending=[True, False, False],\n        na_position='last'\n    )\n    \n    # Recalculate row number after proper sorting\n    filtered['_rn'] = filtered.groupby('account_id', sort=False).cumcount() + 1\n    \n    # QUALIFY: keep only rows where ROW_NUMBER() = 1\n    result = filtered[filtered['_rn'] == 1].copy()\n    \n    # Step 4: Select only the required columns (drop the helper column)\n    result = result[['account_id', 'txn_id', 'txn_ts', 'amount', 'channel', 'size_band']]\n    \n    return {'latest_high_value_txn': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 369,
+   "tokens_out": 1216,
+   "usd": 0.006449,
+   "wall_s": 7.562734842300415
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

@@ -1,0 +1,46 @@
+{
+ "config": "B1_single_pass",
+ "rep": 3,
+ "task": "t8d_soft_delete_tombstone",
+ "category": "T8",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n\n    # --- normalize dtypes ---\n    if not target_snapshot.empty:\n        target_snapshot[\"status_ts\"] = pd.to_datetime(target_snapshot[\"status_ts\"])\n    if not cdc_events.empty:\n        cdc_events[\"event_ts\"] = pd.to_datetime(cdc_events[\"event_ts\"])\n\n    high_ts = watermark[\"high_ts\"].iloc[0]\n    high_ts = pd.to_datetime(high_ts)\n\n    # --- build initial state from target_snapshot (assumed one row per user_id) ---\n    state = {}\n    for _, row in target_snapshot.iterrows():\n        state[row[\"user_id\"]] = {\n            \"email\": row[\"email\"],\n            \"status\": row[\"status\"],\n            \"status_ts\": row[\"status_ts\"],\n        }\n\n    # --- filter events strictly after watermark ---\n    if not cdc_events.empty:\n        new_events = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n    else:\n        new_events = cdc_events.copy()\n\n    # --- deterministic sequential ordering: (event_ts, event_seq) ascending ---\n    if not new_events.empty:\n        new_events = new_events.sort_values(\n            by=[\"event_ts\", \"event_seq\"], ascending=[True, True], kind=\"mergesort\"\n        )\n\n        for _, ev in new_events.iterrows():\n            uid = ev[\"user_id\"]\n            op = ev[\"op\"]\n            ts = ev[\"event_ts\"]\n            ev_email = ev[\"email\"]\n\n            cur = state.get(uid)\n\n            if op == \"D\":\n                if cur is None:\n                    # no prior row; create soft-deleted row using event's email\n                    state[uid] = {\n                        \"email\": ev_email,\n                        \"status\": \"DELETED\",\n                        \"status_ts\": ts,\n                    }\n                else:\n                    # preserve email as of deletion\n                    state[uid] = {\n                        \"email\": cur[\"email\"],\n                        \"status\": \"DELETED\",\n                        \"status_ts\": ts,\n                    }\n            elif op == \"U\":\n                if cur is None or cur[\"status\"] == \"ACTIVE\":\n                    state[uid] = {\n                        \"email\": ev_email,\n                        \"status\": \"ACTIVE\",\n                        \"status_ts\": ts,\n                    }\n                else:\n                    # cur status == 'DELETED'\n                    deletion_ts = cur[\"status_ts\"]\n                    if ts > deletion_ts + pd.Timedelta(days=7):\n                        # resurrection\n                        state[uid] = {\n                            \"email\": ev_email,\n                            \"status\": \"ACTIVE\",\n                            \"status_ts\": ts,\n                        }\n                    # else: discard update, state unchanged\n\n    # --- build output dataframe ---\n    records = []\n    for uid, s in state.items():\n        records.append(\n            {\n                \"user_id\": uid,\n                \"email\": s[\"email\"],\n                \"status\": s[\"status\"],\n                \"status_ts\": s[\"status_ts\"],\n            }\n        )\n\n    new_snapshot = pd.DataFrame(\n        records, columns=[\"user_id\", \"email\", \"status\", \"status_ts\"]\n    )\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 732,
+   "tokens_out": 2243,
+   "usd": 0.035841,
+   "wall_s": 19.87970995903015
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

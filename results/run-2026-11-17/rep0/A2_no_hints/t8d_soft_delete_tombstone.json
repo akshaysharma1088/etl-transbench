@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t8d_soft_delete_tombstone",
+ "category": "T8",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n\n    # Extract watermark high_ts scalar\n    if len(watermark) > 0:\n        high_ts = watermark[\"high_ts\"].iloc[0]\n    else:\n        high_ts = None\n\n    # Ensure proper dtypes for timestamps\n    if not pd.api.types.is_datetime64_any_dtype(target_snapshot[\"status_ts\"]):\n        target_snapshot[\"status_ts\"] = pd.to_datetime(target_snapshot[\"status_ts\"])\n    if not pd.api.types.is_datetime64_any_dtype(cdc_events[\"event_ts\"]):\n        cdc_events[\"event_ts\"] = pd.to_datetime(cdc_events[\"event_ts\"])\n    if high_ts is not None and not isinstance(high_ts, pd.Timestamp):\n        high_ts = pd.to_datetime(high_ts)\n\n    # Build initial state dict keyed by user_id from target_snapshot\n    # If duplicate user_id rows exist, later rows (as they appear in the\n    # dataframe) overwrite earlier ones.\n    state = {}\n    for row in target_snapshot.itertuples(index=False):\n        state[row.user_id] = {\n            \"email\": row.email,\n            \"status\": row.status,\n            \"status_ts\": row.status_ts,\n        }\n\n    # Filter cdc events strictly after watermark\n    if high_ts is not None:\n        filtered = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n    else:\n        filtered = cdc_events.copy()\n\n    # Sort by (event_ts, event_seq) to apply sequentially across all users\n    filtered = filtered.sort_values(by=[\"event_ts\", \"event_seq\"], kind=\"mergesort\")\n\n    seven_days = pd.Timedelta(days=7)\n\n    for ev in filtered.itertuples(index=False):\n        user_id = ev.user_id\n        op = ev.op\n        event_ts = ev.event_ts\n        event_email = ev.email\n\n        current = state.get(user_id)\n\n        if op == \"D\":\n            # Soft delete: email preserved if user exists, else fall back\n            # to the event's email (new/unknown user case).\n            if current is not None:\n                preserved_email = current[\"email\"]\n            else:\n                preserved_email = event_email\n            state[user_id] = {\n                \"email\": preserved_email,\n                \"status\": \"DELETED\",\n                \"status_ts\": event_ts,\n            }\n        elif op == \"U\":\n            if current is None or current[\"status\"] == \"ACTIVE\":\n                state[user_id] = {\n                    \"email\": event_email,\n                    \"status\": \"ACTIVE\",\n                    \"status_ts\": event_ts,\n                }\n            else:\n                # current status is DELETED\n                deletion_ts = current[\"status_ts\"]\n                if (event_ts - deletion_ts) > seven_days:\n                    # Resurrection\n                    state[user_id] = {\n                        \"email\": event_email,\n                        \"status\": \"ACTIVE\",\n                        \"status_ts\": event_ts,\n                    }\n                # else: discard, no change\n        else:\n            # Unknown op: ignore (not specified by legacy semantics)\n            pass\n\n    # Build output dataframe\n    out_rows = []\n    for user_id, info in state.items():\n        out_rows.append(\n            {\n                \"user_id\": user_id,\n                \"email\": info[\"email\"],\n                \"status\": info[\"status\"],\n                \"status_ts\": info[\"status_ts\"],\n            }\n        )\n\n    new_snapshot = pd.DataFrame(\n        out_rows, columns=[\"user_id\", \"email\", \"status\", \"status_ts\"]\n    )\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 681,
+   "tokens_out": 2272,
+   "usd": 0.036123,
+   "wall_s": 19.82756519317627
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

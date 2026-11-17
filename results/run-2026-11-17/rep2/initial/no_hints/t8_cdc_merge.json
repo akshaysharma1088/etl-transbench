@@ -1,0 +1,16 @@
+{
+ "task": "t8_cdc_merge",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs['target_snapshot'].copy()\n    cdc = inputs['cdc_events'].copy()\n    wm = inputs['watermark'].copy()\n\n    # Determine watermark high_ts (single row watermark table expected)\n    high_ts = wm['high_ts'].iloc[0] if len(wm) > 0 else None\n\n    # Step 1: keep only events strictly after the watermark\n    if high_ts is not None:\n        cdc = cdc[cdc['event_ts'] > high_ts]\n\n    # Step 2: per product_id, pick the latest event by (event_ts, event_seq)\n    if len(cdc) > 0:\n        cdc_sorted = cdc.sort_values(['product_id', 'event_ts', 'event_seq'])\n        latest = cdc_sorted.groupby('product_id', as_index=False).tail(1)\n    else:\n        latest = cdc.copy()\n\n    # Index target snapshot by product_id for easy upsert/delete\n    target_indexed = target.set_index('product_id')\n\n    for _, row in latest.iterrows():\n        pid = row['product_id']\n        op = row['op']\n        if op == 'D':\n            if pid in target_indexed.index:\n                target_indexed = target_indexed.drop(index=pid)\n        else:\n            # Upsert (covers both 'I' and 'U')\n            target_indexed.loc[pid, 'name'] = row['name']\n            target_indexed.loc[pid, 'price'] = row['price']\n            target_indexed.loc[pid, 'last_event_ts'] = row['event_ts']\n\n    new_snapshot = target_indexed.reset_index()\n    new_snapshot = new_snapshot[['product_id', 'name', 'price', 'last_event_ts']]\n    new_snapshot = new_snapshot.sort_values('product_id').reset_index(drop=True)\n\n    return {'new_snapshot': new_snapshot}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 593,
+   "tokens_out": 1773,
+   "usd": 0.028374,
+   "wall_s": 15.29685926437378
+  }
+ ]
+}

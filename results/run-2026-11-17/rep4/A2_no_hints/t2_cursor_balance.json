@@ -1,0 +1,51 @@
+{
+ "config": "A2_no_hints",
+ "rep": 4,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    # Resolve input key case-insensitively to be robust to naming conventions\n    key = None\n    for k in inputs.keys():\n        if k.lower() == \"transactions\":\n            key = k\n            break\n    if key is None:\n        raise KeyError(\"TRANSACTIONS input not found\")\n\n    df = inputs[key].copy()\n\n    # Preserve original index to maintain stable ordering for ties beyond txn_seq\n    df = df.reset_index(drop=True)\n    df[\"_orig_order\"] = df.index\n\n    # Sort per cursor semantics: account_id, txn_date, txn_seq\n    df_sorted = df.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\", \"_orig_order\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # Amount treated as 0 when NULL for balance accumulation, but original amount kept in output\n    amt_filled = df_sorted[\"amount\"].fillna(0)\n\n    # Running balance resets at each new account_id\n    running_balance = amt_filled.groupby(df_sorted[\"account_id\"]).cumsum()\n\n    df_sorted[\"running_balance\"] = running_balance\n    df_sorted[\"overdraft_flag\"] = (df_sorted[\"running_balance\"] < 0).astype(\"int64\")\n\n    result = df_sorted[\n        [\"account_id\", \"txn_seq\", \"txn_date\", \"amount\", \"running_balance\", \"overdraft_flag\"]\n    ].copy()\n\n    result[\"overdraft_flag\"] = result[\"overdraft_flag\"].astype(\"int64\")\n\n    return {\"acct_balance_flags\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 673,
+   "tokens_out": 537,
+   "usd": 0.010074,
+   "wall_s": 5.197311639785767
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1526,
+  "tokens_out": 604,
+  "usd": 0.013638,
+  "wall_s": 5.003952741622925
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

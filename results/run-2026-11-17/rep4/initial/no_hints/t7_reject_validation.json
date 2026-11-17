@@ -1,0 +1,16 @@
+{
+ "task": "t7_reject_validation",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import numpy as np\nimport pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs['payments'].copy()\n\n    amount = df['amount']\n    currency = df['currency']\n    country = df['country']\n\n    # Evaluate rules in order; only the first failing rule assigns the reason.\n    cond1 = amount.isna()                                      # R1: AMT_NULL\n    cond2 = (~cond1) & (amount <= 0)                            # R2: AMT_NONPOS\n    cond3 = (~cond1) & (~cond2) & (~currency.isin(['USD', 'EUR', 'GBP']))  # R3: CCY_INVALID\n    cond4 = (~cond1) & (~cond2) & (~cond3) & (country.isna())   # R4: CTRY_NULL\n\n    reason_code = np.select(\n        [cond1, cond2, cond3, cond4],\n        ['AMT_NULL', 'AMT_NONPOS', 'CCY_INVALID', 'CTRY_NULL'],\n        default=None\n    )\n\n    reject_mask = cond1 | cond2 | cond3 | cond4\n\n    rejects = df.loc[reject_mask].copy()\n    rejects['reason_code'] = reason_code[reject_mask]\n\n    clean = df.loc[~reject_mask].copy()\n    clean['amount'] = clean['amount'].round(2)\n\n    payments_clean = clean.reset_index(drop=True)\n    payments_rejects = rejects.reset_index(drop=True)\n\n    return {\n        'payments_clean': payments_clean,\n        'payments_rejects': payments_rejects\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 554,
+   "tokens_out": 1403,
+   "usd": 0.022707,
+   "wall_s": 11.678688287734985
+  }
+ ]
+}

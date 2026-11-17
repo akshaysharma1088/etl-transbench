@@ -1,0 +1,51 @@
+{
+ "config": "A1_trace_only",
+ "rep": 2,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _attr_equal(a, b):\n    \"\"\"NULL-aware equality: NaN vs NaN -> equal, NaN vs non-NaN -> not equal,\n    otherwise standard equality.\"\"\"\n    a_na = pd.isna(a)\n    b_na = pd.isna(b)\n    if a_na and b_na:\n        return True\n    if a_na or b_na:\n        return False\n    return a == b\n\n\ndef _get_input(inputs: dict, *candidates):\n    \"\"\"Fetch an input DataFrame by trying several possible key names\n    (case-insensitive match against available keys).\"\"\"\n    for cand in candidates:\n        if cand in inputs:\n            return inputs[cand]\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    for cand in candidates:\n        key = lower_map.get(cand.lower())\n        if key is not None:\n            return inputs[key]\n    raise KeyError(f\"None of {candidates} found in inputs keys {list(inputs.keys())}\")\n\n\ndef run(inputs: dict) -> dict:\n    dim_product = _get_input(inputs, \"DIM_PRODUCT\", \"dim_product\").copy()\n    stg_product = _get_input(inputs, \"STG_PRODUCT\", \"stg_product\").copy()\n\n    # Preserve original dtypes so we can cast the result back at the end.\n    orig_dtypes = dim_product.dtypes.to_dict()\n\n    columns = [\"product_id\", \"category\", \"price_band\",\n               \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n\n    # Work with a list of dict rows so we can mutate / append easily,\n    # mimicking row-by-row cursor semantics of the legacy procedure.\n    records = dim_product.to_dict(\"records\")\n\n    # Track index (into `records`) of the CURRENT row for each product_id.\n    current_idx = {}\n    for i, r in enumerate(records):\n        if pd.notna(r.get(\"is_current\")) and r.get(\"is_current\") == 1:\n            current_idx[r[\"product_id\"]] = i\n\n    # Cursor over staging data ordered by product_id, update_date ASC.\n    # This is NOT deduplicated -- every staged row is processed in order.\n    stg_sorted = stg_product.sort_values(\n        by=[\"product_id\", \"update_date\"], kind=\"mergesort\"\n    )\n\n    for _, s in stg_sorted.iterrows():\n        pid = s[\"product_id\"]\n        s_category = s[\"category\"]\n        s_price_band = s[\"price_band\"]\n        s_update_date = s[\"update_date\"]\n\n        if pid in current_idx:\n            idx = current_idx[pid]\n            c = records[idx]\n\n            changed = (not _attr_equal(c.get(\"category\"), s_category)) or \\\n                      (not _attr_equal(c.get(\"price_band\"), s_price_band))\n\n            if changed:\n                # Expire the prior current row.\n                records[idx] = {\n                    **c,\n                    \"eff_end_date\": s_update_date,\n                    \"is_current\": 0,\n                }\n                # Insert the new current version.\n                new_rec = {\n                    \"product_id\": pid,\n                    \"category\": s_category,\n                    \"price_band\": s_price_band,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n                records.append(new_rec)\n                current_idx[pid] = len(records) - 1\n            # else: unchanged attributes -> no-op, no new version created.\n        else:\n            # No current row exists for this product -> insert a brand new one.\n            new_rec = {\n                \"product_id\": pid,\n                \"category\": s_category,\n                \"price_band\": s_price_band,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            }\n            records.append(new_rec)\n            current_idx[pid] = len(records) - 1\n\n    out_df = pd.DataFrame(records, columns=columns)\n\n    # Attempt to restore original dtypes where sensible.\n    for col, dtype in orig_dtypes.items():\n        if col not in out_df.columns:\n            continue\n        try:\n            if col == \"eff_end_date\":\n                # Keep NaT/NaN for open-ended rows; cast others if datetime-like.\n                out_df[col] = pd.to_datetime(out_df[col], errors=\"coerce\") \\\n                    if \"datetime\" in str(dtype) else out_df[col]\n            elif col == \"eff_start_date\":\n                out_df[col] = pd.to_datetime(out_df[col], errors=\"coerce\") \\\n                    if \"datetime\" in str(dtype) else out_df[col]\n            else:\n                out_df[col] = out_df[col].astype(dtype)\n        except (ValueError, TypeError):\n            pass\n\n    return {\"dim_product_out\": out_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 833,
+   "tokens_out": 3600,
+   "usd": 0.056499,
+   "wall_s": 32.709590673446655
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2608,
+  "tokens_out": 1789,
+  "usd": 0.034659,
+  "wall_s": 12.877073764801025
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

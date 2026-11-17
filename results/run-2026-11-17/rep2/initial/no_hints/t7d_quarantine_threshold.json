@@ -1,0 +1,16 @@
+{
+ "task": "t7d_quarantine_threshold",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    readings = inputs[\"readings\"].copy()\n\n    orig_cols = list(readings.columns)\n\n    def is_bad(v):\n        if pd.isna(v):\n            return True\n        try:\n            if v < 0 or v > 1000:\n                return True\n        except TypeError:\n            return True\n        return False\n\n    if len(readings) == 0:\n        readings[\"_bad\"] = pd.Series(dtype=bool)\n    else:\n        readings[\"_bad\"] = readings[\"value\"].apply(is_bad)\n\n    clean_parts = []\n    reject_parts = []\n    quarantine_parts = []\n\n    # preserve first-appearance order of batch_id, and original row order within batch\n    for batch_id, g in readings.groupby(\"batch_id\", sort=False):\n        total = len(g)\n        bad = int(g[\"_bad\"].sum())\n\n        if bad * 100 > total * 20:\n            pct = round(bad * 100.0 / total, 2)\n            q = g.drop(columns=[\"_bad\"]).copy()\n            q[\"batch_reject_pct\"] = pct\n            quarantine_parts.append(q)\n        else:\n            good_g = g[~g[\"_bad\"]].drop(columns=[\"_bad\"])\n            bad_g = g[g[\"_bad\"]].drop(columns=[\"_bad\"])\n            if len(good_g) > 0:\n                clean_parts.append(good_g)\n            if len(bad_g) > 0:\n                reject_parts.append(bad_g)\n\n    if clean_parts:\n        readings_clean = pd.concat(clean_parts, ignore_index=True)\n    else:\n        readings_clean = pd.DataFrame(columns=orig_cols)\n\n    if reject_parts:\n        readings_rejects = pd.concat(reject_parts, ignore_index=True)\n    else:\n        readings_rejects = pd.DataFrame(columns=orig_cols)\n\n    if quarantine_parts:\n        readings_quarantine = pd.concat(quarantine_parts, ignore_index=True)\n    else:\n        readings_quarantine = pd.DataFrame(columns=orig_cols + [\"batch_reject_pct\"])\n\n    return {\n        \"readings_clean\": readings_clean,\n        \"readings_rejects\": readings_rejects,\n        \"readings_quarantine\": readings_quarantine,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 558,
+   "tokens_out": 1959,
+   "usd": 0.031059,
+   "wall_s": 16.654189348220825
+  }
+ ]
+}

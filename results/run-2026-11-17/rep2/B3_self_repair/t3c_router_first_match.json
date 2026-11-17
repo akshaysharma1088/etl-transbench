@@ -1,0 +1,46 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t3c_router_first_match",
+ "category": "T3",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Router component that directs claims to three output ports based on ordered rules.\n    Rules are evaluated in order; a row matches the FIRST applicable rule only.\n    Unmatched rows go to the default port 'standard' (which is not in the outputs).\n    \"\"\"\n    claims = inputs['claims'].copy()\n    \n    # Initialize output dataframes\n    fast_track = pd.DataFrame(columns=claims.columns)\n    high_value = pd.DataFrame(columns=claims.columns)\n    manual_review = pd.DataFrame(columns=claims.columns)\n    \n    # Track which rows have been matched\n    matched = pd.Series([False] * len(claims), index=claims.index)\n    \n    # Rule 1: amount <= 500 and photos_attached == 1 \u2192 fast_track\n    rule1_mask = (claims['amount'] <= 500) & (claims['photos_attached'] == 1)\n    rule1_rows = rule1_mask & ~matched\n    fast_track = pd.concat([fast_track, claims[rule1_rows]], ignore_index=False)\n    matched = matched | rule1_rows\n    \n    # Rule 2: amount > 10000 \u2192 high_value\n    rule2_mask = claims['amount'] > 10000\n    rule2_rows = rule2_mask & ~matched\n    high_value = pd.concat([high_value, claims[rule2_rows]], ignore_index=False)\n    matched = matched | rule2_rows\n    \n    # Rule 3: photos_attached == 0 or amount > 500 \u2192 manual_review\n    rule3_mask = (claims['photos_attached'] == 0) | (claims['amount'] > 500)\n    rule3_rows = rule3_mask & ~matched\n    manual_review = pd.concat([manual_review, claims[rule3_rows]], ignore_index=False)\n    matched = matched | rule3_rows\n    \n    # Reset index to ensure clean integer indices\n    fast_track = fast_track.reset_index(drop=True)\n    high_value = high_value.reset_index(drop=True)\n    manual_review = manual_review.reset_index(drop=True)\n    \n    # Select only the required columns for output\n    output_columns = ['claim_id', 'amount', 'photos_attached']\n    \n    return {\n        'claims_fast_track': fast_track[output_columns] if len(fast_track) > 0 else pd.DataFrame(columns=output_columns),\n        'claims_high_value': high_value[output_columns] if len(high_value) > 0 else pd.DataFrame(columns=output_columns),\n        'claims_manual_review': manual_review[output_columns] if len(manual_review) > 0 else pd.DataFrame(columns=output_columns)\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 549,
+   "tokens_out": 719,
+   "usd": 0.004144,
+   "wall_s": 4.428267002105713
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

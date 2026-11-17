@@ -1,0 +1,51 @@
+{
+ "config": "A2_no_hints",
+ "rep": 4,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _differs(a, b):\n    \"\"\"NULL-aware inequality check per legacy semantics:\n    NULL vs NULL -> not a change; NULL vs non-NULL -> change;\n    non-NULL vs non-NULL -> value comparison.\"\"\"\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    \"\"\"Case-insensitive / flexible lookup of input dataframe by logical\n    name, since the harness may supply keys with different casing or\n    naming conventions than the artifact's documented relation names.\"\"\"\n    if name in inputs:\n        return inputs[name]\n\n    # Try case-insensitive exact match.\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    if name.lower() in lower_map:\n        return inputs[lower_map[name.lower()]]\n\n    # Try stripping non-alphanumeric chars and comparing.\n    def norm(s):\n        return \"\".join(ch for ch in s.lower() if ch.isalnum())\n\n    target = norm(name)\n    for k in inputs.keys():\n        if norm(k) == target:\n            return inputs[k]\n\n    raise KeyError(\n        f\"Could not find input matching '{name}'. Available keys: {list(inputs.keys())}\"\n    )\n\n\ndef run(inputs: dict) -> dict:\n    dim = _get_input(inputs, \"DIM_PRODUCT\").copy()\n    stg = _get_input(inputs, \"STG_PRODUCT\").copy()\n\n    dim_columns = list(dim.columns)\n\n    # Build mutable list of dicts representing current state of DIM_PRODUCT.\n    rows = dim.to_dict(\"records\")\n\n    # Map product_id -> index of the current (is_current == 1) row, if any.\n    current_idx = {}\n    for idx, r in enumerate(rows):\n        try:\n            is_cur = int(r.get(\"is_current\"))\n        except (TypeError, ValueError):\n            is_cur = 0\n        if is_cur == 1:\n            pid = r.get(\"product_id\")\n            # In case of unexpected duplicates, keep the last one found.\n            current_idx[pid] = idx\n\n    # Sort staged records by product_id, update_date ascending (stable sort\n    # preserves original relative order for any ties, though dates are\n    # stated to be unique per product within a batch).\n    stg_sorted = stg.sort_values(\n        by=[\"product_id\", \"update_date\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    for _, s in stg_sorted.iterrows():\n        pid = s[\"product_id\"]\n        s_category = s[\"category\"]\n        s_price_band = s[\"price_band\"]\n        s_update_date = s[\"update_date\"]\n\n        if pid not in current_idx:\n            new_row = {\n                \"product_id\": pid,\n                \"category\": s_category,\n                \"price_band\": s_price_band,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": None,\n                \"is_current\": 1,\n            }\n            rows.append(new_row)\n            current_idx[pid] = len(rows) - 1\n            continue\n\n        idx = current_idx[pid]\n        c = rows[idx]\n\n        changed = _differs(c.get(\"category\"), s_category) or _differs(\n            c.get(\"price_band\"), s_price_band\n        )\n\n        if changed:\n            # Expire current version.\n            rows[idx][\"eff_end_date\"] = s_update_date\n            rows[idx][\"is_current\"] = 0\n\n            # Insert new current version.\n            new_row = {\n                \"product_id\": pid,\n                \"category\": s_category,\n                \"price_band\": s_price_band,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": None,\n                \"is_current\": 1,\n            }\n            rows.append(new_row)\n            current_idx[pid] = len(rows) - 1\n        # else: no-op\n\n    result = pd.DataFrame(rows, columns=dim_columns)\n\n    # Attempt to preserve original dtypes where feasible.\n    for col in dim_columns:\n        if col in dim.columns:\n            try:\n                result[col] = result[col].astype(dim[col].dtype)\n            except (TypeError, ValueError):\n                pass\n\n    result = result.sort_values(\n        by=[\"product_id\", \"eff_start_date\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    return {\"dim_product_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 778,
+   "tokens_out": 3211,
+   "usd": 0.050499,
+   "wall_s": 31.062775373458862
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2340,
+  "tokens_out": 1712,
+  "usd": 0.0327,
+  "wall_s": 13.280780553817749
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

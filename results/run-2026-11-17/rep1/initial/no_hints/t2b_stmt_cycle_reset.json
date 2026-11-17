@@ -1,0 +1,16 @@
+{
+ "task": "t2b_stmt_cycle_reset",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs['LEDGER'].copy()\n\n    # Reproduce cursor ORDER BY account_id, entry_date, row_seq\n    # Use stable sort to preserve original input order for any ties\n    # beyond the specified sort keys (mirrors cursor fetch order).\n    df_sorted = df.sort_values(\n        by=['account_id', 'entry_date', 'row_seq'],\n        kind='mergesort'\n    ).reset_index(drop=True)\n\n    records = []\n    prev_acct = None\n    bal = 0.0\n    cyc = 1\n\n    for _, r in df_sorted.iterrows():\n        acct = r['account_id']\n        if acct != prev_acct:\n            bal = 0.0\n            cyc = 1\n            prev_acct = acct\n\n        entry_type = r['entry_type']\n        if entry_type == 'STMT':\n            bal = 0.0\n            cyc += 1\n\n        amount = r['amount']\n        if pd.isna(amount):\n            amt_val = 0.0\n        else:\n            amt_val = amount\n\n        bal = bal + amt_val\n\n        records.append({\n            'account_id': acct,\n            'row_seq': r['row_seq'],\n            'entry_date': r['entry_date'],\n            'entry_type': entry_type,\n            'amount': amount,\n            'cycle_no': cyc,\n            'cycle_balance': bal\n        })\n\n    out_cols = ['account_id', 'row_seq', 'entry_date', 'entry_type',\n                'amount', 'cycle_no', 'cycle_balance']\n    cycle_balances = pd.DataFrame(records, columns=out_cols)\n\n    return {'cycle_balances': cycle_balances}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 710,
+   "tokens_out": 1421,
+   "usd": 0.023445,
+   "wall_s": 12.19408893585205
+  }
+ ]
+}

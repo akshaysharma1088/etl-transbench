@@ -1,0 +1,56 @@
+{
+ "config": "A1_trace_only",
+ "rep": 2,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom collections import defaultdict\n\n\ndef _is_diff(a, b):\n    \"\"\"NULL-aware inequality: NaN vs NaN => not different; NaN vs non-NaN => different.\"\"\"\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    # Try exact match first, then case-insensitive match to be robust\n    # against naming convention differences between legacy artifact and\n    # harness-provided input keys.\n    if name in inputs:\n        return inputs[name]\n    lower_name = name.lower()\n    for k, v in inputs.items():\n        if k.lower() == lower_name:\n            return v\n    raise KeyError(name)\n\n\ndef run(inputs: dict) -> dict:\n    dim_acct = _get_input(inputs, \"DIM_ACCT\").copy()\n    stg_acct = _get_input(inputs, \"STG_ACCT\").copy()\n\n    dim_cols = list(dim_acct.columns)\n\n    # ---- Step 1: dedup STG_ACCT to latest per acct_id by update_date,\n    # ties broken by greater (email, tier) lexicographic pair ----\n    stg_sorted = stg_acct.sort_values(\n        by=[\"acct_id\", \"update_date\", \"email\", \"tier\"],\n        na_position=\"last\",\n        kind=\"mergesort\",\n    )\n    stg_dedup = stg_sorted.groupby(\"acct_id\", as_index=False).tail(1)\n\n    # ---- Step 2: process each staged record ----\n    records = dim_acct.to_dict(\"records\")\n\n    acct_rows = defaultdict(list)\n    for i, r in enumerate(records):\n        acct_rows[r[\"acct_id\"]].append(i)\n\n    for _, s in stg_dedup.iterrows():\n        acct_id = s[\"acct_id\"]\n        idxs = acct_rows[acct_id]\n\n        cur_idx = None\n        for i in idxs:\n            if records[i][\"is_current\"] == 1:\n                cur_idx = i\n                break\n\n        if cur_idx is None:\n            # no current row exists -> insert new current version\n            new_row = {\n                \"acct_id\": acct_id,\n                \"email\": s[\"email\"],\n                \"tier\": s[\"tier\"],\n                \"eff_start_date\": s[\"update_date\"],\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            }\n            records.append(new_row)\n            acct_rows[acct_id].append(len(records) - 1)\n        else:\n            c = records[cur_idx]\n            tier_changed = _is_diff(c[\"tier\"], s[\"tier\"])\n            email_changed = _is_diff(c[\"email\"], s[\"email\"])\n\n            if tier_changed:\n                # expire current version (Type-2)\n                records[cur_idx][\"eff_end_date\"] = s[\"update_date\"]\n                records[cur_idx][\"is_current\"] = 0\n\n                new_row = {\n                    \"acct_id\": acct_id,\n                    \"email\": s[\"email\"],\n                    \"tier\": s[\"tier\"],\n                    \"eff_start_date\": s[\"update_date\"],\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n                records.append(new_row)\n                acct_rows[acct_id].append(len(records) - 1)\n\n            if email_changed:\n                # retro-overwrite email across ALL rows (history + current) of this acct_id\n                for i in acct_rows[acct_id]:\n                    records[i][\"email\"] = s[\"email\"]\n\n    result = pd.DataFrame(records)\n\n    # preserve original column order/structure\n    for col in dim_cols:\n        if col not in result.columns:\n            result[col] = pd.NA\n    result = result[dim_cols]\n\n    return {\"dim_acct_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 983,
+   "tokens_out": 4000,
+   "usd": 0.062949,
+   "wall_s": 36.51809811592102
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4987,
+  "tokens_out": 2605,
+  "usd": 0.054036,
+  "wall_s": 19.083066940307617
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "task": "t7_reject_validation",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    payments = inputs[\"payments\"].copy()\n\n    # Ensure all expected columns exist\n    for col in [\"payment_id\", \"amount\", \"currency\", \"country\"]:\n        if col not in payments.columns:\n            payments[col] = pd.NA\n\n    n = len(payments)\n    reason_code = pd.Series([None] * n, index=payments.index, dtype=object)\n\n    amount = payments[\"amount\"]\n    currency = payments[\"currency\"]\n    country = payments[\"country\"]\n\n    valid_currencies = {\"USD\", \"EUR\", \"GBP\"}\n\n    # Masks for each rule\n    r1_mask = amount.isna()\n\n    r2_mask = (~r1_mask) & (amount <= 0)\n\n    r3_mask = (~r1_mask) & (~r2_mask) & (~currency.isin(valid_currencies))\n\n    r4_mask = (~r1_mask) & (~r2_mask) & (~r3_mask) & (country.isna())\n\n    reason_code = reason_code.mask(r1_mask, \"AMT_NULL\")\n    reason_code = reason_code.mask(r2_mask, \"AMT_NONPOS\")\n    reason_code = reason_code.mask(r3_mask, \"CCY_INVALID\")\n    reason_code = reason_code.mask(r4_mask, \"CTRY_NULL\")\n\n    rejected_mask = reason_code.notna()\n    passed_mask = ~rejected_mask\n\n    # Build clean output\n    clean = payments.loc[passed_mask].copy()\n    clean[\"amount\"] = clean[\"amount\"].round(2)\n    payments_clean = clean[[\"payment_id\", \"amount\", \"currency\", \"country\"]].reset_index(drop=True)\n\n    # Build rejects output\n    rejects = payments.loc[rejected_mask].copy()\n    rejects[\"reason_code\"] = reason_code.loc[rejected_mask]\n    payments_rejects = rejects[[\"payment_id\", \"amount\", \"currency\", \"country\", \"reason_code\"]].reset_index(drop=True)\n\n    return {\n        \"payments_clean\": payments_clean,\n        \"payments_rejects\": payments_rejects,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 554,
+   "tokens_out": 1088,
+   "usd": 0.017982,
+   "wall_s": 9.646827459335327
+  }
+ ]
+}

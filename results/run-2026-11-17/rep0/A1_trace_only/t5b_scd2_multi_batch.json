@@ -1,0 +1,51 @@
+{
+ "config": "A1_trace_only",
+ "rep": 0,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_null(v):\n    try:\n        return pd.isna(v)\n    except Exception:\n        return v is None\n\n\ndef _attrs_equal(a_cat, a_pb, b_cat, b_pb):\n    # Compare tracked attributes with NULL semantics:\n    # NULL vs NULL -> not a change; NULL vs non-NULL -> change; else normal compare.\n    def eq(a, b):\n        a_null = _is_null(a)\n        b_null = _is_null(b)\n        if a_null and b_null:\n            return True\n        if a_null != b_null:\n            return False\n        return a == b\n\n    return eq(a_cat, b_cat) and eq(a_pb, b_pb)\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    # Try exact match first\n    if name in inputs:\n        return inputs[name]\n    # Try case-insensitive match\n    lower_name = name.lower()\n    for k, v in inputs.items():\n        if k.lower() == lower_name:\n            return v\n    # Try stripped/alternate variants\n    for k, v in inputs.items():\n        if k.lower().strip() == lower_name.strip():\n            return v\n    raise KeyError(f\"Could not find input matching '{name}' in inputs keys: {list(inputs.keys())}\")\n\n\ndef run(inputs: dict) -> dict:\n    dim = _get_input(inputs, \"DIM_PRODUCT\").copy()\n    stg = _get_input(inputs, \"STG_PRODUCT\").copy()\n\n    # Build working list of row dicts preserving original columns/order\n    cols = [\"product_id\", \"category\", \"price_band\", \"eff_start_date\",\n            \"eff_end_date\", \"is_current\"]\n\n    rows = []\n    for _, r in dim.iterrows():\n        rows.append({\n            \"product_id\": r[\"product_id\"],\n            \"category\": r[\"category\"],\n            \"price_band\": r[\"price_band\"],\n            \"eff_start_date\": r[\"eff_start_date\"],\n            \"eff_end_date\": r[\"eff_end_date\"],\n            \"is_current\": r[\"is_current\"],\n        })\n\n    # Track current row (by index into rows) per product_id\n    current_idx = {}\n    for i, r in enumerate(rows):\n        if r[\"is_current\"] == 1 or r[\"is_current\"] == \"1\":\n            current_idx[r[\"product_id\"]] = i\n\n    # Sort staged records by product_id, update_date ascending (stable sort,\n    # no dedup)\n    stg_sorted = stg.sort_values(\n        by=[\"product_id\", \"update_date\"],\n        kind=\"mergesort\"\n    )\n\n    for _, s in stg_sorted.iterrows():\n        pid = s[\"product_id\"]\n        s_cat = s[\"category\"]\n        s_pb = s[\"price_band\"]\n        s_date = s[\"update_date\"]\n\n        idx = current_idx.get(pid)\n\n        if idx is None:\n            # No current row exists -> insert new current version\n            new_row = {\n                \"product_id\": pid,\n                \"category\": s_cat,\n                \"price_band\": s_pb,\n                \"eff_start_date\": s_date,\n                \"eff_end_date\": None,\n                \"is_current\": 1,\n            }\n            rows.append(new_row)\n            current_idx[pid] = len(rows) - 1\n        else:\n            c = rows[idx]\n            if not _attrs_equal(c[\"category\"], c[\"price_band\"], s_cat, s_pb):\n                # Expire current row\n                c[\"eff_end_date\"] = s_date\n                c[\"is_current\"] = 0\n                # Insert new current version\n                new_row = {\n                    \"product_id\": pid,\n                    \"category\": s_cat,\n                    \"price_band\": s_pb,\n                    \"eff_start_date\": s_date,\n                    \"eff_end_date\": None,\n                    \"is_current\": 1,\n                }\n                rows.append(new_row)\n                current_idx[pid] = len(rows) - 1\n            # else no-op\n\n    out = pd.DataFrame(rows, columns=cols)\n\n    # Align dtypes with input DIM_PRODUCT where possible\n    for col in [\"product_id\", \"is_current\"]:\n        if col in dim.columns:\n            try:\n                out[col] = out[col].astype(dim[col].dtype)\n            except Exception:\n                pass\n\n    for col in [\"category\", \"price_band\"]:\n        if col in dim.columns:\n            try:\n                out[col] = out[col].astype(dim[col].dtype)\n            except Exception:\n                pass\n\n    return {\"dim_product_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 833,
+   "tokens_out": 1899,
+   "usd": 0.030984,
+   "wall_s": 16.731669425964355
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2483,
+  "tokens_out": 1573,
+  "usd": 0.031044,
+  "wall_s": 11.255423069000244
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

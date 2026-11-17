@@ -1,0 +1,51 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_null(v):\n    try:\n        return pd.isna(v)\n    except Exception:\n        return v is None\n\n\ndef _changed(a, b):\n    # NULL vs NULL -> no change; NULL vs non-NULL -> change; else normal compare\n    a_null = _is_null(a)\n    b_null = _is_null(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef _get_input(inputs: dict, name: str):\n    # Try exact match first, then case-insensitive match\n    if name in inputs:\n        return inputs[name]\n    lname = name.lower()\n    for k, v in inputs.items():\n        if k.lower() == lname:\n            return v\n    raise KeyError(name)\n\n\ndef run(inputs: dict) -> dict:\n    dim_product = _get_input(inputs, \"DIM_PRODUCT\")\n    stg_product = _get_input(inputs, \"STG_PRODUCT\")\n\n    cols = [\"product_id\", \"category\", \"price_band\",\n            \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n\n    # Build mutable list of dict rows preserving original data/order\n    rows = []\n    for _, r in dim_product.iterrows():\n        rows.append({\n            \"product_id\": r[\"product_id\"],\n            \"category\": r[\"category\"],\n            \"price_band\": r[\"price_band\"],\n            \"eff_start_date\": r[\"eff_start_date\"],\n            \"eff_end_date\": r[\"eff_end_date\"],\n            \"is_current\": r[\"is_current\"],\n        })\n\n    # Build current-version map: product_id -> row dict (reference into rows list)\n    current_map = {}\n    for row in rows:\n        try:\n            is_cur = int(row[\"is_current\"]) == 1\n        except Exception:\n            is_cur = row[\"is_current\"] == 1\n        if is_cur:\n            current_map[row[\"product_id\"]] = row\n\n    # Sort staged rows by product_id, update_date ascending, stable (preserve input order on ties)\n    stg_sorted = stg_product.sort_values(\n        by=[\"product_id\", \"update_date\"],\n        ascending=[True, True],\n        kind=\"mergesort\"\n    )\n\n    for _, s in stg_sorted.iterrows():\n        pid = s[\"product_id\"]\n        s_cat = s[\"category\"]\n        s_pb = s[\"price_band\"]\n        s_date = s[\"update_date\"]\n\n        c = current_map.get(pid)\n\n        if c is None:\n            new_row = {\n                \"product_id\": pid,\n                \"category\": s_cat,\n                \"price_band\": s_pb,\n                \"eff_start_date\": s_date,\n                \"eff_end_date\": None,\n                \"is_current\": 1,\n            }\n            rows.append(new_row)\n            current_map[pid] = new_row\n        else:\n            cat_changed = _changed(c[\"category\"], s_cat)\n            pb_changed = _changed(c[\"price_band\"], s_pb)\n            if cat_changed or pb_changed:\n                c[\"eff_end_date\"] = s_date\n                c[\"is_current\"] = 0\n                new_row = {\n                    \"product_id\": pid,\n                    \"category\": s_cat,\n                    \"price_band\": s_pb,\n                    \"eff_start_date\": s_date,\n                    \"eff_end_date\": None,\n                    \"is_current\": 1,\n                }\n                rows.append(new_row)\n                current_map[pid] = new_row\n            # else no-op\n\n    out_df = pd.DataFrame(rows, columns=cols)\n\n    return {\"dim_product_out\": out_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 778,
+   "tokens_out": 2304,
+   "usd": 0.036894,
+   "wall_s": 21.15678310394287
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2207,
+  "tokens_out": 1235,
+  "usd": 0.025146,
+  "wall_s": 8.842520475387573
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

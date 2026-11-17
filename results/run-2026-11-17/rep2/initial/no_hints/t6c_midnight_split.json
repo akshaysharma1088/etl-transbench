@@ -1,0 +1,16 @@
+{
+ "task": "t6c_midnight_split",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\nfrom datetime import datetime\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionization with forced midnight split.\n    A new session starts when:\n    1. Gap from previous event of same user is STRICTLY > 45 minutes, OR\n    2. The event falls on a DIFFERENT CALENDAR DATE than the previous event.\n    \n    Sessions never cross midnight.\n    \"\"\"\n    \n    # Assume input is 'events' with columns: user_id, event_ts, event_id\n    events = inputs['events'].copy()\n    \n    # Ensure event_ts is datetime\n    events['event_ts'] = pd.to_datetime(events['event_ts'])\n    \n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(by=['user_id', 'event_ts', 'event_id']).reset_index(drop=True)\n    \n    # Extract date (calendar date, server local)\n    events['event_date'] = events['event_ts'].dt.date\n    \n    # Initialize session tracking\n    events['session_num'] = 0\n    session_counter = 0\n    \n    for idx in range(len(events)):\n        if idx == 0:\n            # First event of the entire dataset starts session 1\n            session_counter = 1\n            events.loc[idx, 'session_num'] = session_counter\n        else:\n            current_user = events.loc[idx, 'user_id']\n            prev_user = events.loc[idx - 1, 'user_id']\n            current_ts = events.loc[idx, 'event_ts']\n            prev_ts = events.loc[idx - 1, 'event_ts']\n            current_date = events.loc[idx, 'event_date']\n            prev_date = events.loc[idx - 1, 'event_date']\n            \n            # Check if same user\n            if current_user != prev_user:\n                # Different user, start new session\n                session_counter += 1\n                events.loc[idx, 'session_num'] = session_counter\n            else:\n                # Same user - check gap and date\n                time_diff = (current_ts - prev_ts).total_seconds() / 60  # in minutes\n                \n                # Condition 1: gap STRICTLY > 45 minutes\n                # Condition 2: different calendar date\n                if time_diff > 45 or current_date != prev_date:\n                    session_counter += 1\n                    events.loc[idx, 'session_num'] = session_counter\n                else:\n                    # Same session as previous\n                    events.loc[idx, 'session_num'] = events.loc[idx - 1, 'session_num']\n    \n    # Group by user_id and session_num to aggregate\n    grouped = events.groupby(['user_id', 'session_num']).agg(\n        session_date=('event_date', 'first'),  # All events in a session have the same date\n        session_start=('event_ts', 'min'),\n        session_end=('event_ts', 'max'),\n        event_count=('event_id', 'count')\n    ).reset_index()\n    \n    user_sessions = grouped[['user_id', 'session_num', 'session_date', 'session_start', 'session_end', 'event_count']].copy()\n    \n    return {'user_sessions': user_sessions}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 332,
+   "tokens_out": 873,
+   "usd": 0.004697,
+   "wall_s": 5.474897384643555
+  }
+ ]
+}

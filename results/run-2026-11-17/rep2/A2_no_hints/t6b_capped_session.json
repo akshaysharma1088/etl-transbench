@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t6b_capped_session",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"]\n\n    df = events.copy()\n    df = df.sort_values([\"user_id\", \"event_ts\", \"event_id\"], kind=\"mergesort\").reset_index(drop=True)\n\n    gap_limit = pd.Timedelta(minutes=20)\n    cap_limit = pd.Timedelta(hours=4)\n\n    records = []\n\n    cur_user = None\n    session_num = 0\n    session_start = None\n    session_end = None\n    session_count = 0\n    prev_ts = None\n\n    def flush():\n        if cur_user is not None and session_start is not None:\n            records.append({\n                \"user_id\": cur_user,\n                \"session_num\": session_num,\n                \"session_start\": session_start,\n                \"session_end\": session_end,\n                \"event_count\": session_count,\n            })\n\n    for row in df.itertuples(index=False):\n        user_id = getattr(row, \"user_id\")\n        event_ts = getattr(row, \"event_ts\")\n\n        if user_id != cur_user:\n            # flush previous user's last session\n            flush()\n            cur_user = user_id\n            session_num = 1\n            session_start = event_ts\n            session_end = event_ts\n            session_count = 1\n            prev_ts = event_ts\n            continue\n\n        gap = event_ts - prev_ts\n        cap_delta = event_ts - session_start\n\n        new_session = (gap > gap_limit) or (cap_delta > cap_limit)\n\n        if new_session:\n            # close current session\n            flush()\n            session_num += 1\n            session_start = event_ts\n            session_end = event_ts\n            session_count = 1\n        else:\n            session_end = event_ts\n            session_count += 1\n\n        prev_ts = event_ts\n\n    # flush last session\n    flush()\n\n    result = pd.DataFrame.from_records(\n        records,\n        columns=[\"user_id\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]\n    )\n\n    return {\"user_sessions\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 528,
+   "tokens_out": 1020,
+   "usd": 0.016884,
+   "wall_s": 9.24932861328125
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

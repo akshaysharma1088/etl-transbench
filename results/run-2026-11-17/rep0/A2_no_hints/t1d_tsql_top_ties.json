@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t1d_tsql_top_ties",
+ "category": "T1",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces T-SQL TOP (5) WITH TIES semantics with NULL-propagating concat.\n    \n    Equivalent to:\n    SELECT TOP (5) WITH TIES\n        branch_id,\n        ISNULL(manager, 'UNASSIGNED') AS manager_norm,\n        branch_code + '-' + region_code AS branch_label,\n        score\n    FROM branch_scores\n    WHERE active = 1\n    ORDER BY score DESC\n    \"\"\"\n    \n    df = inputs['branch_scores'].copy()\n    \n    # WHERE active = 1\n    df = df[df['active'] == 1].copy()\n    \n    # ORDER BY score DESC\n    df = df.sort_values('score', ascending=False, na_position='last')\n    \n    # Compute rank for TOP (5) WITH TIES\n    # In T-SQL, TOP (5) WITH TIES returns all rows that tie at the 5th rank position\n    # We use rank() which gives same rank to equal values\n    df['rank'] = df['score'].rank(method='min', ascending=False)\n    \n    # Get the cutoff rank (5th position)\n    cutoff_rank = 5\n    \n    # Include all rows where rank <= cutoff_rank\n    # This handles WITH TIES - all rows that tie at rank 5 are included\n    df = df[df['rank'] <= cutoff_rank].copy()\n    \n    # Create manager_norm: ISNULL(manager, 'UNASSIGNED')\n    df['manager_norm'] = df['manager'].fillna('UNASSIGNED')\n    \n    # Create branch_label: branch_code + '-' + region_code\n    # In T-SQL, '+' propagates NULL (NULL + anything = NULL)\n    # So if either branch_code or region_code is NULL, result is NULL\n    df['branch_label'] = df.apply(\n        lambda row: (str(row['branch_code']) + '-' + str(row['region_code']))\n        if pd.notna(row['branch_code']) and pd.notna(row['region_code'])\n        else np.nan,\n        axis=1\n    )\n    \n    # Select final output columns\n    result = df[['branch_id', 'manager_norm', 'branch_label', 'score']].copy()\n    \n    # Drop the rank helper column (it was only for filtering)\n    result = result.reset_index(drop=True)\n    \n    return {'top_branches': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 333,
+   "tokens_out": 646,
+   "usd": 0.003563,
+   "wall_s": 4.430278539657593
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

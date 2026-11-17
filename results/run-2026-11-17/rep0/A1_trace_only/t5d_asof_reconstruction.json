@@ -1,0 +1,51 @@
+{
+ "config": "A1_trace_only",
+ "rep": 0,
+ "task": "t5d_asof_reconstruction",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _get_input(inputs: dict, name: str):\n    if name in inputs:\n        return inputs[name]\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    key = lower_map.get(name.lower())\n    if key is not None:\n        return inputs[key]\n    raise KeyError(name)\n\n\ndef run(inputs: dict) -> dict:\n    hist = _get_input(inputs, \"DIM_EMP_HIST\").copy()\n    queries = _get_input(inputs, \"ASOF_QUERIES\").copy()\n\n    # Normalize date columns to datetime for correct comparison\n    hist[\"eff_start_date\"] = pd.to_datetime(hist[\"eff_start_date\"])\n    hist[\"eff_end_date\"] = pd.to_datetime(hist[\"eff_end_date\"])\n    queries[\"as_of_date\"] = pd.to_datetime(queries[\"as_of_date\"])\n\n    merged = queries.merge(hist, on=\"emp_id\", how=\"inner\", suffixes=(\"\", \"_h\"))\n\n    cond_start = merged[\"as_of_date\"] >= merged[\"eff_start_date\"]\n    cond_end = merged[\"eff_end_date\"].isna() | (merged[\"as_of_date\"] < merged[\"eff_end_date\"])\n\n    result = merged[cond_start & cond_end]\n\n    out = result[[\"query_id\", \"emp_id\", \"dept\", \"grade\"]].reset_index(drop=True)\n\n    return {\"asof_result\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 738,
+   "tokens_out": 511,
+   "usd": 0.009879,
+   "wall_s": 4.544560194015503
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1492,
+  "tokens_out": 580,
+  "usd": 0.013176,
+  "wall_s": 4.9923388957977295
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

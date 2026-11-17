@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 0,
+ "task": "t4c_stale_snapshot",
+ "category": "T4",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    score_feed = inputs[\"score_feed\"]\n    score_snapshot = inputs[\"score_snapshot\"]\n\n    # Step 1: STG_CURR = group by account_id, AVG(score) (ignores NULLs, like SQL AVG)\n    stg_curr = (\n        score_feed.groupby(\"account_id\", dropna=False)[\"score\"]\n        .mean()\n        .reset_index()\n        .rename(columns={\"score\": \"avg_score\"})\n    )\n\n    # Step 2: DELTA computed against PRE-update snapshot (old score_snapshot)\n    merged = stg_curr.merge(\n        score_snapshot,\n        on=\"account_id\",\n        how=\"left\",\n        suffixes=(\"\", \"_prev\"),\n    )\n\n    prev_avg = merged[\"avg_score_prev\"] if \"avg_score_prev\" in merged.columns else pd.Series(\n        [None] * len(merged), index=merged.index\n    )\n    prev_avg_filled = prev_avg.fillna(0)\n\n    delta = pd.DataFrame(\n        {\n            \"account_id\": merged[\"account_id\"],\n            \"score_delta\": merged[\"avg_score\"] - prev_avg_filled,\n        }\n    )\n\n    # Step 3: Replace snapshot with new STG_CURR values\n    new_snapshot = stg_curr[[\"account_id\", \"avg_score\"]].copy()\n\n    return {\n        \"delta\": delta,\n        \"score_snapshot\": new_snapshot,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 421,
+   "tokens_out": 674,
+   "usd": 0.003791,
+   "wall_s": 4.268484354019165
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5275,
+  "tokens_out": 8914,
+  "usd": 0.149535,
+  "wall_s": 92.58170938491821
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

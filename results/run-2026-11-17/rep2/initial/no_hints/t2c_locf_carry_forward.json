@@ -1,0 +1,16 @@
+{
+ "task": "t2c_locf_carry_forward",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    rate_feed = inputs[\"RATE_FEED\"].copy()\n\n    # Preserve original row order for stable tie-breaking on duplicate keys\n    rate_feed = rate_feed.reset_index(drop=False).rename(columns={\"index\": \"_orig_idx\"})\n\n    # Cursor ORDER BY account_id, obs_date, obs_seq (stable sort preserves\n    # original relative order for exact duplicate keys)\n    rate_feed = rate_feed.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        kind=\"mergesort\"\n    )\n\n    # Carry-forward last non-null rate within each account only (never crosses\n    # account boundaries) using forward-fill grouped by account_id.\n    rate_feed[\"rate_filled\"] = rate_feed.groupby(\"account_id\")[\"rate\"].ffill()\n\n    # carried = 1 only when original rate was null AND a prior rate existed\n    # within the same account (i.e., rate_filled is not null).\n    was_null = rate_feed[\"rate\"].isna()\n    has_fill = rate_feed[\"rate_filled\"].notna()\n    rate_feed[\"was_carried\"] = (was_null & has_fill).astype(\"int64\")\n\n    result = rate_feed[\n        [\"account_id\", \"obs_seq\", \"obs_date\", \"rate_filled\", \"was_carried\"]\n    ].reset_index(drop=True)\n\n    return {\"rate_filled\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 734,
+   "tokens_out": 1222,
+   "usd": 0.020532,
+   "wall_s": 12.137787103652954
+  }
+ ]
+}

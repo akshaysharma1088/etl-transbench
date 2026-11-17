@@ -1,0 +1,51 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize events with gap rule (45 minutes) PLUS forced calendar split.\n    Sessions never cross calendar dates (midnight boundary forces new session).\n    session_num restarts at 1 for each user, ordered by time of first event.\n    \"\"\"\n\n    df = inputs[list(inputs.keys())[0]].copy()\n\n    if 'user_id' not in df.columns or 'event_ts' not in df.columns:\n        raise ValueError(\"Input must contain 'user_id' and 'event_ts' columns\")\n\n    # Convert event_ts to datetime if not already\n    if not pd.api.types.is_datetime64_any_dtype(df['event_ts']):\n        df['event_ts'] = pd.to_datetime(df['event_ts'])\n\n    # Sort by user_id, event_ts, event_id (if present)\n    if 'event_id' in df.columns:\n        df = df.sort_values(by=['user_id', 'event_ts', 'event_id']).reset_index(drop=True)\n    else:\n        df = df.sort_values(by=['user_id', 'event_ts']).reset_index(drop=True)\n\n    # Extract calendar date (server local)\n    df['event_date'] = df['event_ts'].dt.date\n\n    # Compute gap from previous event of same user\n    prev_ts = df.groupby('user_id')['event_ts'].shift(1)\n    prev_date = df.groupby('user_id')['event_date'].shift(1)\n\n    gap_minutes = (df['event_ts'] - prev_ts).dt.total_seconds() / 60.0\n\n    # New session flag: first event of user, OR gap > 45, OR date change\n    is_first_of_user = prev_ts.isna()\n    new_session = is_first_of_user | (gap_minutes > 45) | (df['event_date'] != prev_date)\n\n    # Within each user, cumulative sum of new_session flags gives session_num (1-indexed)\n    df['session_num'] = new_session.groupby(df['user_id']).cumsum().astype(int)\n\n    # Build output: user_sessions with aggregated info\n    grouped = df.groupby(['user_id', 'session_num'], as_index=False).agg(\n        session_date=('event_date', 'first'),\n        session_start=('event_ts', 'min'),\n        session_end=('event_ts', 'max'),\n        event_count=('event_ts', 'count')\n    )\n\n    # Ensure session_date is a date type\n    grouped['session_date'] = pd.to_datetime(grouped['session_date']).dt.date\n\n    user_sessions = grouped[['user_id', 'session_num', 'session_date', 'session_start', 'session_end', 'event_count']]\n\n    user_sessions = user_sessions.sort_values(by=['user_id', 'session_num']).reset_index(drop=True)\n\n    return {'user_sessions': user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 332,
+   "tokens_out": 1029,
+   "usd": 0.005477,
+   "wall_s": 6.625230550765991
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2293,
+  "tokens_out": 1190,
+  "usd": 0.024729,
+  "wall_s": 9.592621088027954
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "task": "t2c_locf_carry_forward",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs['RATE_FEED'].copy()\n\n    # Preserve legacy cursor ORDER BY account_id, obs_date, obs_seq\n    # Use stable sort to keep deterministic tie-breaking.\n    df = df.sort_values(\n        by=['account_id', 'obs_date', 'obs_seq'],\n        kind='mergesort'\n    ).reset_index(drop=True)\n\n    last_rate = None\n    prev_acct = object()  # sentinel that won't equal any real account_id\n\n    rate_filled_vals = []\n    was_carried_vals = []\n\n    for row in df.itertuples(index=False):\n        acct = row.account_id\n        rate = row.rate\n\n        if acct != prev_acct:\n            last_rate = None\n            prev_acct = acct\n\n        if pd.notna(rate):\n            last_rate = rate\n            carried = 0\n        else:\n            carried = 0 if pd.isna(last_rate) else 1\n\n        filled = rate if pd.notna(rate) else last_rate\n\n        rate_filled_vals.append(filled)\n        was_carried_vals.append(carried)\n\n    out = pd.DataFrame({\n        'account_id': df['account_id'],\n        'obs_seq': df['obs_seq'],\n        'obs_date': df['obs_date'],\n        'rate_filled': rate_filled_vals,\n        'was_carried': was_carried_vals,\n    })\n\n    return {'rate_filled': out}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 734,
+   "tokens_out": 1017,
+   "usd": 0.017457,
+   "wall_s": 8.666385889053345
+  }
+ ]
+}

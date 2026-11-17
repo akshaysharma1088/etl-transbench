@@ -1,0 +1,51 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t8c_out_of_order_late",
+ "category": "T8",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs['target_snapshot'].copy()\n    cdc = inputs['cdc_events'].copy()\n\n    base_cols = ['device_id', 'reading', 'applied_event_ts']\n\n    # --- Normalize / dedupe target_snapshot per device ---\n    # If duplicate device_id rows exist in target_snapshot, keep the one\n    # with the maximum applied_event_ts (most advanced watermark).\n    if not target.empty:\n        target = target.sort_values(['device_id', 'applied_event_ts'], kind='mergesort')\n        target = target.drop_duplicates(subset='device_id', keep='last')\n    target = target.reset_index(drop=True)\n\n    # Build per-device watermark lookup (NaN/NaT if device unseen before)\n    if not target.empty:\n        watermark_map = pd.Series(\n            target['applied_event_ts'].values,\n            index=target['device_id'].values\n        )\n    else:\n        watermark_map = pd.Series(dtype='object')\n\n    # --- Determine surviving CDC events ---\n    if cdc.empty:\n        survivors = cdc.copy()\n    else:\n        cdc = cdc.copy()\n        cdc['_watermark'] = cdc['device_id'].map(watermark_map)\n\n        # Devices with no existing watermark: treat as -infinity (any\n        # event qualifies). We avoid constructing an actual sentinel\n        # Timestamp (which can cause dtype/precision issues) and instead\n        # use isna() to detect \"no prior watermark\" devices directly.\n        no_watermark = cdc['_watermark'].isna()\n\n        # Strict comparison: event must be strictly newer than the\n        # device's current applied_event_ts. Equal timestamps are replays\n        # and are discarded (strict >).\n        strictly_newer = pd.Series(False, index=cdc.index)\n        has_watermark = ~no_watermark\n        if has_watermark.any():\n            strictly_newer.loc[has_watermark] = (\n                cdc.loc[has_watermark, 'event_ts'] > cdc.loc[has_watermark, '_watermark']\n            )\n\n        mask = no_watermark | strictly_newer\n        survivors = cdc.loc[mask].copy()\n        survivors = survivors.drop(columns=['_watermark'])\n\n    # --- Pick winner per device among survivors: latest (event_ts, event_seq) ---\n    if not survivors.empty:\n        survivors = survivors.sort_values(\n            ['device_id', 'event_ts', 'event_seq'], kind='mergesort'\n        )\n        winners = survivors.drop_duplicates(subset='device_id', keep='last')\n        winners = winners[['device_id', 'reading', 'event_ts']].rename(\n            columns={'event_ts': 'applied_event_ts'}\n        )\n    else:\n        winners = pd.DataFrame(columns=base_cols)\n\n    # --- Merge winners into base snapshot without in-place dtype-sensitive\n    # assignment: build result via concatenation instead. ---\n    if target.empty:\n        base = pd.DataFrame(columns=base_cols)\n    else:\n        base = target[base_cols].copy()\n\n    if not winners.empty:\n        updated_device_ids = set(winners['device_id'])\n        # Keep rows for devices NOT updated by a winning event\n        carried_forward = base[~base['device_id'].isin(updated_device_ids)]\n        result = pd.concat([carried_forward, winners[base_cols]], ignore_index=True)\n    else:\n        result = base\n\n    result = result[base_cols]\n    result = result.sort_values('device_id', kind='mergesort').reset_index(drop=True)\n\n    return {'new_snapshot': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 698,
+   "tokens_out": 3412,
+   "usd": 0.053274,
+   "wall_s": 31.59307885169983
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3214,
+  "tokens_out": 2121,
+  "usd": 0.041457,
+  "wall_s": 18.735507011413574
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

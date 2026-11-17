@@ -1,0 +1,51 @@
+{
+ "config": "B2_retranslate",
+ "rep": 4,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs['events'].copy()\n\n    # Ensure timestamp column is proper datetime\n    events['event_ts'] = pd.to_datetime(events['event_ts'])\n\n    # Order within user: event_ts, then event_id (stable sort for determinism)\n    events = events.sort_values(\n        ['user_id', 'event_ts', 'event_id'], kind='mergesort'\n    ).reset_index(drop=True)\n\n    # Previous event timestamp for the same user\n    prev_ts = events.groupby('user_id')['event_ts'].shift(1)\n\n    # Gap in minutes from previous event of same user\n    gap_minutes = (events['event_ts'] - prev_ts).dt.total_seconds() / 60.0\n\n    # Calendar date (server local) of current and previous event\n    cur_date = events['event_ts'].dt.date\n    prev_date = prev_ts.dt.date\n\n    # New session starts when:\n    #  - there is no previous event for this user (first event), OR\n    #  - gap is strictly > 45 minutes, OR\n    #  - the calendar date differs from the previous event's date\n    new_session = prev_ts.isna() | (gap_minutes > 45) | (cur_date != prev_date)\n\n    # Running session number per user, starting at 1\n    events['session_num'] = (\n        new_session.astype(int).groupby(events['user_id']).cumsum()\n    )\n\n    # Aggregate per user/session\n    grouped = events.groupby(['user_id', 'session_num'], sort=False).agg(\n        session_start=('event_ts', 'min'),\n        session_end=('event_ts', 'max'),\n        event_count=('event_ts', 'size'),\n    ).reset_index()\n\n    # Session date: date of the session's events (never crosses midnight,\n    # so min == max date within a session)\n    grouped['session_date'] = grouped['session_start'].dt.date\n\n    result = grouped[\n        ['user_id', 'session_num', 'session_date',\n         'session_start', 'session_end', 'event_count']\n    ]\n\n    result = result.sort_values(\n        ['user_id', 'session_num'], kind='mergesort'\n    ).reset_index(drop=True)\n\n    return {'user_sessions': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 332,
+   "tokens_out": 1115,
+   "usd": 0.005907,
+   "wall_s": 6.834763050079346
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 486,
+  "tokens_out": 3094,
+  "usd": 0.047868,
+  "wall_s": 28.658764839172363
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

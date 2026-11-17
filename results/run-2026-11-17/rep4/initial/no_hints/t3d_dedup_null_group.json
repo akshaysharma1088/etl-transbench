@@ -1,0 +1,16 @@
+{
+ "task": "t3d_dedup_null_group",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy ETL semantics:\n    1. Sort by meter_id ASC, read_ts ASC, read_seq ASC\n    2. Dedup keeping LAST row per meter_id\n    3. Aggregate by zone (treating NULL zone as a real group)\n    4. Output zone_totals with columns: zone, total_kwh, meter_count\n    \"\"\"\n    \n    # Read input\n    meter_reads = inputs[\"meter_reads\"].copy()\n    \n    # Step 1: Sort by meter_id, read_ts, read_seq (all ascending)\n    meter_reads = meter_reads.sort_values(\n        by=[\"meter_id\", \"read_ts\", \"read_seq\"],\n        ascending=[True, True, True],\n        na_position=\"last\"\n    )\n    \n    # Step 2: Dedup - keep LAST row per meter_id\n    # Since data is sorted, dropping duplicates with keep='last' gives us the latest read\n    deduped = meter_reads.drop_duplicates(\n        subset=[\"meter_id\"],\n        keep=\"last\"\n    )\n    \n    # Step 3: Aggregate by zone\n    # Group by zone (NULL zone is treated as a real group in legacy behavior)\n    # We need to preserve NaN/NULL as a group key\n    grouped = deduped.groupby(\"zone\", dropna=False).agg({\n        \"kwh\": \"sum\",\n    }).reset_index()\n    \n    # Add meter count\n    meter_count = deduped.groupby(\"zone\", dropna=False).size().reset_index(name=\"meter_count\")\n    \n    # Merge aggregations\n    result = grouped.merge(meter_count, on=\"zone\", how=\"left\")\n    \n    # Rename and ensure correct column order\n    result = result.rename(columns={\"kwh\": \"total_kwh\"})\n    result = result[[\"zone\", \"total_kwh\", \"meter_count\"]]\n    \n    # Ensure proper dtypes\n    result[\"total_kwh\"] = pd.to_numeric(result[\"total_kwh\"], errors=\"coerce\")\n    result[\"meter_count\"] = result[\"meter_count\"].astype(int)\n    \n    return {\"zone_totals\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 477,
+   "tokens_out": 588,
+   "usd": 0.003417,
+   "wall_s": 4.303577661514282
+  }
+ ]
+}

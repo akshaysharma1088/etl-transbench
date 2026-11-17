@@ -1,0 +1,46 @@
+{
+ "config": "LEGATO",
+ "rep": 3,
+ "task": "t8_cdc_merge",
+ "category": "T8",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n\n    # Watermark is a single row with column 'high_ts'\n    high_ts = watermark[\"high_ts\"].iloc[0]\n\n    # 1. Keep only events strictly after the watermark (idempotent replay guard)\n    filtered = cdc[cdc[\"event_ts\"] > high_ts].copy()\n\n    if filtered.empty:\n        cols = [\"product_id\", \"name\", \"price\", \"last_event_ts\"]\n        return {\"new_snapshot\": target[cols].reset_index(drop=True)}\n\n    # 2. Per product_id pick latest event by (event_ts, event_seq), deterministic tie-break.\n    filtered = filtered.sort_values(\n        by=[\"product_id\", \"event_ts\", \"event_seq\"],\n        ascending=[True, False, False],\n        kind=\"mergesort\",\n    )\n    latest = filtered.drop_duplicates(subset=\"product_id\", keep=\"first\")\n\n    # Work on the snapshot indexed by product_id for easy upsert/delete.\n    snap = target.set_index(\"product_id\")\n\n    for _, row in latest.iterrows():\n        pid = row[\"product_id\"]\n        op = row[\"op\"]\n        if op == \"D\":\n            if pid in snap.index:\n                snap = snap.drop(index=pid)\n        else:\n            # Upsert name/price and set last_event_ts = event_ts\n            snap.loc[pid, \"name\"] = row[\"name\"]\n            snap.loc[pid, \"price\"] = row[\"price\"]\n            snap.loc[pid, \"last_event_ts\"] = row[\"event_ts\"]\n\n    new_snapshot = snap.reset_index()\n    new_snapshot = new_snapshot[[\"product_id\", \"name\", \"price\", \"last_event_ts\"]]\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 644,
+   "tokens_out": 1734,
+   "usd": 0.027942,
+   "wall_s": 15.835049152374268
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

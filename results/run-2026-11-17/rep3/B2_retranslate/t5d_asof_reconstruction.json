@@ -1,0 +1,51 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t5d_asof_reconstruction",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    hist = inputs[\"dim_emp_hist\"].copy()\n    queries = inputs[\"asof_queries\"].copy()\n\n    # Normalize dtypes: ensure date-like columns are proper datetime for comparison.\n    hist[\"emp_id\"] = hist[\"emp_id\"]\n    hist[\"eff_start_date\"] = pd.to_datetime(hist[\"eff_start_date\"])\n    # eff_end_date may contain NaT/None meaning \"open\" (current row)\n    hist[\"eff_end_date\"] = pd.to_datetime(hist[\"eff_end_date\"])\n\n    queries[\"emp_id\"] = queries[\"emp_id\"]\n    queries[\"as_of_date\"] = pd.to_datetime(queries[\"as_of_date\"])\n\n    # Inner join on emp_id, then filter by half-open interval condition.\n    merged = queries.merge(\n        hist,\n        on=\"emp_id\",\n        how=\"inner\",\n        suffixes=(\"\", \"_h\"),\n    )\n\n    start_ok = merged[\"as_of_date\"] >= merged[\"eff_start_date\"]\n    end_ok = merged[\"eff_end_date\"].isna() | (merged[\"as_of_date\"] < merged[\"eff_end_date\"])\n\n    matched = merged[start_ok & end_ok]\n\n    result = matched[[\"query_id\", \"emp_id\", \"dept\", \"grade\"]].copy()\n\n    result = result.sort_values(by=[\"query_id\", \"emp_id\"], kind=\"stable\").reset_index(drop=True)\n\n    return {\"asof_result\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 738,
+   "tokens_out": 685,
+   "usd": 0.012489,
+   "wall_s": 6.270246267318726
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 738,
+  "tokens_out": 1192,
+  "usd": 0.020094,
+  "wall_s": 11.561508655548096
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

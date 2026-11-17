@@ -1,0 +1,66 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    inbound = inputs[\"inbound\"]\n    target_snapshot = inputs[\"target_snapshot\"]\n\n    # ---- Step 1: STG_NEW ----\n    # Filter qty > 0 (NULL/NaN comparisons are false, rows excluded)\n    filtered = inbound[inbound[\"qty\"] > 0]\n\n    if filtered.empty:\n        stg_new = pd.DataFrame(\n            columns=[\"product_id\", \"batch_date\", \"total_qty\", \"max_unit_cost\"]\n        )\n    else:\n        grouped = filtered.groupby(\n            [\"product_id\", \"batch_date\"], dropna=False, as_index=False\n        ).agg(\n            total_qty=(\"qty\", \"sum\"),\n            max_unit_cost=(\"unit_cost\", \"max\"),\n        )\n        stg_new = grouped[[\"product_id\", \"batch_date\", \"total_qty\", \"max_unit_cost\"]]\n\n    # ---- Step 2: DELETE arriving partitions from TARGET_SNAPSHOT ----\n    distinct_dates = stg_new[\"batch_date\"].unique()\n\n    has_nan_date = any(pd.isna(d) for d in distinct_dates)\n    non_null_dates = [d for d in distinct_dates if not pd.isna(d)]\n\n    if target_snapshot.empty:\n        remaining = target_snapshot.copy()\n    else:\n        mask_delete = target_snapshot[\"batch_date\"].isin(non_null_dates)\n        if has_nan_date:\n            mask_delete = mask_delete | target_snapshot[\"batch_date\"].isna()\n        remaining = target_snapshot[~mask_delete]\n\n    # ---- Step 3: INSERT STG_NEW rows ----\n    result = pd.concat([remaining, stg_new], ignore_index=True, sort=False)\n\n    # Ensure column order matches target schema\n    result = result[[\"product_id\", \"batch_date\", \"total_qty\", \"max_unit_cost\"]]\n\n    return {\"target_snapshot\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 456,
+   "usd": 0.002678,
+   "wall_s": 3.1967735290527344
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5021,
+  "tokens_out": 7715,
+  "usd": 0.13078800000000002,
+  "wall_s": 78.59928607940674
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

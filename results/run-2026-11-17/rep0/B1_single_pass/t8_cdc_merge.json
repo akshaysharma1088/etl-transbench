@@ -1,0 +1,46 @@
+{
+ "config": "B1_single_pass",
+ "rep": 0,
+ "task": "t8_cdc_merge",
+ "category": "T8",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n\n    # Extract watermark high_ts (single row)\n    high_ts = watermark[\"high_ts\"].iloc[0]\n\n    # Step 1: keep only events strictly after the watermark\n    events = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n\n    # Step 2: per product_id, pick the latest event by (event_ts, event_seq)\n    if not events.empty:\n        events = events.sort_values(\n            by=[\"product_id\", \"event_ts\", \"event_seq\"],\n            ascending=[True, True, True]\n        )\n        latest_events = events.groupby(\"product_id\", as_index=False).tail(1)\n    else:\n        latest_events = events\n\n    # Build lookup dict from target_snapshot keyed by product_id\n    snapshot_cols = [\"product_id\", \"name\", \"price\", \"last_event_ts\"]\n    snapshot = target_snapshot.set_index(\"product_id\", drop=False)\n\n    result_rows = []\n\n    processed_ids = set()\n\n    # Apply surviving events\n    for _, ev in latest_events.iterrows():\n        pid = ev[\"product_id\"]\n        processed_ids.add(pid)\n        op = ev[\"op\"]\n        if op == \"D\":\n            # delete: do not add to result\n            continue\n        else:\n            # I or U: upsert name/price, set last_event_ts = event_ts\n            result_rows.append({\n                \"product_id\": pid,\n                \"name\": ev[\"name\"],\n                \"price\": ev[\"price\"],\n                \"last_event_ts\": ev[\"event_ts\"],\n            })\n\n    # Carry over products without surviving events unchanged\n    for pid, row in snapshot.iterrows():\n        if pid not in processed_ids:\n            result_rows.append({\n                \"product_id\": row[\"product_id\"],\n                \"name\": row[\"name\"],\n                \"price\": row[\"price\"],\n                \"last_event_ts\": row[\"last_event_ts\"],\n            })\n\n    new_snapshot = pd.DataFrame(result_rows, columns=snapshot_cols)\n\n    # Ensure dtypes align with target_snapshot where possible\n    for col in snapshot_cols:\n        if col in target_snapshot.columns:\n            try:\n                new_snapshot[col] = new_snapshot[col].astype(target_snapshot[col].dtype)\n            except (TypeError, ValueError):\n                pass\n\n    new_snapshot = new_snapshot.reset_index(drop=True)\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 644,
+   "tokens_out": 1057,
+   "usd": 0.017787,
+   "wall_s": 8.561050176620483
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

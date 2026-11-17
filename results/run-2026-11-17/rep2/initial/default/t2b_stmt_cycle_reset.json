@@ -1,0 +1,16 @@
+{
+ "task": "t2b_stmt_cycle_reset",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"LEDGER\"].copy()\n\n    # Preserve original columns, add working columns\n    df[\"_amount_filled\"] = df[\"amount\"].fillna(0)\n\n    # Sort exactly as the cursor would: ORDER BY account_id, entry_date, row_seq\n    df = df.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        kind=\"mergesort\"  # stable sort to keep deterministic tie-breaking\n    ).reset_index(drop=True)\n\n    # Indicator for STMT rows\n    is_stmt = (df[\"entry_type\"] == \"STMT\").astype(int)\n\n    # Within each account, cyc starts at 1 and increments by 1 at each STMT row\n    # (including that STMT row itself, since reset happens before add).\n    # So cyc = 1 + cumulative count of STMT rows up to and including current row.\n    cum_stmt = is_stmt.groupby(df[\"account_id\"]).cumsum()\n    df[\"cycle_no\"] = 1 + cum_stmt\n\n    # bal resets to 0 at each STMT row (before adding), so cumulative balance\n    # within a (account_id, cycle_no) group is just the running sum of amounts\n    # (coalesced to 0) within that group, since each STMT row starts a new group\n    # and its own amount is included in that new group's sum.\n    df[\"cycle_balance\"] = (\n        df.groupby([\"account_id\", \"cycle_no\"])[\"_amount_filled\"].cumsum()\n    )\n\n    result = df[\n        [\"account_id\", \"row_seq\", \"entry_date\", \"entry_type\", \"amount\",\n         \"cycle_no\", \"cycle_balance\"]\n    ].reset_index(drop=True)\n\n    return {\"cycle_balances\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 750,
+   "tokens_out": 1272,
+   "usd": 0.02133,
+   "wall_s": 12.871676683425903
+  }
+ ]
+}

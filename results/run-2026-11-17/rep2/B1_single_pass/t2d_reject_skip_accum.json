@@ -1,0 +1,46 @@
+{
+ "config": "B1_single_pass",
+ "rep": 2,
+ "task": "t2d_reject_skip_accum",
+ "category": "T2",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    postings = inputs[\"POSTINGS\"].copy()\n\n    # Preserve cursor ordering\n    postings = postings.sort_values(\n        by=[\"account_id\", \"post_date\", \"post_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # Determine validity of each row (reject condition)\n    qty = postings[\"qty\"]\n    price = postings[\"unit_price\"]\n\n    is_reject = (\n        qty.isna()\n        | (qty <= 0)\n        | price.isna()\n        | (price < 0)\n    )\n\n    postings[\"_is_reject\"] = is_reject\n    postings[\"_post_value\"] = np.where(~is_reject, qty * price, np.nan)\n\n    # Running total only over valid (non-rejected) rows, per account, in order\n    valid_mask = ~postings[\"_is_reject\"]\n\n    postings[\"_running_total\"] = np.nan\n    # compute cumulative sum of post_value within account, only counting valid rows\n    def compute_running(group):\n        vals = group[\"_post_value\"].where(group[\"_is_reject\"] == False, 0.0)\n        cum = vals.cumsum()\n        group[\"_running_total\"] = cum\n        return group\n\n    postings = postings.groupby(\"account_id\", group_keys=False, sort=False).apply(compute_running)\n\n    posted_totals = postings.loc[valid_mask, [\n        \"account_id\", \"post_seq\", \"post_date\", \"_post_value\", \"_running_total\"\n    ]].rename(columns={\n        \"_post_value\": \"post_value\",\n        \"_running_total\": \"running_total\"\n    }).reset_index(drop=True)\n\n    # Reject counts per account, including accounts with zero rejects\n    all_accounts = postings[\"account_id\"].drop_duplicates()\n    reject_sum = postings.groupby(\"account_id\")[\"_is_reject\"].sum()\n\n    reject_counts = pd.DataFrame({\n        \"account_id\": all_accounts\n    })\n    reject_counts[\"reject_count\"] = reject_counts[\"account_id\"].map(reject_sum).fillna(0).astype(int)\n    reject_counts = reject_counts.sort_values(\"account_id\", kind=\"mergesort\").reset_index(drop=True)\n\n    return {\n        \"posted_totals\": posted_totals,\n        \"reject_counts\": reject_counts\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 975,
+   "tokens_out": 1036,
+   "usd": 0.018465,
+   "wall_s": 9.550680875778198
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

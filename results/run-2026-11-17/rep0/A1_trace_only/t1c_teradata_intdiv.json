@@ -1,0 +1,46 @@
+{
+ "config": "A1_trace_only",
+ "rep": 0,
+ "task": "t1c_teradata_intdiv",
+ "category": "T1",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicate Teradata-style integer division (truncate toward zero) and null handling.\n    \n    - ZEROIFNULL: convert NULL to 0 before arithmetic\n    - INTEGER / INTEGER: truncate toward zero (not floor)\n    - CAST(... AS INTEGER): truncate toward zero\n    \"\"\"\n    acct_balance = inputs['acct_balance'].copy()\n    \n    # Filter: WHERE acct_type <> 'CLOSED'\n    result = acct_balance[acct_balance['acct_type'] != 'CLOSED'].copy()\n    \n    # Helper function: Teradata-style truncate toward zero division\n    def trunc_div(numerator, denominator):\n        \"\"\"Integer division truncating toward zero (Teradata style)\"\"\"\n        # Replace NaN with 0 (ZEROIFNULL semantics)\n        num = numerator.fillna(0)\n        # Perform division, then truncate toward zero\n        return np.trunc(num / denominator)\n    \n    # Helper function: Teradata-style truncate toward zero for CAST\n    def trunc_cast(value):\n        \"\"\"Cast to integer by truncating toward zero\"\"\"\n        return np.trunc(value)\n    \n    # SELECT account_id\n    result['account_id'] = result['account_id']\n    \n    # balance_bucket: ZEROIFNULL(balance_cents) / 100\n    result['balance_bucket'] = trunc_div(result['balance_cents'], 100)\n    \n    # fx_units: CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER)\n    balance_filled = result['balance_cents'].fillna(0)\n    fx_units_calc = balance_filled * result['fx_rate'] / 100\n    result['fx_units'] = trunc_cast(fx_units_calc)\n    \n    # Keep only the requested output columns\n    output = result[['account_id', 'balance_bucket', 'fx_units']].copy()\n    \n    return {'balance_buckets': output}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 373,
+   "tokens_out": 548,
+   "usd": 0.003113,
+   "wall_s": 4.495465040206909
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

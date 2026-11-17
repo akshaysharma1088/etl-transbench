@@ -1,0 +1,16 @@
+{
+ "task": "t7_reject_validation",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"payments\"].copy()\n\n    amount = df[\"amount\"]\n    currency = df[\"currency\"]\n    country = df[\"country\"]\n\n    valid_currencies = {\"USD\", \"EUR\", \"GBP\"}\n\n    # Rule evaluation in order; a row is rejected by the FIRST rule it fails.\n    cond_r1 = amount.isna()\n\n    cond_r2 = (~cond_r1) & (amount <= 0)\n\n    # SQL \"NOT IN\" semantics: if currency is NULL, the predicate is UNKNOWN,\n    # which does not satisfy the (implicit) \"is true\" test, so the row does\n    # not fail R3 on a NULL currency; evaluation proceeds to R4.\n    cond_r3 = (\n        (~cond_r1)\n        & (~cond_r2)\n        & currency.notna()\n        & (~currency.isin(valid_currencies))\n    )\n\n    cond_r4 = (~cond_r1) & (~cond_r2) & (~cond_r3) & country.isna()\n\n    reject_mask = cond_r1 | cond_r2 | cond_r3 | cond_r4\n\n    reason_code = pd.Series(pd.NA, index=df.index, dtype=\"object\")\n    reason_code[cond_r1] = \"AMT_NULL\"\n    reason_code[cond_r2] = \"AMT_NONPOS\"\n    reason_code[cond_r3] = \"CCY_INVALID\"\n    reason_code[cond_r4] = \"CTRY_NULL\"\n\n    clean = df.loc[~reject_mask].copy()\n    clean[\"amount\"] = clean[\"amount\"].round(2)\n\n    rejects = df.loc[reject_mask].copy()\n    rejects[\"reason_code\"] = reason_code[reject_mask]\n\n    clean = clean.reset_index(drop=True)\n    rejects = rejects.reset_index(drop=True)\n\n    return {\n        \"payments_clean\": clean,\n        \"payments_rejects\": rejects,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 554,
+   "tokens_out": 2451,
+   "usd": 0.038427,
+   "wall_s": 21.253700017929077
+  }
+ ]
+}

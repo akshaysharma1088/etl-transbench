@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    inbound = inputs[\"inbound\"].copy()\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n\n    # Step 1: STG_NEW = SELECT product_id, batch_date, SUM(qty) AS total_qty,\n    #                          MAX(unit_cost) AS max_unit_cost\n    #          FROM inbound WHERE qty > 0 GROUP BY product_id, batch_date\n    filtered = inbound[inbound[\"qty\"] > 0]\n\n    if filtered.empty:\n        stg_new = pd.DataFrame(\n            columns=[\"product_id\", \"batch_date\", \"total_qty\", \"max_unit_cost\"]\n        )\n    else:\n        grouped = (\n            filtered.groupby([\"product_id\", \"batch_date\"], dropna=False)\n            .agg(total_qty=(\"qty\", \"sum\"), max_unit_cost=(\"unit_cost\", \"max\"))\n            .reset_index()\n        )\n        stg_new = grouped[\n            [\"product_id\", \"batch_date\", \"total_qty\", \"max_unit_cost\"]\n        ]\n\n    # Step 2: DELETE FROM TARGET_SNAPSHOT\n    #   WHERE batch_date IN (SELECT DISTINCT batch_date FROM STG_NEW)\n    # SQL IN semantics: NULL batch_date never matches, regardless of list content.\n    if not stg_new.empty:\n        arriving_dates = pd.unique(stg_new[\"batch_date\"].dropna())\n        delete_mask = target_snapshot[\"batch_date\"].notna() & target_snapshot[\n            \"batch_date\"\n        ].isin(arriving_dates)\n    else:\n        delete_mask = pd.Series(False, index=target_snapshot.index)\n\n    survivors = target_snapshot[~delete_mask]\n\n    # Step 3: INSERT INTO TARGET_SNAPSHOT SELECT * FROM STG_NEW\n    result = pd.concat([survivors, stg_new], ignore_index=True, sort=False)\n\n    result = result[[\"product_id\", \"batch_date\", \"total_qty\", \"max_unit_cost\"]]\n\n    return {\"target_snapshot\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 626,
+   "usd": 0.003528,
+   "wall_s": 4.149228096008301
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4708,
+  "tokens_out": 5682,
+  "usd": 0.099354,
+  "wall_s": 49.443583965301514
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

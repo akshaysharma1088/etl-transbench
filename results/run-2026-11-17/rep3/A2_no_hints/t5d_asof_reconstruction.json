@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t5d_asof_reconstruction",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    dim = inputs[\"dim_emp_hist\"].copy()\n    q = inputs[\"asof_queries\"].copy()\n\n    # Coerce date-like columns to datetime for correct comparisons,\n    # preserving NaT for NULL eff_end_date.\n    dim[\"eff_start_date\"] = pd.to_datetime(dim[\"eff_start_date\"])\n    dim[\"eff_end_date\"] = pd.to_datetime(dim[\"eff_end_date\"])\n    q[\"as_of_date\"] = pd.to_datetime(q[\"as_of_date\"])\n\n    # Inner join on emp_id (Cartesian per emp_id, then filter by interval).\n    merged = q.merge(\n        dim,\n        on=\"emp_id\",\n        how=\"inner\",\n        suffixes=(\"\", \"_h\"),\n    )\n\n    start_ok = merged[\"as_of_date\"] >= merged[\"eff_start_date\"]\n    end_ok = merged[\"eff_end_date\"].isna() | (merged[\"as_of_date\"] < merged[\"eff_end_date\"])\n\n    matched = merged.loc[start_ok & end_ok]\n\n    result = matched[[\"query_id\", \"emp_id\", \"dept\", \"grade\"]].reset_index(drop=True)\n\n    return {\"asof_result\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 683,
+   "tokens_out": 982,
+   "usd": 0.016779,
+   "wall_s": 8.728865146636963
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

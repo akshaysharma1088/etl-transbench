@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 1,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_null(v):\n    try:\n        return pd.isna(v)\n    except (TypeError, ValueError):\n        return v is None\n\n\ndef _values_differ(a, b):\n    a_null = _is_null(a)\n    b_null = _is_null(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim_in = inputs[\"DIM_CUSTOMER\"]\n    stg_in = inputs[\"STG_CUSTOMER\"]\n\n    # Work on copies, preserve columns/dtypes as much as possible.\n    dim = dim_in.copy().reset_index(drop=True)\n\n    cols = [\"customer_id\", \"name\", \"segment\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    for c in cols:\n        if c not in dim.columns:\n            dim[c] = pd.NA\n\n    stg = stg_in.copy()\n\n    if len(stg) == 0:\n        return {\"dim_customer_out\": dim[cols].copy()}\n\n    # Step 1: Deduplicate STG_CUSTOMER to the latest record per customer_id\n    # by update_date; ties broken by greater (name, segment) lexicographically.\n    stg_sorted = stg.sort_values(\n        by=[\"customer_id\", \"update_date\", \"name\", \"segment\"],\n        ascending=[True, False, False, False],\n        kind=\"mergesort\",\n    )\n    dedup = stg_sorted.drop_duplicates(subset=\"customer_id\", keep=\"first\")\n\n    new_rows = []\n\n    for _, s in dedup.iterrows():\n        cust_id = s[\"customer_id\"]\n        s_name = s[\"name\"]\n        s_segment = s[\"segment\"]\n        s_update_date = s[\"update_date\"]\n\n        mask_current = (dim[\"customer_id\"] == cust_id) & (dim[\"is_current\"] == 1)\n        current_idx = dim.index[mask_current]\n\n        if len(current_idx) == 0:\n            new_rows.append({\n                \"customer_id\": cust_id,\n                \"name\": s_name,\n                \"segment\": s_segment,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n        else:\n            ci = current_idx[0]\n            c_name = dim.at[ci, \"name\"]\n            c_segment = dim.at[ci, \"segment\"]\n\n            if _values_differ(c_name, s_name) or _values_differ(c_segment, s_segment):\n                dim.at[ci, \"eff_end_date\"] = s_update_date\n                dim.at[ci, \"is_current\"] = 0\n\n                new_rows.append({\n                    \"customer_id\": cust_id,\n                    \"name\": s_name,\n                    \"segment\": s_segment,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            # else: unchanged -> no new version created\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=cols)\n        result = pd.concat([dim[cols], new_df], ignore_index=True)\n    else:\n        result = dim[cols].copy()\n\n    return {\"dim_customer_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1017,
+   "tokens_out": 2848,
+   "usd": 0.045771,
+   "wall_s": 23.597105979919434
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5626,
+  "tokens_out": 13027,
+  "usd": 0.212283,
+  "wall_s": 123.11856460571289
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

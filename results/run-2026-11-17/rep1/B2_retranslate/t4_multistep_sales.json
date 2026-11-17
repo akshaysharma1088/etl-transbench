@@ -1,0 +1,46 @@
+{
+ "config": "B2_retranslate",
+ "rep": 1,
+ "task": "t4_multistep_sales",
+ "category": "T4",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy multi-step batch job with intermediate staging.\n    \n    Step 1: CREATE STG_DAILY - aggregate sales by store and date\n    Step 2: CREATE store_daily - join with store_dim (INNER), drop stores not in dim\n    Step 3: CREATE region_daily - aggregate store_daily by region and date\n    \n    Outputs: store_daily, region_daily\n    \"\"\"\n    sales = inputs['sales']\n    store_dim = inputs['store_dim']\n    \n    # Step 1: CREATE STG_DAILY\n    # Filter for non-null amounts, group by store_id and sale_date\n    stg_daily = sales[sales['amount'].notna()].copy()\n    stg_daily = stg_daily.groupby(['store_id', 'sale_date'], as_index=False).agg({\n        'amount': 'sum',\n        'store_id': 'count'\n    })\n    stg_daily.rename(columns={'amount': 'gross', 'store_id': 'txn_cnt'}, inplace=True)\n    \n    # Restore store_id column (it was used in groupby but we need it back after agg)\n    stg_daily = sales[sales['amount'].notna()].copy()\n    stg_daily = stg_daily.groupby(['store_id', 'sale_date'], as_index=False).agg(\n        gross=('amount', 'sum'),\n        txn_cnt=('amount', 'count')\n    )\n    \n    # Step 2: CREATE store_daily\n    # INNER JOIN with store_dim - only keeps stores that exist in store_dim\n    store_daily = pd.merge(\n        stg_daily,\n        store_dim,\n        on='store_id',\n        how='inner'\n    )\n    \n    # Ensure column order: store_id, sale_date, gross, txn_cnt, region\n    store_daily = store_daily[['store_id', 'sale_date', 'gross', 'txn_cnt', 'region']]\n    \n    # Step 3: CREATE region_daily\n    # Aggregate store_daily by region and sale_date\n    region_daily = store_daily.groupby(['region', 'sale_date'], as_index=False).agg(\n        region_gross=('gross', 'sum'),\n        region_txn_cnt=('txn_cnt', 'sum')\n    )\n    \n    return {\n        'store_daily': store_daily,\n        'region_daily': region_daily\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 418,
+   "tokens_out": 667,
+   "usd": 0.003753,
+   "wall_s": 5.645593881607056
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}
