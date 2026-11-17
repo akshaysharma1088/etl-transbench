@@ -1,0 +1,16 @@
+{
+ "task": "t5f_scd2_hash_detect",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_MEMBER'].copy()\n    stg = inputs['STG_MEMBER'].copy()\n\n    def sig(city, tier):\n        c = '' if pd.isna(city) else str(city)\n        t = '' if pd.isna(tier) else str(tier)\n        return c.rstrip() + '|' + t.rstrip()\n\n    # Work with a list of dict rows so we can mutate \"current\" rows in place\n    # while iterating staged records, mirroring the procedural SP logic.\n    records = dim.to_dict('records')\n\n    new_records = []\n\n    for _, srow in stg.iterrows():\n        member_id = srow['member_id']\n        update_date = srow['update_date']\n        s_city = srow['city']\n        s_tier = srow['tier']\n\n        # locate the current row for this member_id (is_current == 1)\n        current_idx = None\n        for i, r in enumerate(records):\n            if r.get('member_id') == member_id and r.get('is_current') == 1:\n                current_idx = i\n                break\n\n        if current_idx is None:\n            new_records.append({\n                'member_id': member_id,\n                'city': s_city,\n                'tier': s_tier,\n                'eff_start_date': update_date,\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n        else:\n            c = records[current_idx]\n            if sig(s_city, s_tier) != sig(c.get('city'), c.get('tier')):\n                # close the prior current row\n                records[current_idx]['eff_end_date'] = update_date\n                records[current_idx]['is_current'] = 0\n                # insert the new current row\n                new_records.append({\n                    'member_id': member_id,\n                    'city': s_city,\n                    'tier': s_tier,\n                    'eff_start_date': update_date,\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                })\n            # else: signatures equal -> no-op, keep c exactly as stored\n\n    all_records = records + new_records\n\n    out = pd.DataFrame(\n        all_records,\n        columns=['member_id', 'city', 'tier', 'eff_start_date', 'eff_end_date', 'is_current'],\n    )\n\n    return {'dim_member_out': out}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1114,
+   "tokens_out": 2321,
+   "usd": 0.038157,
+   "wall_s": 21.03826117515564
+  }
+ ]
+}

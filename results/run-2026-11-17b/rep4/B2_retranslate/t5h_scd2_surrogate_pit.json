@@ -1,0 +1,67 @@
+{
+ "config": "B2_retranslate",
+ "rep": 4,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _segment_differs(seg_a, seg_b):\n    a_null = pd.isna(seg_a)\n    b_null = pd.isna(seg_b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return seg_a != seg_b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_CUSTOMER'].copy()\n    stg = inputs['STG_CUSTOMER'].copy()\n    fact = inputs['FACT_TXN'].copy()\n\n    # normalize date columns to datetime for correct comparisons\n    dim['eff_start_date'] = pd.to_datetime(dim['eff_start_date'])\n    dim['eff_end_date'] = pd.to_datetime(dim['eff_end_date'])\n    stg['update_date'] = pd.to_datetime(stg['update_date'])\n    fact['txn_date'] = pd.to_datetime(fact['txn_date'])\n\n    # current row per customer_id (assume at most one current row per customer)\n    current_rows = dim[dim['is_current'] == 1].set_index('customer_id', drop=False)\n\n    creates = []\n    for _, row in stg.iterrows():\n        cid = row['customer_id']\n        if cid not in current_rows.index:\n            creates.append(True)\n        else:\n            cur_seg = current_rows.loc[cid, 'segment']\n            creates.append(_segment_differs(row['segment'], cur_seg))\n    stg = stg.copy()\n    stg['_creates'] = creates\n\n    creating = stg[stg['_creates']].sort_values('customer_id').reset_index(drop=True)\n\n    if len(dim) > 0:\n        max_sk = dim['customer_sk'].max()\n    else:\n        max_sk = 0\n\n    creating = creating.copy()\n    creating['customer_sk'] = max_sk + (creating.index + 1)\n\n    # Expire current rows for customers that get a new version\n    dim_out = dim.copy()\n    expire_ids = set(creating['customer_id'])\n    mask_expire = (dim_out['is_current'] == 1) & (dim_out['customer_id'].isin(expire_ids))\n\n    update_date_map = creating.set_index('customer_id')['update_date']\n    dim_out.loc[mask_expire, 'eff_end_date'] = dim_out.loc[mask_expire, 'customer_id'].map(update_date_map)\n    dim_out.loc[mask_expire, 'is_current'] = 0\n\n    new_rows = pd.DataFrame({\n        'customer_sk': creating['customer_sk'],\n        'customer_id': creating['customer_id'],\n        'segment': creating['segment'],\n        'eff_start_date': creating['update_date'],\n        'eff_end_date': pd.NaT,\n        'is_current': 1\n    })\n\n    dim_final = pd.concat([dim_out, new_rows], ignore_index=True, sort=False)\n    dim_final = dim_final[['customer_sk', 'customer_id', 'segment',\n                            'eff_start_date', 'eff_end_date', 'is_current']]\n\n    # Step 2: key facts against the updated dimension\n    # Build lookup grouped by customer_id for efficiency\n    groups = {cid: grp for cid, grp in dim_final.groupby('customer_id')}\n\n    def find_sk(row):\n        cid = row['customer_id']\n        tdate = row['txn_date']\n        grp = groups.get(cid)\n        if grp is None:\n            return -1\n        for _, d in grp.iterrows():\n            start = d['eff_start_date']\n            end = d['eff_end_date']\n            if pd.notna(start) and start <= tdate and (pd.isna(end) or tdate < end):\n                return d['customer_sk']\n        return -1\n\n    fact['customer_sk'] = fact.apply(find_sk, axis=1)\n    fact_out = fact[['txn_id', 'customer_sk', 'amount']]\n\n    return {\n        'dim_customer_out': dim_final,\n        'fact_txn_keyed': fact_out\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1162,
+   "tokens_out": 3497,
+   "usd": 0.055941,
+   "wall_s": 30.758373975753784
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4648,
+  "tokens_out": 15674,
+  "usd": 0.24905400000000003,
+  "wall_s": 138.79918766021729
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

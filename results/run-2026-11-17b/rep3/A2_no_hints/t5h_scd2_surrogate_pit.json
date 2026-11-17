@@ -1,0 +1,57 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    \"\"\"Fetch an input DataFrame by name, tolerating case/formatting differences\n    in the key used by the harness.\"\"\"\n    if name in inputs:\n        return inputs[name]\n    # Try case-insensitive match\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    if name.lower() in lower_map:\n        return inputs[lower_map[name.lower()]]\n    # Try stripped/underscore-insensitive match as a last resort\n    norm_map = {k.lower().replace('_', ''): k for k in inputs.keys()}\n    key_norm = name.lower().replace('_', '')\n    if key_norm in norm_map:\n        return inputs[norm_map[key_norm]]\n    raise KeyError(f\"Could not find input '{name}' among provided inputs: {list(inputs.keys())}\")\n\n\ndef run(inputs: dict) -> dict:\n    dim = _get_input(inputs, 'DIM_CUSTOMER').copy()\n    stg = _get_input(inputs, 'STG_CUSTOMER').copy()\n    fact = _get_input(inputs, 'FACT_TXN').copy()\n\n    # Normalize date columns to pandas Timestamps for comparison\n    dim['eff_start_date'] = pd.to_datetime(dim['eff_start_date'])\n    dim['eff_end_date'] = pd.to_datetime(dim['eff_end_date'])\n    stg['update_date'] = pd.to_datetime(stg['update_date'])\n    fact['txn_date'] = pd.to_datetime(fact['txn_date'])\n\n    # ---------- STEP 1: SCD Type 2 load ----------\n    current = dim[dim['is_current'] == 1].set_index('customer_id')\n\n    def segment_differs(s_seg, c_seg):\n        s_null = pd.isna(s_seg)\n        c_null = pd.isna(c_seg)\n        if s_null and c_null:\n            return False\n        if s_null != c_null:\n            return True\n        return s_seg != c_seg\n\n    creates_flags = []\n    for _, row in stg.iterrows():\n        cid = row['customer_id']\n        if cid not in current.index:\n            creates_flags.append(True)\n        else:\n            cur_seg = current.loc[cid, 'segment']\n            creates_flags.append(segment_differs(row['segment'], cur_seg))\n    stg = stg.copy()\n    stg['_creates'] = creates_flags\n\n    creating = stg[stg['_creates']].sort_values('customer_id', kind='mergesort').reset_index(drop=True)\n\n    if len(dim) > 0 and dim['customer_sk'].notna().any():\n        max_sk = dim['customer_sk'].max()\n    else:\n        max_sk = 0\n\n    if len(creating) > 0:\n        creating = creating.copy()\n        creating['customer_sk'] = max_sk + (np.arange(len(creating)) + 1)\n    else:\n        creating['customer_sk'] = pd.Series(dtype='int64')\n\n    dim_out = dim.copy()\n\n    # Expire current rows for customers that get a new version\n    for _, row in creating.iterrows():\n        cid = row['customer_id']\n        mask = (dim_out['customer_id'] == cid) & (dim_out['is_current'] == 1)\n        dim_out.loc[mask, 'eff_end_date'] = row['update_date']\n        dim_out.loc[mask, 'is_current'] = 0\n\n    if len(creating) > 0:\n        new_rows = pd.DataFrame({\n            'customer_sk': creating['customer_sk'].astype('int64'),\n            'customer_id': creating['customer_id'],\n            'segment': creating['segment'],\n            'eff_start_date': creating['update_date'],\n            'eff_end_date': pd.NaT,\n            'is_current': 1\n        })\n        dim_out = pd.concat([dim_out, new_rows], ignore_index=True, sort=False)\n\n    # Ensure proper dtypes\n    dim_out['customer_sk'] = dim_out['customer_sk'].astype('int64')\n    dim_out['customer_id'] = dim_out['customer_id'].astype('int64')\n    dim_out['is_current'] = dim_out['is_current'].astype('int64')\n\n    # ---------- STEP 2: Key facts against updated dimension ----------\n    # Build lookup grouped by customer_id for efficiency\n    dim_groups = {cid: grp for cid, grp in dim_out.groupby('customer_id')}\n\n    def find_sk(cid, txn_date):\n        grp = dim_groups.get(cid)\n        if grp is None:\n            return -1\n        for _, r in grp.iterrows():\n            start = r['eff_start_date']\n            end = r['eff_end_date']\n            if pd.isna(start):\n                continue\n            if start <= txn_date and (pd.isna(end) or txn_date < end):\n                return int(r['customer_sk'])\n        return -1\n\n    fact['customer_sk'] = [\n        find_sk(cid, txn_date) for cid, txn_date in zip(fact['customer_id'], fact['txn_date'])\n    ]\n\n    fact_out = fact[['txn_id', 'customer_sk', 'amount']].copy()\n    fact_out['customer_sk'] = fact_out['customer_sk'].astype('int64')\n\n    # Final column ordering for dim_customer_out\n    dim_out = dim_out[['customer_sk', 'customer_id', 'segment',\n                        'eff_start_date', 'eff_end_date', 'is_current']]\n\n    # Convert dates back to date objects (drop time component) to match original DATE semantics\n    dim_out['eff_start_date'] = dim_out['eff_start_date'].dt.date\n    dim_out['eff_end_date'] = dim_out['eff_end_date'].apply(\n        lambda x: x.date() if pd.notna(x) else None\n    )\n\n    return {\n        'dim_customer_out': dim_out.reset_index(drop=True),\n        'fact_txn_keyed': fact_out.reset_index(drop=True)\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1107,
+   "tokens_out": 4000,
+   "usd": 0.063321,
+   "wall_s": 39.209738969802856
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4538,
+  "tokens_out": 6097,
+  "usd": 0.105069,
+  "wall_s": 46.02627897262573
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

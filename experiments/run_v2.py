@@ -32,7 +32,7 @@ sys.path.insert(0, ROOT)
 
 from etl_transbench.harness import (Task, CostLedger, compile_candidate,  # noqa: E402
                                     discover_tasks, verify_candidate)
-from legato.core import (LLMClient, EscalationPolicy, PRICES_USD_PER_MTOK,  # noqa: E402
+from legato.core import (LLMClient, EscalationPolicy, PRICES_USD_PER_MTOK, MAX_TOKENS,  # noqa: E402
                          TRANSLATOR_SYSTEM, REPAIR_SYSTEM, CONSTRUCT_HINTS,
                          initial_translation, run_legato)
 from legato.mock_llm import MockLLMClient  # noqa: E402
@@ -167,7 +167,8 @@ def main():
         "models_requested": None if args.mock else {"cheap": args.cheap, "frontier": args.frontier},
         "models_resolved": None if args.mock else shared.resolved,
         "temperature": "API default (1.0)" if args.temperature is None else args.temperature,
-        "max_tokens": 4000, "prices_usd_per_mtok": prices,
+        "max_tokens": MAX_TOKENS, "replies_cut_off_at_max_tokens": None if args.mock else shared.truncated,
+        "prices_usd_per_mtok": prices,
         "reps": args.reps, "configs": names, "n_tasks": len(tasks),
         "tasks": [t.meta["id"] for t in tasks],
         "python": sys.version.split()[0], "pandas": __import__("pandas").__version__,

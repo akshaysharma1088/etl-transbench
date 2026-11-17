@@ -1,0 +1,52 @@
+{
+ "config": "A1_trace_only",
+ "rep": 4,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    target_state = inputs[\"target_state\"]\n    cdc_events = inputs[\"cdc_events\"]\n\n    # --- Build initial state from target_state ---\n    current_state = {}\n    orig_last_seq = {}\n\n    for row in target_state.itertuples(index=False):\n        order_id = row.order_id\n        current_state[order_id] = {\n            \"status\": row.status,\n            \"amount\": row.amount,\n            \"last_seq\": row.last_seq,\n        }\n        orig_last_seq[order_id] = row.last_seq\n\n    # --- Dedup events by seq (at-least-once delivery) ---\n    events = cdc_events.drop_duplicates(subset=[\"seq\"], keep=\"first\").copy()\n    # Sort by seq (the only trusted ordering)\n    events = events.sort_values(\"seq\", kind=\"mergesort\")\n\n    last_event_op = {}\n    last_event_seq = {}\n\n    for row in events.itertuples(index=False):\n        order_id = row.order_id\n        seq = row.seq\n        op = row.op\n        status = row.status\n        amount = row.amount\n\n        # Replay guard: based on ORIGINAL target_state's last_seq only\n        if order_id in orig_last_seq and seq <= orig_last_seq[order_id]:\n            continue\n\n        if op in (\"I\", \"U\"):\n            if order_id in current_state:\n                new_status = status\n                if op == \"U\" and pd.isna(amount):\n                    new_amount = current_state[order_id][\"amount\"]\n                else:\n                    new_amount = amount\n                current_state[order_id] = {\n                    \"status\": new_status,\n                    \"amount\": new_amount,\n                    \"last_seq\": seq,\n                }\n            else:\n                current_state[order_id] = {\n                    \"status\": status,\n                    \"amount\": amount,\n                    \"last_seq\": seq,\n                }\n            last_event_op[order_id] = op\n            last_event_seq[order_id] = seq\n        elif op == \"D\":\n            if order_id in current_state:\n                del current_state[order_id]\n                last_event_op[order_id] = \"D\"\n                last_event_seq[order_id] = seq\n            # D for missing order does nothing, not recorded as an applied event\n\n    # --- Build new_state output ---\n    if current_state:\n        new_state_rows = [\n            {\n                \"order_id\": order_id,\n                \"status\": vals[\"status\"],\n                \"amount\": vals[\"amount\"],\n                \"last_seq\": vals[\"last_seq\"],\n            }\n            for order_id, vals in current_state.items()\n        ]\n        new_state = pd.DataFrame(\n            new_state_rows, columns=[\"order_id\", \"status\", \"amount\", \"last_seq\"]\n        )\n    else:\n        new_state = pd.DataFrame(columns=[\"order_id\", \"status\", \"amount\", \"last_seq\"])\n\n    # Match dtypes where possible\n    if not target_state.empty:\n        for col in [\"order_id\", \"last_seq\"]:\n            if col in new_state.columns:\n                try:\n                    new_state[col] = new_state[col].astype(target_state[col].dtype)\n                except Exception:\n                    pass\n\n    # --- Build tombstones output ---\n    tomb_rows = []\n    for order_id, op in last_event_op.items():\n        if op == \"D\":\n            tomb_rows.append(\n                {\"order_id\": order_id, \"deleted_seq\": last_event_seq[order_id]}\n            )\n\n    if tomb_rows:\n        tombstones = pd.DataFrame(tomb_rows, columns=[\"order_id\", \"deleted_seq\"])\n    else:\n        tombstones = pd.DataFrame(columns=[\"order_id\", \"deleted_seq\"])\n\n    return {\"new_state\": new_state, \"tombstones\": tombstones}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1149,
+   "tokens_out": 4000,
+   "usd": 0.063447,
+   "wall_s": 41.99675941467285
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1737,
+  "tokens_out": 3012,
+  "usd": 0.050391,
+  "wall_s": 27.599287509918213
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

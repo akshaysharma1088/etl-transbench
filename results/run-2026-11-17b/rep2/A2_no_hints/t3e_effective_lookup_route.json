@@ -1,0 +1,52 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t3e_effective_lookup_route",
+ "category": "T3",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _norm_sku(s):\n    if pd.isna(s):\n        return pd.NA\n    return str(s).strip().upper()\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    price_list = inputs[\"price_list\"].copy()\n\n    # ---- exp: derive sku_norm ----\n    orders[\"sku_norm\"] = orders[\"sku\"].apply(_norm_sku)\n\n    # keep track of original row order\n    orders = orders.reset_index(drop=True)\n    orders[\"_orig_idx\"] = orders.index\n\n    # ---- lkp: lookup price_list ----\n    price_list = price_list.copy()\n    price_list[\"sku_norm_pl\"] = price_list[\"sku\"].apply(_norm_sku)\n\n    # only rows with non-null sku_norm can possibly match\n    candidates = orders[orders[\"sku_norm\"].notna()]\n\n    merged = candidates.merge(\n        price_list,\n        left_on=\"sku_norm\",\n        right_on=\"sku_norm_pl\",\n        how=\"inner\",\n        suffixes=(\"\", \"_pl\"),\n    )\n\n    # condition: valid_from <= order_date\n    merged = merged[merged[\"valid_from\"] <= merged[\"order_date\"]]\n\n    # tie-break: greatest valid_from, then lowest list_id\n    merged = merged.sort_values(\n        by=[\"_orig_idx\", \"valid_from\", \"list_id\"],\n        ascending=[True, False, True],\n        kind=\"mergesort\",\n    )\n    best = merged.drop_duplicates(subset=\"_orig_idx\", keep=\"first\")\n    best = best[[\"_orig_idx\", \"unit_price\"]]\n\n    orders = orders.merge(best, on=\"_orig_idx\", how=\"left\", suffixes=(\"\", \"_lkp\"))\n\n    orders[\"price_flag\"] = np.where(orders[\"unit_price\"].notna(), \"OK\", \"NO_PRICE\")\n    orders[\"unit_price\"] = orders[\"unit_price\"].fillna(0)\n\n    # ---- ext: ext_amount = qty * unit_price ----\n    qty_isna = orders[\"qty\"].isna()\n    orders[\"ext_amount\"] = orders[\"qty\"] * orders[\"unit_price\"]\n    orders.loc[qty_isna, \"ext_amount\"] = np.nan\n\n    # ---- rtr: router (ordered rules, first true wins) ----\n    cond_review = (orders[\"price_flag\"] == \"NO_PRICE\") | qty_isna | (\n        (~qty_isna) & (orders[\"qty\"] >= 100)\n    )\n\n    ext_notna = orders[\"ext_amount\"].notna()\n    cond_bulk = ext_notna & (orders[\"ext_amount\"] >= 1000)\n    cond_small = ext_notna & (orders[\"ext_amount\"] < 50)\n\n    route = np.full(len(orders), \"STANDARD\", dtype=object)\n\n    # apply in reverse priority order so earlier rules overwrite later ones\n    route = np.where(cond_small, \"SMALL\", route)\n    route = np.where(cond_bulk, \"BULK\", route)\n    route = np.where(cond_review, \"REVIEW\", route)\n\n    orders[\"route\"] = route\n\n    # ---- out1: order_enriched ----\n    order_enriched = orders[[\"order_id\", \"sku_norm\", \"unit_price\", \"route\"]].copy()\n\n    # ---- agg: aggregator grouped by route, order_date ----\n    grouped = orders.groupby([\"route\", \"order_date\"], dropna=False)\n\n    order_count = grouped.size().rename(\"order_count\")\n    total_ext = grouped[\"ext_amount\"].sum(min_count=1).rename(\"total_ext\")\n    total_ext = total_ext.fillna(0)\n\n    agg_df = pd.concat([order_count, total_ext], axis=1).reset_index()\n\n    route_daily = agg_df[[\"route\", \"order_date\", \"order_count\", \"total_ext\"]].copy()\n\n    return {\n        \"order_enriched\": order_enriched,\n        \"route_daily\": route_daily,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1407,
+   "tokens_out": 4000,
+   "usd": 0.064221,
+   "wall_s": 36.144394397735596
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2680,
+  "tokens_out": 2036,
+  "usd": 0.03858,
+  "wall_s": 16.830147981643677
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

@@ -1,0 +1,67 @@
+{
+ "config": "B3_self_repair",
+ "rep": 3,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim_store = inputs['DIM_STORE'].copy()\n    stg = inputs['STG_STORE_FULL']\n    batch_control = inputs['BATCH_CONTROL']\n\n    # Single batch date value\n    b = batch_control['batch_date'].iloc[0]\n\n    # STG_STORE_FULL can contain exact duplicates; dedupe to distinct rows\n    S = stg[['store_id', 'region', 'format']].drop_duplicates().reset_index(drop=True)\n\n    # Normalize is_current to int for comparisons\n    dim_store['is_current'] = dim_store['is_current'].astype(int)\n\n    current_mask = dim_store['is_current'] == 1\n    current_rows = dim_store[current_mask]\n\n    # Map store_id -> index of its current row (procedure assumes at most one)\n    current_idx_by_store = {}\n    for idx, row in current_rows.iterrows():\n        current_idx_by_store[row['store_id']] = idx\n\n    def differs(a, b):\n        a_null = pd.isna(a)\n        b_null = pd.isna(b)\n        if a_null and b_null:\n            return False\n        if a_null != b_null:\n            return True\n        return a != b\n\n    close_indices = set()\n    new_rows = []\n    staging_store_ids = set()\n\n    for _, s in S.iterrows():\n        store_id = s['store_id']\n        region = s['region']\n        fmt = s['format']\n        staging_store_ids.add(store_id)\n\n        if store_id in current_idx_by_store:\n            idx = current_idx_by_store[store_id]\n            c = dim_store.loc[idx]\n            if differs(c['region'], region) or differs(c['format'], fmt):\n                # attribute change: close old current, insert new version\n                close_indices.add(idx)\n                new_rows.append({\n                    'store_id': store_id,\n                    'region': region,\n                    'format': fmt,\n                    'eff_start_date': b,\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1\n                })\n            # else: unchanged -> no-op, no new version\n        else:\n            # no current row: brand-new store OR reactivated store.\n            # Always insert a new version, regardless of prior closed attrs.\n            new_rows.append({\n                'store_id': store_id,\n                'region': region,\n                'format': fmt,\n                'eff_start_date': b,\n                'eff_end_date': pd.NaT,\n                'is_current': 1\n            })\n\n    # Close current rows whose store_id is missing from the staging snapshot\n    for store_id, idx in current_idx_by_store.items():\n        if store_id not in staging_store_ids:\n            close_indices.add(idx)\n\n    # Apply the closing updates\n    for idx in close_indices:\n        dim_store.at[idx, 'eff_end_date'] = b\n        dim_store.at[idx, 'is_current'] = 0\n\n    new_df = pd.DataFrame(\n        new_rows,\n        columns=['store_id', 'region', 'format', 'eff_start_date', 'eff_end_date', 'is_current']\n    )\n\n    result = pd.concat([dim_store, new_df], ignore_index=True)\n\n    result = result[['store_id', 'region', 'format', 'eff_start_date', 'eff_end_date', 'is_current']]\n\n    return {'dim_store_out': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1094,
+   "tokens_out": 3268,
+   "usd": 0.052302,
+   "wall_s": 27.42831563949585
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6031,
+  "tokens_out": 13209,
+  "usd": 0.216228,
+  "wall_s": 125.9118185043335
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

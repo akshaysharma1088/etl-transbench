@@ -1,0 +1,47 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t4c_stale_snapshot",
+ "category": "T4",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces the legacy multi-step batch job with step-order semantics.\n    \n    Step 1: Create STG_CURR by aggregating score_feed\n    Step 2: Create DELTA by joining STG_CURR against the PRE-UPDATE SCORE_SNAPSHOT\n    Step 3: Update SCORE_SNAPSHOT with STG_CURR data\n    \n    Critical: DELTA must be computed against the OLD snapshot before it's replaced.\n    \"\"\"\n    \n    # Extract input dataframes\n    score_feed = inputs.get('score_feed', pd.DataFrame())\n    score_snapshot = inputs.get('score_snapshot', pd.DataFrame()).copy()\n    \n    # Step 1: CREATE STG_CURR\n    # SELECT account_id, AVG(score) AS avg_score\n    # FROM score_feed GROUP BY account_id\n    if len(score_feed) > 0:\n        stg_curr = score_feed.groupby('account_id', as_index=False)['score'].mean()\n        stg_curr.columns = ['account_id', 'avg_score']\n    else:\n        stg_curr = pd.DataFrame(columns=['account_id', 'avg_score'])\n    \n    # Step 2: CREATE DELTA\n    # SELECT c.account_id,\n    #        c.avg_score - COALESCE(p.avg_score, 0) AS score_delta\n    # FROM STG_CURR c\n    # LEFT JOIN SCORE_SNAPSHOT p ON c.account_id = p.account_id\n    # NOTE: This uses the OLD snapshot (before Step 3 updates it)\n    \n    delta = stg_curr.merge(\n        score_snapshot[['account_id', 'avg_score']],\n        on='account_id',\n        how='left',\n        suffixes=('', '_old')\n    )\n    \n    # Rename columns for clarity during computation\n    delta.columns = ['account_id', 'avg_score_curr', 'avg_score_old']\n    \n    # Compute score_delta with COALESCE(p.avg_score, 0)\n    delta['score_delta'] = delta['avg_score_curr'] - delta['avg_score_old'].fillna(0)\n    \n    # Select only account_id and score_delta\n    delta = delta[['account_id', 'score_delta']].copy()\n    \n    # Step 3: DELETE FROM SCORE_SNAPSHOT; INSERT INTO SCORE_SNAPSHOT\n    # SELECT account_id, avg_score FROM STG_CURR\n    # This replaces the entire SCORE_SNAPSHOT with STG_CURR data\n    score_snapshot_updated = stg_curr.copy()\n    \n    return {\n        'delta': delta,\n        'score_snapshot': score_snapshot_updated\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 421,
+   "tokens_out": 719,
+   "usd": 0.004016,
+   "wall_s": 4.62393856048584
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

@@ -1,0 +1,57 @@
+{
+ "config": "B3_self_repair",
+ "rep": 3,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    target_state = inputs[\"target_state\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n\n    # Preserve dtypes for later reconstruction\n    ts_dtypes = target_state.dtypes.to_dict()\n\n    # Build initial per-order state dict from target_state\n    state = {}\n    for row in target_state.itertuples(index=False):\n        oid = row.order_id\n        state[oid] = {\n            \"status\": row.status,\n            \"amount\": row.amount,\n            \"last_seq\": row.last_seq,\n        }\n\n    # Original last_seq snapshot (for replay guard) -- fixed, does not evolve during batch\n    original_last_seq = {oid: s[\"last_seq\"] for oid, s in state.items()}\n    original_has_row = set(state.keys())\n\n    # Dedupe events: distinct by seq (same seq delivered twice -> apply once)\n    events = cdc_events.drop_duplicates(subset=[\"seq\"], keep=\"first\").copy()\n\n    # Sort by seq ascending -- the only trustworthy ordering\n    events = events.sort_values(\"seq\", kind=\"mergesort\")\n\n    # Track last applied event's op per order, to determine tombstones at the end\n    tombstone_seq = {}  # order_id -> seq of the D event that currently \"stands\" as last\n\n    for row in events.itertuples(index=False):\n        seq = row.seq\n        oid = row.order_id\n        op = row.op\n        status = row.status\n        amount = row.amount\n\n        # Replay guard: based on ORIGINAL target_state row, not evolving state\n        if oid in original_has_row and seq <= original_last_seq[oid]:\n            continue\n\n        if op in (\"I\", \"U\"):\n            if oid in state:\n                # update existing row\n                state[oid][\"status\"] = status\n                if op == \"U\" and pd.isna(amount):\n                    # leave amount unchanged\n                    pass\n                else:\n                    state[oid][\"amount\"] = amount\n                state[oid][\"last_seq\"] = seq\n            else:\n                # create new row from scratch; amount taken as-is (NULL stays NULL)\n                state[oid] = {\n                    \"status\": status,\n                    \"amount\": amount,\n                    \"last_seq\": seq,\n                }\n            # last applied event for this order is now I/U -> not a tombstone anymore\n            if oid in tombstone_seq:\n                del tombstone_seq[oid]\n        elif op == \"D\":\n            if oid in state:\n                del state[oid]\n                tombstone_seq[oid] = seq\n            # D for a missing order does nothing\n        else:\n            # unknown op -- ignore defensively\n            continue\n\n    # Build new_state output\n    cols_ns = [\"order_id\", \"status\", \"amount\", \"last_seq\"]\n    if len(state) > 0:\n        new_state_rows = []\n        for oid, s in state.items():\n            new_state_rows.append(\n                {\n                    \"order_id\": oid,\n                    \"status\": s[\"status\"],\n                    \"amount\": s[\"amount\"],\n                    \"last_seq\": s[\"last_seq\"],\n                }\n            )\n        new_state = pd.DataFrame(new_state_rows, columns=cols_ns)\n    else:\n        new_state = pd.DataFrame(columns=cols_ns)\n\n    # Restore dtypes where sensible\n    for col in [\"order_id\", \"status\", \"amount\", \"last_seq\"]:\n        if col in ts_dtypes:\n            try:\n                new_state[col] = new_state[col].astype(ts_dtypes[col])\n            except (ValueError, TypeError):\n                # leave as-is if cast fails (e.g. due to NaN in int column)\n                pass\n\n    # Build tombstones output\n    cols_tomb = [\"order_id\", \"deleted_seq\"]\n    if len(tombstone_seq) > 0:\n        tomb_rows = [\n            {\"order_id\": oid, \"deleted_seq\": seq}\n            for oid, seq in tombstone_seq.items()\n        ]\n        tombstones = pd.DataFrame(tomb_rows, columns=cols_tomb)\n    else:\n        tombstones = pd.DataFrame(columns=cols_tomb)\n\n    # Restore dtypes for tombstones\n    if \"order_id\" in ts_dtypes:\n        try:\n            tombstones[\"order_id\"] = tombstones[\"order_id\"].astype(ts_dtypes[\"order_id\"])\n        except (ValueError, TypeError):\n            pass\n    if \"seq\" in cdc_events.dtypes:\n        try:\n            tombstones[\"deleted_seq\"] = tombstones[\"deleted_seq\"].astype(cdc_events.dtypes[\"seq\"])\n        except (ValueError, TypeError):\n            pass\n\n    return {\"new_state\": new_state, \"tombstones\": tombstones}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1149,
+   "tokens_out": 4000,
+   "usd": 0.063447,
+   "wall_s": 43.7950713634491
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3830,
+  "tokens_out": 6119,
+  "usd": 0.103275,
+  "wall_s": 451.28235363960266
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

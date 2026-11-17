@@ -1,0 +1,67 @@
+{
+ "config": "B2_retranslate",
+ "rep": 1,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _sig_part(x):\n    if pd.isna(x):\n        return ''\n    return str(x).rstrip()\n\n\ndef _sig(city, tier):\n    return _sig_part(city) + '|' + _sig_part(tier)\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_MEMBER'].copy()\n    stg = inputs['STG_MEMBER'].copy()\n\n    # Work with a list of row-dicts so we can mutate/append freely while\n    # preserving column order/dtypes as close as possible to the source.\n    cols = list(dim.columns)\n    rows = dim.to_dict('records')\n\n    for _, s in stg.iterrows():\n        member_id = s['member_id']\n        s_city = s['city']\n        s_tier = s['tier']\n        update_date = s['update_date']\n\n        # find current row for this member_id\n        cur_idx = None\n        for idx, r in enumerate(rows):\n            if r.get('member_id') == member_id and r.get('is_current') == 1:\n                cur_idx = idx\n                break\n\n        if cur_idx is None:\n            new_row = {c: None for c in cols}\n            new_row['member_id'] = member_id\n            new_row['city'] = s_city\n            new_row['tier'] = s_tier\n            new_row['eff_start_date'] = update_date\n            new_row['eff_end_date'] = None\n            new_row['is_current'] = 1\n            rows.append(new_row)\n        else:\n            c = rows[cur_idx]\n            if _sig(s_city, s_tier) != _sig(c.get('city'), c.get('tier')):\n                c['eff_end_date'] = update_date\n                c['is_current'] = 0\n\n                new_row = {col: None for col in cols}\n                new_row['member_id'] = member_id\n                new_row['city'] = s_city\n                new_row['tier'] = s_tier\n                new_row['eff_start_date'] = update_date\n                new_row['eff_end_date'] = None\n                new_row['is_current'] = 1\n                rows.append(new_row)\n            # else: no-op, keep c unchanged\n\n    out = pd.DataFrame(rows, columns=cols)\n\n    return {'dim_member_out': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1114,
+   "tokens_out": 2859,
+   "usd": 0.046227,
+   "wall_s": 25.765127897262573
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4456,
+  "tokens_out": 8238,
+  "usd": 0.136938,
+  "wall_s": 70.77112102508545
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

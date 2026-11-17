@@ -1,0 +1,67 @@
+{
+ "config": "A1_trace_only",
+ "rep": 0,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "syntactic"
+  }
+ ],
+ "final_code": "",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1149,
+   "tokens_out": 4000,
+   "usd": 0.063447,
+   "wall_s": 40.620726108551025
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4954,
+  "tokens_out": 16000,
+  "usd": 0.25486200000000003,
+  "wall_s": 175.5802023410797
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

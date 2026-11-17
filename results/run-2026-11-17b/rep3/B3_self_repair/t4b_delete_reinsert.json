@@ -1,0 +1,52 @@
+{
+ "config": "B3_self_repair",
+ "rep": 3,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Multi-step partition refresh: DELETE whole arriving partitions then INSERT.\n\n    Step 1: STG_NEW = SELECT product_id, batch_date, SUM(qty) AS total_qty,\n                              MAX(unit_cost) AS max_unit_cost\n                       FROM inbound WHERE qty > 0\n                       GROUP BY product_id, batch_date\n\n    Step 2: DELETE FROM target_snapshot WHERE batch_date IN\n                       (SELECT DISTINCT batch_date FROM STG_NEW)\n\n    Step 3: INSERT INTO target_snapshot SELECT * FROM STG_NEW\n\n    Rows in partitions (batch_dates) that do not appear in STG_NEW survive\n    unchanged. Rows in partitions that do appear are entirely replaced by\n    STG_NEW's rows for that partition (even products missing from today's\n    feed for that date are dropped).\n    \"\"\"\n\n    inbound = inputs['inbound']\n    target_snapshot = inputs.get(\n        'target_snapshot',\n        pd.DataFrame(columns=['product_id', 'batch_date', 'total_qty', 'max_unit_cost'])\n    ).copy()\n\n    expected_cols = ['product_id', 'batch_date', 'total_qty', 'max_unit_cost']\n\n    # Step 1: build staging table from inbound rows with qty > 0\n    filtered = inbound[inbound['qty'] > 0]\n\n    if filtered.empty:\n        stg_new = pd.DataFrame(columns=expected_cols)\n    else:\n        stg_new = filtered.groupby(\n            ['product_id', 'batch_date'],\n            as_index=False,\n            dropna=False\n        ).agg(\n            total_qty=('qty', 'sum'),\n            max_unit_cost=('unit_cost', 'max')\n        )\n\n    if stg_new.empty:\n        # No arriving partitions; target_snapshot is untouched.\n        result = target_snapshot.copy()\n    else:\n        arriving_dates = stg_new['batch_date'].unique()\n\n        # Step 2: delete all rows in target_snapshot belonging to arriving partitions\n        if not target_snapshot.empty:\n            target_snapshot = target_snapshot[\n                ~target_snapshot['batch_date'].isin(arriving_dates)\n            ].copy()\n\n        # Step 3: insert staging rows (full replacement of those partitions)\n        result = pd.concat([target_snapshot, stg_new], ignore_index=True)\n\n    # Ensure output schema/order matches expected target_snapshot columns.\n    for col in expected_cols:\n        if col not in result.columns:\n            result[col] = pd.Series(dtype='object')\n    result = result[expected_cols]\n\n    return {'target_snapshot': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 706,
+   "usd": 0.003928,
+   "wall_s": 4.622326612472534
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1782,
+  "tokens_out": 3316,
+  "usd": 0.055086,
+  "wall_s": 31.7277250289917
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

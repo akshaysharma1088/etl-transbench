@@ -1,0 +1,52 @@
+{
+ "config": "A1_trace_only",
+ "rep": 2,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _sig(city, tier):\n    \"\"\"\n    Legacy signature: RTRIM(COALESCE(city,'')) || '|' || RTRIM(COALESCE(tier,''))\n    - NULL and '' collapse to the same signature.\n    - trailing spaces are stripped; leading spaces / case are preserved.\n    - delimiter is not escaped -> intentional collision quirk is preserved\n      naturally because we build the exact same string both sides.\n    \"\"\"\n    c = '' if pd.isna(city) else str(city)\n    t = '' if pd.isna(tier) else str(tier)\n    return c.rstrip(' ') + '|' + t.rstrip(' ')\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    # Be tolerant to case / minor naming differences in how the harness\n    # supplies the input relations.\n    if name in inputs:\n        return inputs[name]\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    key = lower_map.get(name.lower())\n    if key is not None:\n        return inputs[key]\n    # try stripped of underscores / case-insensitive match\n    norm_map = {k.lower().replace('_', ''): k for k in inputs.keys()}\n    key = norm_map.get(name.lower().replace('_', ''))\n    if key is not None:\n        return inputs[key]\n    raise KeyError(f\"Could not locate input relation '{name}' among {list(inputs.keys())}\")\n\n\ndef run(inputs: dict) -> dict:\n    dim = _get_input(inputs, 'DIM_MEMBER').copy()\n    stg = _get_input(inputs, 'STG_MEMBER').copy()\n\n    cols = ['member_id', 'city', 'tier', 'eff_start_date', 'eff_end_date', 'is_current']\n\n    # Work on a list of dict rows so we can mutate \"in place\" like the SP does.\n    out_rows = dim.to_dict('records')\n\n    # Locate the current row index for each member_id (at most one expected,\n    # but if duplicates exist we just take the first encountered).\n    current_idx = {}\n    for i, r in enumerate(out_rows):\n        if r.get('is_current') == 1:\n            mid = r['member_id']\n            if mid not in current_idx:\n                current_idx[mid] = i\n\n    new_rows = []\n\n    for _, s in stg.iterrows():\n        mid = s['member_id']\n        idx = current_idx.get(mid)\n\n        if idx is None:\n            # No current row -> plain insert, staged values stored verbatim.\n            new_rows.append({\n                'member_id': mid,\n                'city': s['city'],\n                'tier': s['tier'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n        else:\n            c = out_rows[idx]\n            if _sig(s['city'], s['tier']) != _sig(c['city'], c['tier']):\n                # Close current row.\n                out_rows[idx] = dict(c)\n                out_rows[idx]['eff_end_date'] = s['update_date']\n                out_rows[idx]['is_current'] = 0\n\n                # Insert new current version, staged values stored verbatim.\n                new_rows.append({\n                    'member_id': mid,\n                    'city': s['city'],\n                    'tier': s['tier'],\n                    'eff_start_date': s['update_date'],\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                })\n            # else: signatures match -> no-op, existing row untouched.\n\n    result = pd.DataFrame(out_rows + new_rows, columns=cols)\n\n    return {'dim_member_out': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1114,
+   "tokens_out": 2279,
+   "usd": 0.037527,
+   "wall_s": 19.288623094558716
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2460,
+  "tokens_out": 1478,
+  "usd": 0.02955,
+  "wall_s": 11.544890642166138
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

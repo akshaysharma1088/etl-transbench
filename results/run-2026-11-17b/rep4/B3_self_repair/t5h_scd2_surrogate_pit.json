@@ -1,0 +1,67 @@
+{
+ "config": "B3_self_repair",
+ "rep": 4,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "syntactic"
+  }
+ ],
+ "final_code": "```python\nimport pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_CUSTOMER'].copy()\n    stg = inputs['STG_CUSTOMER'].copy()\n    fact = inputs['FACT_TXN'].copy()\n\n    # Normalize date-like columns for correct comparisons.\n    if len(dim):\n        dim['eff_start_date'] = pd.to_datetime(dim['eff_start_date'])\n        dim['eff_end_date'] = pd.to_datetime(dim['eff_end_date'])\n    else:\n        dim['eff_start_date'] = pd.to_datetime(dim['eff_start_date'])\n        dim['eff_end_date'] = pd.to_datetime(dim['eff_end_date'])\n\n    stg['update_date'] = pd.to_datetime(stg['update_date'])\n    fact['txn_date'] = pd.to_datetime(fact['txn_date'])\n\n    # Determine current max surrogate key before the load.\n    if len(dim):\n        max_sk = dim['customer_sk'].max()\n        if pd.isna(max_sk):\n            max_sk = 0\n    else:\n        max_sk = 0\n\n    # Current rows per customer (assume at most one current row per customer).\n    current = dim[dim['is_current'] == 1][['customer_id', 'segment', 'customer_sk']].rename(\n        columns={'segment': 'cur_segment', 'customer_sk': 'cur_sk'}\n    )\n\n    merged = stg.merge(current, on='customer_id', how='left')\n    merged['has_current'] = merged['cur_sk'].notna()\n\n    def seg_diff(row):\n        if not row['has_current']:\n            return True\n        s_new = row['segment']\n        s_cur = row['cur_segment']\n        new_null = pd.isna(s_new)\n        cur_null = pd.isna(s_cur)\n        if new_null and cur_null:\n            return False\n        if new_null != cur_null:\n            return True\n        ",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1162,
+   "tokens_out": 3497,
+   "usd": 0.055941,
+   "wall_s": 30.758373975753784
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6280,
+  "tokens_out": 15693,
+  "usd": 0.254235,
+  "wall_s": 145.82314896583557
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

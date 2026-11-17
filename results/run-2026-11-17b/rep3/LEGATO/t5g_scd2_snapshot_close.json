@@ -1,0 +1,52 @@
+{
+ "config": "LEGATO",
+ "rep": 3,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _get_input(inputs: dict, name: str):\n    if name in inputs:\n        return inputs[name]\n    lname = name.lower()\n    for k, v in inputs.items():\n        if k.lower() == lname:\n            return v\n    raise KeyError(name)\n\n\ndef _is_null(x):\n    try:\n        return pd.isna(x)\n    except (TypeError, ValueError):\n        return x is None\n\n\ndef _attrs_equal(a, b):\n    a_null = _is_null(a)\n    b_null = _is_null(b)\n    if a_null and b_null:\n        return True\n    if a_null != b_null:\n        return False\n    return a == b\n\n\ndef run(inputs: dict) -> dict:\n    dim_store = _get_input(inputs, \"DIM_STORE\").copy()\n    stg_store_full = _get_input(inputs, \"STG_STORE_FULL\")\n    batch_control = _get_input(inputs, \"BATCH_CONTROL\")\n\n    # Exactly one row expected in BATCH_CONTROL\n    b = batch_control[\"batch_date\"].iloc[0]\n\n    # Distinct snapshot rows (exact duplicates collapse)\n    S = stg_store_full[[\"store_id\", \"region\", \"format\"]].drop_duplicates()\n\n    # Current rows in dim_store\n    current_mask = dim_store[\"is_current\"] == 1\n    current = dim_store[current_mask]\n\n    # Build a lookup from store_id -> first current row (should be unique per store_id)\n    current_by_id = {}\n    for idx, row in current.iterrows():\n        sid = row[\"store_id\"]\n        if sid not in current_by_id:\n            current_by_id[sid] = (idx, row)\n\n    rows_to_close_idx = []\n    rows_to_insert = []\n\n    S_ids = set()\n\n    for _, s in S.iterrows():\n        sid = s[\"store_id\"]\n        S_ids.add(sid)\n\n        if sid in current_by_id:\n            c_idx, c_row = current_by_id[sid]\n            region_differs = not _attrs_equal(c_row[\"region\"], s[\"region\"])\n            format_differs = not _attrs_equal(c_row[\"format\"], s[\"format\"])\n\n            if region_differs or format_differs:\n                rows_to_close_idx.append(c_idx)\n                rows_to_insert.append(\n                    {\n                        \"store_id\": sid,\n                        \"region\": s[\"region\"],\n                        \"format\": s[\"format\"],\n                        \"eff_start_date\": b,\n                        \"eff_end_date\": pd.NaT,\n                        \"is_current\": 1,\n                    }\n                )\n            # else: no-op, unchanged attributes\n        else:\n            # brand-new store OR reopened store: always gets a new version\n            rows_to_insert.append(\n                {\n                    \"store_id\": sid,\n                    \"region\": s[\"region\"],\n                    \"format\": s[\"format\"],\n                    \"eff_start_date\": b,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            )\n\n    # Close current rows for store_ids not present in S (closed stores)\n    for sid, (c_idx, c_row) in current_by_id.items():\n        if sid not in S_ids:\n            rows_to_close_idx.append(c_idx)\n\n    # Apply closes to dim_store\n    if rows_to_close_idx:\n        dim_store.loc[rows_to_close_idx, \"eff_end_date\"] = b\n        dim_store.loc[rows_to_close_idx, \"is_current\"] = 0\n\n    # Append new inserted rows\n    if rows_to_insert:\n        insert_df = pd.DataFrame(\n            rows_to_insert,\n            columns=[\n                \"store_id\",\n                \"region\",\n                \"format\",\n                \"eff_start_date\",\n                \"eff_end_date\",\n                \"is_current\",\n            ],\n        )\n        dim_store_out = pd.concat([dim_store, insert_df], ignore_index=True)\n    else:\n        dim_store_out = dim_store\n\n    dim_store_out = dim_store_out[\n        [\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    ].reset_index(drop=True)\n\n    return {\"dim_store_out\": dim_store_out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1094,
+   "tokens_out": 3268,
+   "usd": 0.052302,
+   "wall_s": 27.42831563949585
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2760,
+  "tokens_out": 1580,
+  "usd": 0.03198,
+  "wall_s": 11.341798305511475
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

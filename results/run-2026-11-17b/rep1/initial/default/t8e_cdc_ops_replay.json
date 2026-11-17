@@ -1,0 +1,16 @@
+{
+ "task": "t8e_cdc_ops_replay",
+ "group": "default",
+ "tier": "frontier",
+ "code": "",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1149,
+   "tokens_out": 4000,
+   "usd": 0.063447,
+   "wall_s": 44.90300369262695
+  }
+ ]
+}

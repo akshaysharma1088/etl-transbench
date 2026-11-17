@@ -1,0 +1,47 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t5e_scd2_late_arriving",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    dim_account = inputs['dim_account']\n    stg_account = inputs['stg_account']\n\n    # Build mutable in-memory state of current dimension rows\n    state = []\n    for _, row in dim_account.iterrows():\n        state.append({\n            'account_id': row['account_id'],\n            'plan': row['plan'],\n            'eff_start_date': row['eff_start_date'],\n            'eff_end_date': row['eff_end_date'],\n            'is_current': row['is_current'],\n        })\n\n    # Sort staging records by account_id, update_date (cursor order)\n    stg_sorted = stg_account.sort_values(\n        ['account_id', 'update_date'], kind='mergesort'\n    )\n\n    def plans_equal(p1, p2):\n        n1 = pd.isna(p1)\n        n2 = pd.isna(p2)\n        if n1 and n2:\n            return True\n        if n1 != n2:\n            return False\n        return p1 == p2\n\n    def covers(version, d):\n        start = version['eff_start_date']\n        end = version['eff_end_date']\n        if pd.isna(start):\n            start_ok = True\n        else:\n            start_ok = start <= d\n        if pd.isna(end):\n            end_ok = True\n        else:\n            end_ok = d < end\n        return start_ok and end_ok\n\n    for _, s in stg_sorted.iterrows():\n        acc = s['account_id']\n        plan = s['plan']\n        d = s['update_date']\n\n        acc_versions = [v for v in state if v['account_id'] == acc]\n\n        if not acc_versions:\n            state.append({\n                'account_id': acc,\n                'plan': plan,\n                'eff_start_date': d,\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n            continue\n\n        # find the version covering d\n        v = None\n        for ver in acc_versions:\n            if covers(ver, d):\n                v = ver\n                break\n\n        if v is None:\n            # update_date earlier than the earliest existing version\n            f = min(acc_versions, key=lambda x: x['eff_start_date'])\n            state.append({\n                'account_id': acc,\n                'plan': plan,\n                'eff_start_date': d,\n                'eff_end_date': f['eff_start_date'],\n                'is_current': 0,\n            })\n            continue\n\n        if plans_equal(v['plan'], plan):\n            # no-op\n            continue\n\n        if d == v['eff_start_date']:\n            # same-day correction, no new version\n            v['plan'] = plan\n            continue\n\n        # split the version at d\n        new_row = {\n            'account_id': acc,\n            'plan': plan,\n            'eff_start_date': d,\n            'eff_end_date': v['eff_end_date'],\n            'is_current': v['is_current'],\n        }\n        v['eff_end_date'] = d\n        v['is_current'] = 0\n        state.append(new_row)\n\n    out = pd.DataFrame(\n        state,\n        columns=['account_id', 'plan', 'eff_start_date', 'eff_end_date', 'is_current']\n    )\n\n    if not out.empty:\n        out['account_id'] = out['account_id'].astype(dim_account['account_id'].dtype)\n        out['is_current'] = out['is_current'].astype(dim_account['is_current'].dtype)\n\n    return {'dim_account_out': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1110,
+   "tokens_out": 2965,
+   "usd": 0.047805,
+   "wall_s": 24.054240703582764
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

@@ -59,6 +59,7 @@ class MockLLMClient:
     models = {"cheap": "mock-scripted-cheap", "frontier": "mock-scripted-frontier"}
 
     temperature = None
+    truncated = {}
     resolved = models
 
     def __init__(self):

@@ -1,0 +1,52 @@
+{
+ "config": "A1_trace_only",
+ "rep": 4,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _sig(city, tier):\n    \"\"\"Row signature as used by the legacy SP:\n    RTRIM(COALESCE(city,'')) || '|' || RTRIM(COALESCE(tier,''))\n    \"\"\"\n    c = '' if pd.isna(city) else str(city)\n    t = '' if pd.isna(tier) else str(tier)\n    return c.rstrip() + '|' + t.rstrip()\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    \"\"\"Fetch an input DataFrame tolerating case / minor naming variations.\"\"\"\n    if name in inputs:\n        return inputs[name]\n    # Try case-insensitive match\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    key = name.lower()\n    if key in lower_map:\n        return inputs[lower_map[key]]\n    # Try stripped of underscores / common prefixes as a last resort\n    for k in inputs.keys():\n        if k.lower().replace('_', '') == name.lower().replace('_', ''):\n            return inputs[k]\n    raise KeyError(f\"Could not find input matching '{name}' among {list(inputs.keys())}\")\n\n\ndef run(inputs: dict) -> dict:\n    dim = _get_input(inputs, 'DIM_MEMBER').copy()\n    stg = _get_input(inputs, 'STG_MEMBER').copy()\n\n    dim = dim.reset_index(drop=True)\n\n    # Build a lookup of member_id -> update_date from the staging table\n    # (spec guarantees at most one staged record per member_id).\n    update_date_by_member = dict(zip(stg['member_id'], stg['update_date']))\n\n    new_rows = []\n    close_idx = set()\n\n    for _, s in stg.iterrows():\n        mid = s['member_id']\n\n        cur_mask = (dim['member_id'] == mid) & (dim['is_current'] == 1)\n        cur_idx = dim.index[cur_mask]\n\n        if len(cur_idx) == 0:\n            # No current row exists for this member -> plain insert.\n            new_rows.append({\n                'member_id': mid,\n                'city': s['city'],\n                'tier': s['tier'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': None,\n                'is_current': 1,\n            })\n            continue\n\n        cur_rows = dim.loc[cur_idx]\n\n        # If more than one \"current\" row exists for the member (data-quality\n        # anomaly), pick the one with the latest eff_start_date as the\n        # representative for signature comparison; break remaining ties by\n        # taking the last-occurring row.\n        max_date = cur_rows['eff_start_date'].max()\n        candidates = cur_rows[cur_rows['eff_start_date'] == max_date]\n        rep_idx = candidates.index[-1]\n        rep = dim.loc[rep_idx]\n\n        staged_sig = _sig(s['city'], s['tier'])\n        current_sig = _sig(rep['city'], rep['tier'])\n\n        if staged_sig != current_sig:\n            # Close ALL current rows for this member before inserting the\n            # new version (per SCD2 guidance).\n            for i in cur_idx:\n                close_idx.add(i)\n\n            new_rows.append({\n                'member_id': mid,\n                'city': s['city'],\n                'tier': s['tier'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': None,\n                'is_current': 1,\n            })\n        # else: signatures match -> no-op, current row(s) untouched exactly\n        # as stored.\n\n    # Apply closures using each member's staged update_date as the end date.\n    for i in close_idx:\n        mid = dim.at[i, 'member_id']\n        dim.at[i, 'eff_end_date'] = update_date_by_member.get(mid)\n        dim.at[i, 'is_current'] = 0\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=[\n            'member_id', 'city', 'tier', 'eff_start_date', 'eff_end_date', 'is_current'\n        ])\n        result = pd.concat([dim, new_df], ignore_index=True, sort=False)\n    else:\n        result = dim\n\n    result = result[['member_id', 'city', 'tier', 'eff_start_date', 'eff_end_date', 'is_current']]\n    result = result.reset_index(drop=True)\n\n    return {'dim_member_out': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1114,
+   "tokens_out": 3634,
+   "usd": 0.057852,
+   "wall_s": 33.53163695335388
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2722,
+  "tokens_out": 1661,
+  "usd": 0.033081,
+  "wall_s": 12.213312149047852
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

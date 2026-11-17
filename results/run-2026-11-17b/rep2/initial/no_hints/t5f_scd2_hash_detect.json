@@ -1,0 +1,16 @@
+{
+ "task": "t5f_scd2_hash_detect",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef _sig_part(x):\n    \"\"\"RTRIM(COALESCE(x, ''))\"\"\"\n    if x is None:\n        return ''\n    try:\n        if pd.isna(x):\n            return ''\n    except (TypeError, ValueError):\n        pass\n    s = str(x)\n    return s.rstrip(' ')\n\n\ndef _sig(city, tier):\n    return _sig_part(city) + '|' + _sig_part(tier)\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_MEMBER'].copy()\n    stg = inputs['STG_MEMBER'].copy()\n\n    # Ensure required columns exist even if empty frames are passed in.\n    dim_cols = ['member_id', 'city', 'tier', 'eff_start_date', 'eff_end_date', 'is_current']\n    for c in dim_cols:\n        if c not in dim.columns:\n            dim[c] = None\n\n    stg_cols = ['member_id', 'city', 'tier', 'update_date']\n    for c in stg_cols:\n        if c not in stg.columns:\n            stg[c] = None\n\n    dim_out = dim.copy()\n\n    new_rows = []\n\n    for _, s in stg.iterrows():\n        member_id = s['member_id']\n\n        current_mask = (dim_out['member_id'] == member_id) & (dim_out['is_current'] == 1)\n        current_rows = dim_out[current_mask]\n\n        if current_rows.empty:\n            # No current row -> plain insert, staged values kept exactly as-is.\n            new_rows.append({\n                'member_id': member_id,\n                'city': s['city'],\n                'tier': s['tier'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': None,\n                'is_current': 1,\n            })\n        else:\n            # At most one current row expected; take the first if more exist.\n            c_idx = current_rows.index[0]\n            c = dim_out.loc[c_idx]\n\n            s_sig = _sig(s['city'], s['tier'])\n            c_sig = _sig(c['city'], c['tier'])\n\n            if s_sig != c_sig:\n                # Close out the old current row.\n                dim_out.loc[c_idx, 'eff_end_date'] = s['update_date']\n                dim_out.loc[c_idx, 'is_current'] = 0\n\n                # Insert new current row with staged values exactly as given.\n                new_rows.append({\n                    'member_id': member_id,\n                    'city': s['city'],\n                    'tier': s['tier'],\n                    'eff_start_date': s['update_date'],\n                    'eff_end_date': None,\n                    'is_current': 1,\n                })\n            # else: signatures match -> no-op, dim row untouched.\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=dim_cols)\n        dim_out = pd.concat([dim_out, new_df], ignore_index=True)\n\n    dim_out = dim_out[dim_cols].reset_index(drop=True)\n\n    return {'dim_member_out': dim_out}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1059,
+   "tokens_out": 2355,
+   "usd": 0.038502,
+   "wall_s": 19.0376136302948
+  }
+ ]
+}

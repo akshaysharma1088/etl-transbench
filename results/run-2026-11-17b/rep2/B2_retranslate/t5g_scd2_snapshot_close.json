@@ -1,0 +1,67 @@
+{
+ "config": "B2_retranslate",
+ "rep": 2,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _values_equal(a, b):\n    \"\"\"NULL-safe equality: NaN/None vs NaN/None -> equal; NaN vs value -> not equal.\"\"\"\n    a_is_null = pd.isna(a)\n    b_is_null = pd.isna(b)\n    if a_is_null and b_is_null:\n        return True\n    if a_is_null or b_is_null:\n        return False\n    return a == b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_STORE\"].copy()\n    stg = inputs[\"STG_STORE_FULL\"].copy()\n    batch = inputs[\"BATCH_CONTROL\"].copy()\n\n    # exactly one row in BATCH_CONTROL\n    b = batch[\"batch_date\"].iloc[0]\n\n    # Make sure output columns exist / correct order on dim\n    cols = [\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    for c in cols:\n        if c not in dim.columns:\n            dim[c] = None\n    dim = dim[cols].copy()\n\n    # distinct snapshot rows (exact duplicates collapse)\n    S = stg.drop_duplicates(subset=[\"store_id\", \"region\", \"format\"]).reset_index(drop=True)\n\n    staging_store_ids = set(S[\"store_id\"].tolist())\n\n    new_rows = []\n\n    # Build quick lookup of current row index per store_id (assume at most one\n    # current row per store_id, as in a well-formed SCD2 dimension)\n    current_mask_initial = dim[\"is_current\"] == 1\n\n    for _, srow in S.iterrows():\n        sid = srow[\"store_id\"]\n        s_region = srow[\"region\"]\n        s_format = srow[\"format\"]\n\n        cur_idx = dim.index[(dim[\"store_id\"] == sid) & (dim[\"is_current\"] == 1)]\n\n        if len(cur_idx) > 0:\n            idx = cur_idx[0]\n            c_region = dim.at[idx, \"region\"]\n            c_format = dim.at[idx, \"format\"]\n\n            region_diff = not _values_equal(c_region, s_region)\n            format_diff = not _values_equal(c_format, s_format)\n\n            if region_diff or format_diff:\n                # close old current version\n                dim.at[idx, \"eff_end_date\"] = b\n                dim.at[idx, \"is_current\"] = 0\n\n                new_rows.append(\n                    {\n                        \"store_id\": sid,\n                        \"region\": s_region,\n                        \"format\": s_format,\n                        \"eff_start_date\": b,\n                        \"eff_end_date\": pd.NaT,\n                        \"is_current\": 1,\n                    }\n                )\n            else:\n                # unchanged -> no-op\n                pass\n        else:\n            # no current row: brand new store OR reactivated store.\n            # Always insert a new current version.\n            new_rows.append(\n                {\n                    \"store_id\": sid,\n                    \"region\": s_region,\n                    \"format\": s_format,\n                    \"eff_start_date\": b,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            )\n\n    # Step 2: close current rows whose store_id is not present in the snapshot.\n    # Rows already closed above have store_id in staging_store_ids, so this\n    # condition naturally excludes them.\n    for idx in dim.index[current_mask_initial]:\n        sid = dim.at[idx, \"store_id\"]\n        if sid not in staging_store_ids:\n            dim.at[idx, \"eff_end_date\"] = b\n            dim.at[idx, \"is_current\"] = 0\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=cols)\n        result = pd.concat([dim, new_df], ignore_index=True)\n    else:\n        result = dim.reset_index(drop=True)\n\n    result = result[cols]\n\n    return {\"dim_store_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1094,
+   "tokens_out": 3569,
+   "usd": 0.056817,
+   "wall_s": 33.013664960861206
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4376,
+  "tokens_out": 13149,
+  "usd": 0.21036300000000002,
+  "wall_s": 119.5879271030426
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

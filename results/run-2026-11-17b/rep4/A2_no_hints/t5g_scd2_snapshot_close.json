@@ -1,0 +1,52 @@
+{
+ "config": "A2_no_hints",
+ "rep": 4,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_different(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    # Try exact match first\n    if name in inputs:\n        return inputs[name]\n    # Fall back to case-insensitive match\n    lname = name.lower()\n    for k in inputs:\n        if k.lower() == lname:\n            return inputs[k]\n    raise KeyError(name)\n\n\ndef run(inputs: dict) -> dict:\n    dim_store = _get_input(inputs, \"DIM_STORE\").copy()\n    stg_store_full = _get_input(inputs, \"STG_STORE_FULL\")\n    batch_control = _get_input(inputs, \"BATCH_CONTROL\")\n\n    # batch date (single row table)\n    b = batch_control[\"batch_date\"].iloc[0]\n\n    # Ensure base columns exist and preserve order/dtypes as much as possible\n    cols = [\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    for c in cols:\n        if c not in dim_store.columns:\n            dim_store[c] = pd.NA\n    dim_store = dim_store[cols].copy()\n\n    # Distinct snapshot rows (dedupe exact duplicates)\n    S = stg_store_full.drop_duplicates(subset=[\"store_id\", \"region\", \"format\"]).copy()\n    S = S[[\"store_id\", \"region\", \"format\"]]\n\n    # Map store_id -> index of its current row (is_current == 1), assuming at most one\n    current_mask = dim_store[\"is_current\"] == 1\n    current_idx_by_store = {}\n    for idx, row in dim_store[current_mask].iterrows():\n        current_idx_by_store[row[\"store_id\"]] = idx\n\n    s_store_ids = set(S[\"store_id\"].tolist())\n\n    new_rows = []\n\n    for _, srow in S.iterrows():\n        store_id = srow[\"store_id\"]\n        s_region = srow[\"region\"]\n        s_format = srow[\"format\"]\n\n        if store_id in current_idx_by_store:\n            idx = current_idx_by_store[store_id]\n            c_region = dim_store.at[idx, \"region\"]\n            c_format = dim_store.at[idx, \"format\"]\n\n            if _is_different(c_region, s_region) or _is_different(c_format, s_format):\n                # close existing current row\n                dim_store.at[idx, \"eff_end_date\"] = b\n                dim_store.at[idx, \"is_current\"] = 0\n\n                # insert new current row\n                new_rows.append({\n                    \"store_id\": store_id,\n                    \"region\": s_region,\n                    \"format\": s_format,\n                    \"eff_start_date\": b,\n                    \"eff_end_date\": pd.NA,\n                    \"is_current\": 1,\n                })\n            else:\n                # no-op\n                pass\n        else:\n            # brand-new store or reactivated store: always a new version\n            new_rows.append({\n                \"store_id\": store_id,\n                \"region\": s_region,\n                \"format\": s_format,\n                \"eff_start_date\": b,\n                \"eff_end_date\": pd.NA,\n                \"is_current\": 1,\n            })\n\n    # Close current rows whose store_id is not present in S\n    for store_id, idx in current_idx_by_store.items():\n        if store_id not in s_store_ids:\n            dim_store.at[idx, \"eff_end_date\"] = b\n            dim_store.at[idx, \"is_current\"] = 0\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=cols)\n        dim_store_out = pd.concat([dim_store, new_df], ignore_index=True)\n    else:\n        dim_store_out = dim_store.reset_index(drop=True)\n\n    return {\"dim_store_out\": dim_store_out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1039,
+   "tokens_out": 2108,
+   "usd": 0.034737,
+   "wall_s": 18.68657922744751
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2589,
+  "tokens_out": 1426,
+  "usd": 0.029157,
+  "wall_s": 10.49315619468689
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

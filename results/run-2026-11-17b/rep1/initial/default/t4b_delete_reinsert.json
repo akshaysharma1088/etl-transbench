@@ -1,0 +1,16 @@
+{
+ "task": "t4b_delete_reinsert",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Multi-step partition refresh: DELETE whole arriving partitions then INSERT.\n    \n    Step 1: Create staging table with aggregated data from inbound\n    Step 2: Delete from target_snapshot all rows with batch_dates present in staging\n    Step 3: Insert all rows from staging into target_snapshot\n    \"\"\"\n    \n    inbound = inputs['inbound'].copy()\n    target_snapshot = inputs.get('target_snapshot', pd.DataFrame()).copy()\n    \n    # Step 1: Create STG_NEW by filtering qty > 0 and aggregating\n    stg_new = inbound[inbound['qty'] > 0].groupby(['product_id', 'batch_date']).agg({\n        'total_qty': 'sum',\n        'max_unit_cost': 'max'\n    }).reset_index()\n    \n    # Rename aggregated columns if they came from raw columns\n    # Handle case where inbound has qty and unit_cost columns\n    if 'qty' in inbound.columns and 'unit_cost' in inbound.columns:\n        stg_new = inbound[inbound['qty'] > 0].groupby(['product_id', 'batch_date']).agg({\n            'qty': 'sum',\n            'unit_cost': 'max'\n        }).reset_index()\n        stg_new = stg_new.rename(columns={'qty': 'total_qty', 'unit_cost': 'max_unit_cost'})\n    \n    # Step 2: Get distinct batch_dates from STG_NEW\n    arriving_batch_dates = stg_new['batch_date'].unique()\n    \n    # Delete from TARGET_SNAPSHOT all rows with batch_dates in arriving partitions\n    if len(target_snapshot) > 0:\n        target_snapshot = target_snapshot[~target_snapshot['batch_date'].isin(arriving_batch_dates)]\n    \n    # Step 3: Insert all rows from STG_NEW into TARGET_SNAPSHOT\n    if len(stg_new) > 0:\n        target_snapshot = pd.concat([target_snapshot, stg_new], ignore_index=True)\n    \n    # Ensure proper column order and types\n    if len(target_snapshot) > 0:\n        target_snapshot = target_snapshot[['product_id', 'batch_date', 'total_qty', 'max_unit_cost']]\n    else:\n        target_snapshot = pd.DataFrame(columns=['product_id', 'batch_date', 'total_qty', 'max_unit_cost'])\n    \n    return {'target_snapshot': target_snapshot}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 669,
+   "usd": 0.003743,
+   "wall_s": 4.437975168228149
+  }
+ ]
+}

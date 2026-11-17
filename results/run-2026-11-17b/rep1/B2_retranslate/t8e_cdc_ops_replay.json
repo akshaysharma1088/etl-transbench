@@ -1,0 +1,62 @@
+{
+ "config": "B2_retranslate",
+ "rep": 1,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 3,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    target_state = inputs[\"target_state\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n\n    # Build dict of current target state keyed by order_id\n    # Assume order_id is unique in target_state\n    target_state = target_state.drop_duplicates(subset=\"order_id\", keep=\"first\")\n    target_map = {}\n    for _, row in target_state.iterrows():\n        target_map[row[\"order_id\"]] = {\n            \"status\": row[\"status\"],\n            \"amount\": row[\"amount\"],\n            \"last_seq\": row[\"last_seq\"],\n        }\n\n    # 1. Dedupe events by seq (at-least-once delivery -> apply once)\n    events = cdc_events.drop_duplicates(subset=\"seq\", keep=\"first\").copy()\n\n    # 2. Replay guard: skip events whose seq <= target_state's last_seq for that order\n    def guard_pass(row):\n        oid = row[\"order_id\"]\n        if oid in target_map:\n            return row[\"seq\"] > target_map[oid][\"last_seq\"]\n        return True\n\n    if len(events) > 0:\n        mask = events.apply(guard_pass, axis=1)\n        events = events[mask]\n\n    # 3. Sort remaining events by seq within each order and apply in order\n    events = events.sort_values(by=[\"order_id\", \"seq\"], kind=\"mergesort\")\n\n    # Initialize working state copy from target_map (existence flag)\n    state = {}\n    for oid, v in target_map.items():\n        state[oid] = {\n            \"exists\": True,\n            \"status\": v[\"status\"],\n            \"amount\": v[\"amount\"],\n            \"last_seq\": v[\"last_seq\"],\n            \"last_deleted_seq\": None,\n        }\n\n    # Ensure all orders referenced by events have an entry\n    for oid in events[\"order_id\"].unique():\n        if oid not in state:\n            state[oid] = {\n                \"exists\": False,\n                \"status\": None,\n                \"amount\": None,\n                \"last_seq\": None,\n                \"last_deleted_seq\": None,\n            }\n\n    # Apply events in seq order per order\n    for oid, grp in events.groupby(\"order_id\", sort=False):\n        grp = grp.sort_values(by=\"seq\", kind=\"mergesort\")\n        s = state[oid]\n        for _, ev in grp.iterrows():\n            op = ev[\"op\"]\n            seq = ev[\"seq\"]\n            ev_status = ev[\"status\"]\n            ev_amount = ev[\"amount\"]\n\n            if op == \"I\" or op == \"U\":\n                if s[\"exists\"]:\n                    new_status = ev_status\n                    if op == \"U\" and pd.isna(ev_amount):\n                        new_amount = s[\"amount\"]\n                    else:\n                        new_amount = ev_amount\n                else:\n                    new_status = ev_status\n                    new_amount = ev_amount\n\n                s[\"status\"] = new_status\n                s[\"amount\"] = new_amount\n                s[\"last_seq\"] = seq\n                s[\"exists\"] = True\n                s[\"last_deleted_seq\"] = None\n            elif op == \"D\":\n                if s[\"exists\"]:\n                    s[\"exists\"] = False\n                    s[\"last_deleted_seq\"] = seq\n                    s[\"status\"] = None\n                    s[\"amount\"] = None\n                    s[\"last_seq\"] = None\n                # else: no-op, D on missing order does nothing\n        state[oid] = s\n\n    # 4. Build new_state output\n    new_state_rows = []\n    tombstone_rows = []\n\n    for oid, s in state.items():\n        if s[\"exists\"]:\n            new_state_rows.append(\n                {\n                    \"order_id\": oid,\n                    \"status\": s[\"status\"],\n                    \"amount\": s[\"amount\"],\n                    \"last_seq\": s[\"last_seq\"],\n                }\n            )\n        else:\n            if s[\"last_deleted_seq\"] is not None:\n                tombstone_rows.append(\n                    {\n                        \"order_id\": oid,\n                        \"deleted_seq\": s[\"last_deleted_seq\"],\n                    }\n                )\n\n    new_state_df = pd.DataFrame(\n        new_state_rows, columns=[\"order_id\", \"status\", \"amount\", \"last_seq\"]\n    )\n    tombstones_df = pd.DataFrame(\n        tombstone_rows, columns=[\"order_id\", \"deleted_seq\"]\n    )\n\n    # Try to coerce dtypes similar to inputs where possible\n    if len(new_state_df) > 0:\n        try:\n            new_state_df[\"order_id\"] = new_state_df[\"order_id\"].astype(\n                target_state[\"order_id\"].dtype\n                if \"order_id\" in target_state.columns\n                else cdc_events[\"order_id\"].dtype\n            )\n        except Exception:\n            pass\n        try:\n            new_state_df[\"last_seq\"] = new_state_df[\"last_seq\"].astype(\n                cdc_events[\"seq\"].dtype\n            )\n        except Exception:\n            pass\n\n    if len(tombstones_df) > 0:\n        try:\n            tombstones_df[\"order_id\"] = tombstones_df[\"order_id\"].astype(\n                cdc_events[\"order_id\"].dtype\n            )\n        except Exception:\n            pass\n        try:\n            tombstones_df[\"deleted_seq\"] = tombstones_df[\"deleted_seq\"].astype(\n                cdc_events[\"seq\"].dtype\n            )\n        except Exception:\n            pass\n\n    return {\"new_state\": new_state_df, \"tombstones\": tombstones_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1149,
+   "tokens_out": 4000,
+   "usd": 0.063447,
+   "wall_s": 44.90300369262695
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3447,
+  "tokens_out": 11960,
+  "usd": 0.189741,
+  "wall_s": 119.0111608505249
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

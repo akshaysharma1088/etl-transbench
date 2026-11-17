@@ -1,0 +1,52 @@
+{
+ "config": "LEGATO",
+ "rep": 2,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _eq_nan(a: pd.Series, b: pd.Series) -> pd.Series:\n    \"\"\"Element-wise equality where NaN == NaN is treated as equal,\n    and NaN vs non-NaN is treated as different.\"\"\"\n    both_nan = a.isna() & b.isna()\n    return (a == b) | both_nan\n\n\ndef _get_input(inputs: dict, *candidates):\n    \"\"\"Fetch an input dataframe trying several possible key spellings\n    (case-insensitive, with/without underscores stripped).\"\"\"\n    # direct lookup first\n    for c in candidates:\n        if c in inputs:\n            return inputs[c]\n    # case-insensitive lookup\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    for c in candidates:\n        key = lower_map.get(c.lower())\n        if key is not None:\n            return inputs[key]\n    raise KeyError(f\"None of {candidates} found in inputs keys {list(inputs.keys())}\")\n\n\ndef run(inputs: dict) -> dict:\n    dim = _get_input(inputs, \"DIM_STORE\", \"dim_store\").copy()\n    stg = _get_input(inputs, \"STG_STORE_FULL\", \"stg_store_full\").copy()\n    batch_ctrl = _get_input(inputs, \"BATCH_CONTROL\", \"batch_control\").copy()\n\n    # Exactly one row expected in BATCH_CONTROL\n    batch_date = batch_ctrl[\"batch_date\"].iloc[0]\n\n    # Ensure dim has the expected columns/types; work on a copy\n    dim_cols = [\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    for c in dim_cols:\n        if c not in dim.columns:\n            dim[c] = np.nan\n\n    # Step 0: distinct snapshot rows (exact duplicates only)\n    stg_distinct = stg.drop_duplicates(subset=[\"store_id\", \"region\", \"format\"]).reset_index(drop=True)\n\n    # Current rows in DIM_STORE\n    cur_mask = dim[\"is_current\"] == 1\n    cur = dim.loc[cur_mask, [\"store_id\", \"region\", \"format\"]].copy()\n\n    # Merge snapshot with current rows to determine existence and attribute diffs\n    merged = stg_distinct.merge(\n        cur,\n        on=\"store_id\",\n        how=\"left\",\n        suffixes=(\"_s\", \"_c\"),\n        indicator=True,\n    )\n\n    exists_c = merged[\"_merge\"] == \"both\"\n\n    region_eq = _eq_nan(merged[\"region_s\"], merged[\"region_c\"])\n    format_eq = _eq_nan(merged[\"format_s\"], merged[\"format_c\"])\n\n    differ = exists_c & ~(region_eq & format_eq)\n    new_store = ~exists_c  # brand-new or reactivated (no current row)\n\n    output = dim.copy()\n\n    # --- Step 1a: close current rows for stores whose attributes differ ---\n    close_ids_differ = set(merged.loc[differ, \"store_id\"])\n    close_mask_1 = output[\"store_id\"].isin(close_ids_differ) & (output[\"is_current\"] == 1)\n    output.loc[close_mask_1, \"eff_end_date\"] = batch_date\n    output.loc[close_mask_1, \"is_current\"] = 0\n\n    # --- Step 1b: insert new current versions for differ OR new_store cases ---\n    insert_mask = differ | new_store\n    new_rows = merged.loc[insert_mask, [\"store_id\", \"region_s\", \"format_s\"]].rename(\n        columns={\"region_s\": \"region\", \"format_s\": \"format\"}\n    )\n    new_rows[\"eff_start_date\"] = batch_date\n    new_rows[\"eff_end_date\"] = pd.NaT\n    new_rows[\"is_current\"] = 1\n\n    output = pd.concat([output, new_rows[dim_cols]], ignore_index=True, sort=False)\n\n    # --- Step 2: close current rows whose store_id is not present in the snapshot ---\n    s_ids = set(stg_distinct[\"store_id\"])\n    close_mask_2 = (output[\"is_current\"] == 1) & (~output[\"store_id\"].isin(s_ids))\n    output.loc[close_mask_2, \"eff_end_date\"] = batch_date\n    output.loc[close_mask_2, \"is_current\"] = 0\n\n    output = output[dim_cols].reset_index(drop=True)\n\n    return {\"dim_store_out\": output}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1094,
+   "tokens_out": 3569,
+   "usd": 0.056817,
+   "wall_s": 33.013664960861206
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2729,
+  "tokens_out": 1724,
+  "usd": 0.034047,
+  "wall_s": 12.908323764801025
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

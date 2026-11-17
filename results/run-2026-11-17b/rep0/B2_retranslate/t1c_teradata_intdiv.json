@@ -1,0 +1,47 @@
+{
+ "config": "B2_retranslate",
+ "rep": 0,
+ "task": "t1c_teradata_intdiv",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\nfrom math import trunc\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicates Teradata-style integer division (truncate-toward-zero) and\n    ZEROIFNULL semantics for balance bucket calculation.\n    \"\"\"\n    acct_balance = inputs['acct_balance'].copy()\n    \n    # Filter: WHERE acct_type <> 'CLOSED'\n    result = acct_balance[acct_balance['acct_type'] != 'CLOSED'].copy()\n    \n    # ZEROIFNULL(balance_cents) / 100\n    # - Replace NULL with 0, then divide by 100 with truncate-toward-zero semantics\n    balance_cents = result['balance_cents'].fillna(0)\n    balance_bucket = balance_cents.apply(lambda x: trunc(x / 100))\n    \n    # CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER)\n    # - Replace NULL balance_cents with 0, multiply by fx_rate, divide by 100,\n    #   then truncate toward zero\n    fx_rate = result['fx_rate']\n    fx_units = (balance_cents * fx_rate / 100).apply(lambda x: trunc(x))\n    \n    # Build output with selected columns\n    output = pd.DataFrame({\n        'account_id': result['account_id'],\n        'balance_bucket': balance_bucket,\n        'fx_units': fx_units\n    })\n    \n    return {'balance_buckets': output}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 373,
+   "tokens_out": 406,
+   "usd": 0.002403,
+   "wall_s": 3.2677483558654785
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

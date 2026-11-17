@@ -1,0 +1,67 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t5e_scd2_late_arriving",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_ACCOUNT'].copy()\n    stg = inputs['STG_ACCOUNT'].copy()\n\n    # Normalize date dtypes\n    dim['eff_start_date'] = pd.to_datetime(dim['eff_start_date'])\n    dim['eff_end_date'] = pd.to_datetime(dim['eff_end_date'])\n    stg['update_date'] = pd.to_datetime(stg['update_date'])\n\n    # Build per-account list of version dicts\n    versions = {}\n    for _, row in dim.iterrows():\n        aid = row['account_id']\n        versions.setdefault(aid, []).append({\n            'plan': row['plan'],\n            'eff_start_date': row['eff_start_date'],\n            'eff_end_date': row['eff_end_date'],\n            'is_current': row['is_current'],\n        })\n\n    # Stable sort staging rows by account_id, update_date (cursor order)\n    stg_sorted = stg.sort_values(['account_id', 'update_date'], kind='mergesort')\n\n    def plan_equal(a, b):\n        a_na = pd.isna(a)\n        b_na = pd.isna(b)\n        if a_na and b_na:\n            return True\n        if a_na != b_na:\n            return False\n        return a == b\n\n    for _, s in stg_sorted.iterrows():\n        aid = s['account_id']\n        plan = s['plan']\n        d = s['update_date']\n\n        vlist = versions.setdefault(aid, [])\n\n        if not vlist:\n            # No version at all for this account\n            vlist.append({\n                'plan': plan,\n                'eff_start_date': d,\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n            continue\n\n        # Find the version covering date d: start <= d < end (end NULL = open/infinite)\n        cover = None\n        for v in vlist:\n            start = v['eff_start_date']\n            end = v['eff_end_date']\n            if start <= d and (pd.isna(end) or d < end):\n                cover = v\n                break\n\n        if cover is None:\n            # d is earlier than the earliest existing version\n            f = min(vlist, key=lambda v: v['eff_start_date'])\n            vlist.append({\n                'plan': plan,\n                'eff_start_date': d,\n                'eff_end_date': f['eff_start_date'],\n                'is_current': 0,\n            })\n        else:\n            if plan_equal(cover['plan'], plan):\n                # no-op, unchanged\n                continue\n            elif d == cover['eff_start_date']:\n                # same-day correction, no new version\n                cover['plan'] = plan\n            else:\n                # split the covering version at d\n                new_v = {\n                    'plan': plan,\n                    'eff_start_date': d,\n                    'eff_end_date': cover['eff_end_date'],\n                    'is_current': cover['is_current'],\n                }\n                cover['eff_end_date'] = d\n                cover['is_current'] = 0\n                vlist.append(new_v)\n\n    rows = []\n    for aid, vlist in versions.items():\n        for v in vlist:\n            rows.append({\n                'account_id': aid,\n                'plan': v['plan'],\n                'eff_start_date': v['eff_start_date'],\n                'eff_end_date': v['eff_end_date'],\n                'is_current': v['is_current'],\n            })\n\n    out = pd.DataFrame(\n        rows,\n        columns=['account_id', 'plan', 'eff_start_date', 'eff_end_date', 'is_current'],\n    )\n\n    return {'dim_account_out': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1165,
+   "tokens_out": 3392,
+   "usd": 0.054375,
+   "wall_s": 28.830304384231567
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6464,
+  "tokens_out": 14652,
+  "usd": 0.239172,
+  "wall_s": 137.2823667526245
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

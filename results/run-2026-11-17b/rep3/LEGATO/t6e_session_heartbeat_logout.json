@@ -1,0 +1,47 @@
+{
+ "config": "LEGATO",
+ "rep": 3,
+ "task": "t6e_session_heartbeat_logout",
+ "category": "T6",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import timedelta\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"app_events\"].copy()\n\n    # Ensure proper dtypes\n    df[\"event_ts\"] = pd.to_datetime(df[\"event_ts\"])\n    if \"user_id\" in df.columns:\n        df[\"user_id\"] = df[\"user_id\"]\n    if \"event_id\" in df.columns:\n        df[\"event_id\"] = df[\"event_id\"]\n\n    out_cols = [\n        \"user_id\",\n        \"session_num\",\n        \"session_start\",\n        \"session_end\",\n        \"event_count\",\n        \"heartbeat_count\",\n    ]\n\n    if df.empty:\n        return {\"user_sessions\": pd.DataFrame(columns=out_cols)}\n\n    threshold = timedelta(minutes=30)\n\n    records = []\n\n    # Stable sort by event_ts then event_id, within each user\n    df_sorted = df.sort_values(by=[\"user_id\", \"event_ts\", \"event_id\"], kind=\"mergesort\")\n\n    for user_id, group in df_sorted.groupby(\"user_id\", sort=False):\n        session_counter = 0\n        open_session = None  # dict with session_num, session_start, last_activity, event_count, heartbeat_count\n\n        for _, row in group.iterrows():\n            ts = row[\"event_ts\"]\n            etype = row[\"event_type\"]\n\n            if etype in (\"view\", \"click\", \"logout\"):\n                # Determine if a new session must start\n                if open_session is None or (ts - open_session[\"last_activity\"]) > threshold:\n                    if open_session is not None:\n                        # finalize any lingering open session (shouldn't normally happen\n                        # since sessions close only via logout or starting a new one,\n                        # but guard just in case)\n                        records.append(\n                            {\n                                \"user_id\": user_id,\n                                \"session_num\": open_session[\"session_num\"],\n                                \"session_start\": open_session[\"session_start\"],\n                                \"session_end\": open_session[\"last_activity\"],\n                                \"event_count\": open_session[\"event_count\"],\n                                \"heartbeat_count\": open_session[\"heartbeat_count\"],\n                            }\n                        )\n                    session_counter += 1\n                    open_session = {\n                        \"session_num\": session_counter,\n                        \"session_start\": ts,\n                        \"last_activity\": ts,\n                        \"event_count\": 0,\n                        \"heartbeat_count\": 0,\n                    }\n                else:\n                    open_session[\"last_activity\"] = ts\n\n                open_session[\"event_count\"] += 1\n\n                if etype == \"logout\":\n                    records.append(\n                        {\n                            \"user_id\": user_id,\n                            \"session_num\": open_session[\"session_num\"],\n                            \"session_start\": open_session[\"session_start\"],\n                            \"session_end\": open_session[\"last_activity\"],\n                            \"event_count\": open_session[\"event_count\"],\n                            \"heartbeat_count\": open_session[\"heartbeat_count\"],\n                        }\n                    )\n                    open_session = None\n\n            else:  # heartbeat\n                if open_session is not None and (ts - open_session[\"last_activity\"]) <= threshold:\n                    open_session[\"event_count\"] += 1\n                    open_session[\"heartbeat_count\"] += 1\n                # else: dropped, no effect\n\n        if open_session is not None:\n            records.append(\n                {\n                    \"user_id\": user_id,\n                    \"session_num\": open_session[\"session_num\"],\n                    \"session_start\": open_session[\"session_start\"],\n                    \"session_end\": open_session[\"last_activity\"],\n                    \"event_count\": open_session[\"event_count\"],\n                    \"heartbeat_count\": open_session[\"heartbeat_count\"],\n                }\n            )\n\n    result_df = pd.DataFrame.from_records(records, columns=out_cols)\n\n    return {\"user_sessions\": result_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 919,
+   "tokens_out": 2327,
+   "usd": 0.037662,
+   "wall_s": 18.904834508895874
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -26,6 +27,11 @@ from etl_transbench.harness import (Task, CostLedger, VerificationResult,
 # USD per million tokens, by tier. These are list prices at the time of the
 # run and can be replaced with --prices; token counts are stored per call, so
 # any cost figure can be recomputed from the raw results.
+# Output cap per call. It has to leave room for the model's reasoning as well
+# as the program: the July run used 4,000 and the frontier model sometimes
+# spent all of it before writing any code.
+MAX_TOKENS = 16000
+
 PRICES_USD_PER_MTOK = {
     "cheap": {"in": 1.00, "out": 5.00},
     "frontier": {"in": 3.00, "out": 15.00},
@@ -41,24 +47,38 @@ class LLMClient:
         self.temperature = temperature
         self.prices = prices or PRICES_USD_PER_MTOK
         self.resolved: Dict[str, str] = {}  # tier -> model id the API reports
+        self.truncated: Dict[str, int] = {}  # tier -> replies cut off at max_tokens
+        self._lock = threading.Lock()
         self._client = None
 
     def complete(self, tier: str, system: str, user: str,
-                 ledger: CostLedger, role: str, max_tokens: int = 4000) -> str:
+                 ledger: CostLedger, role: str, max_tokens: int = MAX_TOKENS) -> str:
         if self._client is None:
             import anthropic  # lazy: pip install anthropic
             self._client = anthropic.Anthropic(max_retries=6)  # reads ANTHROPIC_API_KEY
-        t0 = time.time()
         extra = {} if self.temperature is None else {"temperature": self.temperature}
-        msg = self._client.messages.create(  # no temperature given: the API default, 1.0
-            model=self.models[tier], max_tokens=max_tokens,
-            system=system, messages=[{"role": "user", "content": user}], **extra)
-        self.resolved[tier] = getattr(msg, "model", self.models[tier])
-        text = "".join(b.text for b in msg.content if b.type == "text")
-        usd = (msg.usage.input_tokens * self.prices[tier]["in"]
-               + msg.usage.output_tokens * self.prices[tier]["out"]) / 1e6
-        ledger.record(role, self.models[tier], msg.usage.input_tokens,
-                      msg.usage.output_tokens, usd, time.time() - t0)
+        text = ""
+        # max_tokens caps everything the model emits, its reasoning included.
+        # A reply cut off at the cap can have no code in it at all, which would
+        # be scored as a failed translation. So a cut-off reply is asked for
+        # once more with twice the room, and every cut-off is counted.
+        for attempt, cap in enumerate((max_tokens, 2 * max_tokens)):
+            t0 = time.time()
+            with self._client.messages.stream(  # no temperature given: the API default, 1.0
+                    model=self.models[tier], max_tokens=cap, system=system,
+                    messages=[{"role": "user", "content": user}], **extra) as stream:
+                msg = stream.get_final_message()
+            self.resolved[tier] = getattr(msg, "model", self.models[tier])
+            text = "".join(b.text for b in msg.content if b.type == "text")
+            usd = (msg.usage.input_tokens * self.prices[tier]["in"]
+                   + msg.usage.output_tokens * self.prices[tier]["out"]) / 1e6
+            ledger.record(role, self.models[tier], msg.usage.input_tokens,
+                          msg.usage.output_tokens, usd, time.time() - t0)
+            ledger.entries[-1]["stop_reason"] = msg.stop_reason
+            if msg.stop_reason != "max_tokens":
+                break
+            with self._lock:
+                self.truncated[tier] = self.truncated.get(tier, 0) + 1
         return text
 
 
@@ -195,12 +215,27 @@ class LegatoResult:
     heldout_equivalent: Optional[bool] = None
 
 
+def input_interface(task: Task) -> str:
+    """The keys and columns of `inputs`, as the program will receive them.
+
+    Names and types only, taken from a generated corpus; no rows. A legacy
+    artifact usually writes table names in upper case, and without this the
+    translator has to guess the dictionary keys it reads from.
+    """
+    lines = []
+    for name, df in task.corpus(11).items():
+        cols = ", ".join(f"{c} ({df[c].dtype})" for c in df.columns)
+        lines.append(f'  inputs["{name}"]: {cols}')
+    return "\n".join(lines)
+
+
 def base_prompt(task: Task, use_hints: bool = True) -> str:
     hint = CONSTRUCT_HINTS.get(task.meta["category"], "") if use_hints else ""
     return (f"Task category: {task.meta['category']} ({task.meta['description']})\n"
             f"Construct guidance: {hint}\n\nLEGACY ARTIFACT:\n{task.legacy_artifact}\n\n"
-            f"Input relations and dtypes are exactly those of the artifact. "
-            f"Produce output relations named: "
+            f"`inputs` is a dict of pandas DataFrames with exactly these keys "
+            f"(case-sensitive) and columns:\n{input_interface(task)}\n\n"
+            f"Return a dict of DataFrames with output relations named: "
             f"{[r.name for r in task.spec.relations]}.")
 
 

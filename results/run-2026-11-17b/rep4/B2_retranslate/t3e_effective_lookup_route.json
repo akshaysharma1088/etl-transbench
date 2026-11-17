@@ -1,0 +1,67 @@
+{
+ "config": "B2_retranslate",
+ "rep": 4,
+ "task": "t3e_effective_lookup_route",
+ "category": "T3",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "syntactic"
+  }
+ ],
+ "final_code": "",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1407,
+   "tokens_out": 4000,
+   "usd": 0.064221,
+   "wall_s": 34.02331352233887
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5628,
+  "tokens_out": 16000,
+  "usd": 0.256884,
+  "wall_s": 152.65689635276794
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

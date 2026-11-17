@@ -1,0 +1,67 @@
+{
+ "config": "B2_retranslate",
+ "rep": 4,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _differs(a, b):\n    \"\"\"NULL-aware inequality: NULL vs NULL -> not different; NULL vs non-NULL -> different.\"\"\"\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null or b_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim_store = inputs['DIM_STORE'].copy()\n    stg = inputs['STG_STORE_FULL']\n    batch_control = inputs['BATCH_CONTROL']\n\n    # single batch date value\n    b = batch_control['batch_date'].iloc[0]\n\n    # distinct store rows from the full snapshot (exact-duplicate rows collapse)\n    S = stg[['store_id', 'region', 'format']].drop_duplicates()\n\n    # identify current rows in the dimension\n    current_mask = dim_store['is_current'] == 1\n    current_rows = dim_store[current_mask]\n\n    current_by_store = {}\n    for idx, row in current_rows.iterrows():\n        current_by_store.setdefault(row['store_id'], []).append(idx)\n\n    s_store_ids = set(S['store_id'])\n\n    new_rows = []\n    rows_to_close = set()\n\n    for _, srow in S.iterrows():\n        sid = srow['store_id']\n        region = srow['region']\n        fmt = srow['format']\n\n        if sid in current_by_store:\n            # take the (expected unique) current row for this store\n            idx = current_by_store[sid][0]\n            crow = dim_store.loc[idx]\n\n            if _differs(crow['region'], region) or _differs(crow['format'], fmt):\n                rows_to_close.add(idx)\n                new_rows.append({\n                    'store_id': sid,\n                    'region': region,\n                    'format': fmt,\n                    'eff_start_date': b,\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                })\n            # else: attributes unchanged -> no-op, no new version\n        else:\n            # brand-new store OR reactivated store: always gets a new version\n            new_rows.append({\n                'store_id': sid,\n                'region': region,\n                'format': fmt,\n                'eff_start_date': b,\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n\n    # close current rows for stores that disappeared from the snapshot\n    for sid, idxs in current_by_store.items():\n        if sid not in s_store_ids:\n            for idx in idxs:\n                rows_to_close.add(idx)\n\n    if rows_to_close:\n        idx_list = list(rows_to_close)\n        dim_store.loc[idx_list, 'eff_end_date'] = b\n        dim_store.loc[idx_list, 'is_current'] = 0\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=[\n            'store_id', 'region', 'format', 'eff_start_date', 'eff_end_date', 'is_current'\n        ])\n        result = pd.concat([dim_store, new_df], ignore_index=True)\n    else:\n        result = dim_store\n\n    result = result[['store_id', 'region', 'format', 'eff_start_date', 'eff_end_date', 'is_current']]\n\n    return {'dim_store_out': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1094,
+   "tokens_out": 2655,
+   "usd": 0.043107,
+   "wall_s": 21.139800786972046
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4376,
+  "tokens_out": 12238,
+  "usd": 0.19669799999999998,
+  "wall_s": 107.65838098526001
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

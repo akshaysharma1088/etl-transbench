@@ -1,0 +1,67 @@
+{
+ "config": "B3_self_repair",
+ "rep": 3,
+ "task": "t5e_scd2_late_arriving",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_ACCOUNT'].copy()\n    stg = inputs['STG_ACCOUNT'].copy()\n\n    # Build per-account list of mutable version dicts.\n    versions = {}\n    for _, row in dim.iterrows():\n        acc = row['account_id']\n        end = row['eff_end_date']\n        end = pd.NaT if pd.isna(end) else end\n        versions.setdefault(acc, []).append({\n            'plan': row['plan'],\n            'eff_start_date': row['eff_start_date'],\n            'eff_end_date': end,\n            'is_current': row['is_current'],\n        })\n\n    stg_sorted = stg.sort_values(['account_id', 'update_date'], kind='mergesort')\n\n    def plan_equal(p1, p2):\n        n1 = pd.isna(p1)\n        n2 = pd.isna(p2)\n        if n1 and n2:\n            return True\n        if n1 != n2:\n            return False\n        return p1 == p2\n\n    for _, s in stg_sorted.iterrows():\n        acc = s['account_id']\n        upd = s['update_date']\n        splan = s['plan']\n\n        vlist = versions.setdefault(acc, [])\n\n        if len(vlist) == 0:\n            vlist.append({\n                'plan': splan,\n                'eff_start_date': upd,\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n            continue\n\n        # find covering version: start <= upd < end (end NULL == infinity)\n        covering = None\n        for v in vlist:\n            start = v['eff_start_date']\n            end = v['eff_end_date']\n            if start <= upd and (pd.isna(end) or upd < end):\n                covering = v\n                break\n\n        if covering is None:\n            # earlier than the account's first version\n            f = min(vlist, key=lambda v: v['eff_start_date'])\n            vlist.append({\n                'plan': splan,\n                'eff_start_date': upd,\n                'eff_end_date': f['eff_start_date'],\n                'is_current': 0,\n            })\n        else:\n            v = covering\n            if plan_equal(v['plan'], splan):\n                pass\n            elif upd == v['eff_start_date']:\n                v['plan'] = splan\n            else:\n                vlist.append({\n                    'plan': splan,\n                    'eff_start_date': upd,\n                    'eff_end_date': v['eff_end_date'],\n                    'is_current': v['is_current'],\n                })\n                v['eff_end_date'] = upd\n                v['is_current'] = 0\n\n    records = []\n    for acc, vlist in versions.items():\n        for v in vlist:\n            records.append({\n                'account_id': acc,\n                'plan': v['plan'],\n                'eff_start_date': v['eff_start_date'],\n                'eff_end_date': v['eff_end_date'],\n                'is_current': v['is_current'],\n            })\n\n    out = pd.DataFrame(\n        records,\n        columns=['account_id', 'plan', 'eff_start_date', 'eff_end_date', 'is_current'],\n    )\n\n    if len(out) > 0:\n        out = out.sort_values(['account_id', 'eff_start_date'], kind='mergesort').reset_index(drop=True)\n        acc_dtype = dim['account_id'].dtype if len(dim) > 0 else stg['account_id'].dtype\n        out['account_id'] = out['account_id'].astype(acc_dtype)\n        is_current_dtype = dim['is_current'].dtype if len(dim) > 0 else None\n        if is_current_dtype is not None:\n            out['is_current'] = out['is_current'].astype(is_current_dtype)\n        else:\n            out['is_current'] = out['is_current'].astype('int64')\n\n    return {'dim_account_out': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1165,
+   "tokens_out": 3629,
+   "usd": 0.05793,
+   "wall_s": 29.23691725730896
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6527,
+  "tokens_out": 15831,
+  "usd": 0.257046,
+  "wall_s": 153.43663907051086
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

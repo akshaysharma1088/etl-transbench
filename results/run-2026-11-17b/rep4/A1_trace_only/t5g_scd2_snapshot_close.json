@@ -1,0 +1,52 @@
+{
+ "config": "A1_trace_only",
+ "rep": 4,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    # Try exact match first, then case-insensitive match, to be robust\n    # to naming convention differences between harness and spec.\n    if name in inputs:\n        return inputs[name]\n    lname = name.lower()\n    for k in inputs:\n        if k.lower() == lname:\n            return inputs[k]\n    raise KeyError(name)\n\n\ndef run(inputs: dict) -> dict:\n    dim_store = _get_input(inputs, 'DIM_STORE').copy()\n    stg = _get_input(inputs, 'STG_STORE_FULL').copy()\n    batch_control = _get_input(inputs, 'BATCH_CONTROL').copy()\n\n    # batch date (exactly one row)\n    b = batch_control['batch_date'].iloc[0]\n\n    # distinct store_id, region, format from the full snapshot feed\n    S = stg[['store_id', 'region', 'format']].drop_duplicates().reset_index(drop=True)\n\n    out = dim_store.copy()\n\n    def differs(a, b_val):\n        # NULL vs NULL -> not different; NULL vs non-NULL -> different;\n        # otherwise compare values.\n        a_null = pd.isna(a)\n        b_null = pd.isna(b_val)\n        if a_null and b_null:\n            return False\n        if a_null or b_null:\n            return True\n        return a != b_val\n\n    current_mask = out['is_current'] == 1\n\n    # map store_id -> index of its current row (at most one expected)\n    current_idx = {}\n    for idx in out[current_mask].index:\n        sid = out.at[idx, 'store_id']\n        current_idx[sid] = idx\n\n    new_rows = []\n    matched_store_ids = set()\n\n    for _, srow in S.iterrows():\n        sid = srow['store_id']\n        region = srow['region']\n        fmt = srow['format']\n        matched_store_ids.add(sid)\n\n        if sid in current_idx:\n            idx = current_idx[sid]\n            c_region = out.at[idx, 'region']\n            c_format = out.at[idx, 'format']\n\n            if differs(c_region, region) or differs(c_format, fmt):\n                # close old current version\n                out.at[idx, 'eff_end_date'] = b\n                out.at[idx, 'is_current'] = 0\n                # insert new current version\n                new_rows.append({\n                    'store_id': sid,\n                    'region': region,\n                    'format': fmt,\n                    'eff_start_date': b,\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1\n                })\n            # else: unchanged -> no-op, no new version\n        else:\n            # brand new store or reactivated store: always a new version\n            new_rows.append({\n                'store_id': sid,\n                'region': region,\n                'format': fmt,\n                'eff_start_date': b,\n                'eff_end_date': pd.NaT,\n                'is_current': 1\n            })\n\n    # close current rows whose store_id is not present in the snapshot\n    for sid, idx in current_idx.items():\n        if sid not in matched_store_ids:\n            out.at[idx, 'eff_end_date'] = b\n            out.at[idx, 'is_current'] = 0\n\n    if new_rows:\n        new_df = pd.DataFrame(\n            new_rows,\n            columns=['store_id', 'region', 'format', 'eff_start_date', 'eff_end_date', 'is_current']\n        )\n        out = pd.concat([out, new_df], ignore_index=True)\n\n    out = out[['store_id', 'region', 'format', 'eff_start_date', 'eff_end_date', 'is_current']]\n\n    return {'dim_store_out': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1094,
+   "tokens_out": 2655,
+   "usd": 0.043107,
+   "wall_s": 21.139800786972046
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2557,
+  "tokens_out": 1452,
+  "usd": 0.029451,
+  "wall_s": 11.288870334625244
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

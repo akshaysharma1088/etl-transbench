@@ -1,0 +1,52 @@
+{
+ "config": "A1_trace_only",
+ "rep": 2,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Multi-step partition refresh: DELETE whole arriving partitions then INSERT.\n\n    Step 1: Create STG_NEW by aggregating inbound data\n    Step 2: Delete from TARGET_SNAPSHOT all rows matching arriving batch_dates\n    Step 3: Insert STG_NEW rows into TARGET_SNAPSHOT\n    \"\"\"\n\n    inbound = inputs['inbound'].copy()\n    target_snapshot = inputs['target_snapshot'].copy()\n\n    # Step 1: CREATE STG_NEW\n    # Filter for qty > 0, then GROUP BY product_id, batch_date\n    stg_new = inbound[inbound['qty'] > 0].copy()\n    stg_new = stg_new.groupby(['product_id', 'batch_date'], as_index=False).agg(\n        total_qty=('qty', 'sum'),\n        max_unit_cost=('unit_cost', 'max')\n    )\n\n    # Step 2: DELETE FROM TARGET_SNAPSHOT\n    # Get distinct batch_dates from STG_NEW\n    arriving_batch_dates = stg_new['batch_date'].unique()\n\n    # Remove all rows from target_snapshot where batch_date is in arriving_batch_dates\n    target_snapshot = target_snapshot[~target_snapshot['batch_date'].isin(arriving_batch_dates)]\n\n    # Step 3: INSERT INTO TARGET_SNAPSHOT\n    # Append STG_NEW rows to target_snapshot\n    target_snapshot = pd.concat([target_snapshot, stg_new], ignore_index=True)\n\n    # Ensure consistent dtypes and column order\n    target_snapshot = target_snapshot[['product_id', 'batch_date', 'total_qty', 'max_unit_cost']]\n\n    return {'target_snapshot': target_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 676,
+   "usd": 0.003778,
+   "wall_s": 4.585700511932373
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2294,
+  "tokens_out": 692,
+  "usd": 0.017262,
+  "wall_s": 5.665508985519409
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

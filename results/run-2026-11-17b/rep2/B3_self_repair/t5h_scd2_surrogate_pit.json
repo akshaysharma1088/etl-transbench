@@ -1,0 +1,67 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "syntactic"
+  }
+ ],
+ "final_code": "```python\nimport pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_CUSTOMER'].copy()\n    stg = inputs['STG_CUSTOMER'].copy()\n    fact = inputs['FACT_TXN'].copy()\n\n    # Determine max surrogate key before this load\n    if dim.empty:\n        max_sk = 0\n    else:\n        max_sk = dim['customer_sk'].max()\n        if pd.isna(max_sk):\n            max_sk = 0\n\n    # Current (is_current == 1) rows indexed by customer_id for lookup.\n    current = dim[dim['is_current'] == 1].set_index('customer_id', drop=False)\n\n    stg = stg.sort_values('customer_id').reset_index(drop=True)\n\n    create_flags = []\n    has_current_flags = []\n    for _, row in stg.iterrows():\n        cid = row['customer_id']\n        new_seg = row['segment']\n        if cid in current.index:\n            cur_row = current.loc[cid]\n            # If duplicate index entries exist (shouldn't per invariant), take first\n            if isinstance(cur_row, pd.DataFrame):\n                cur_row = cur_row.iloc[0]\n            cur_seg = cur_row['segment']\n            has_cur = True\n        else:\n            cur_seg = None\n            has_cur = False\n\n        if not has_cur:\n            create = True\n        else:\n            cur_is_null = pd.isna(cur_seg)\n            new_is_null = pd.isna(new_seg)\n            if cur_is_null and new_is_null:\n                create = False\n            elif cur_is_null != new_is_null:\n                create = True\n            else:\n                create = (cur_seg != new_seg)\n\n        create_flags.append(create)\n        has_current_flags.append(has_cur)\n\n    stg['_create'] = create_flags\n    stg['_has_current'] = has_current_flags\n\n    creating = stg[stg['_create']].copy()\n    creating = creating.sort_values('customer_id').reset_index(drop=True)\n    creating['_rn'] = range(1, len(creating) + 1)\n    creating['customer_sk'] = max_sk + creating['_rn']\n\n    # Expire current rows for customers that get a new version.\n    dim_out = dim.copy()\n    expire_ids = creating.loc[creating['_has_current'], 'customer_id'].tolist()\n    if len(dim_out) > 0:\n        mask_expire = (dim_out['is_current'] == 1) & (dim_out['customer_id'].isin(expire_ids))\n    else:\n        mask_expire = pd.Series([], dtype=bool)\n\n    if mask_expire.any():\n        upd_map = creating.set_index('customer_id')['update_date']\n        dim_out.loc[mask_expire, 'eff_end_date'] = dim_out.loc[mask_expire, 'customer_id'].map(upd_map)\n        dim_out.loc[mask_expire, 'is_current'] = 0\n\n    new_rows = pd.DataFrame({\n        'customer_sk': creating['customer_sk'],\n        'customer_id': creating['customer_id'],\n        'segment': creating['segment'],\n        'eff_start_date': creating['update_date'],\n        'eff_end_date': pd.NaT,\n        'is_current': 1,\n    })\n\n    dim_result = pd.concat([dim_out, new_rows], ignore_index=True, sort=False)\n    dim_result = dim_result[['customer_sk', 'customer_id', 'segment',\n                              'eff_start_date', 'eff_end_date', 'is_current']]\n\n    # Step 2: key facts against the updated dimension.\n    def find_sk(cid, txn_date):\n        candidates = dim_result[dim_result['customer_id'] == cid]\n        for _, r in candidates.iterrows():\n            start = r['eff_start_date']\n            end = r['eff_end_date']\n            if pd.isna(start):\n                continue\n            if start <= txn_date and (pd.isna(end) or txn_date < end):\n                return r['customer_sk']\n        return -1\n\n    if len(fact) > 0:\n        fact['customer_sk'] = fact.apply(\n            lambda r: find_sk(r['customer_id'], r['txn_date']), axis=1\n        )\n    else:\n        fact['customer_sk'] = pd.Series([], dtype='int64')\n\n    fact_out = fact[['txn_id', 'custom",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1162,
+   "tokens_out": 2625,
+   "usd": 0.042861,
+   "wall_s": 24.01876473426819
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6729,
+  "tokens_out": 15895,
+  "usd": 0.258612,
+  "wall_s": 145.30099892616272
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

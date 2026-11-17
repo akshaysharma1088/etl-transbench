@@ -1,0 +1,67 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _sig(city, tier):\n    \"\"\"Compute the legacy row signature SIG(city, tier).\"\"\"\n    c = '' if pd.isna(city) else str(city)\n    t = '' if pd.isna(tier) else str(tier)\n    return c.rstrip() + '|' + t.rstrip()\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_MEMBER'].copy()\n    stg = inputs['STG_MEMBER'].copy()\n\n    out_cols = ['member_id', 'city', 'tier', 'eff_start_date', 'eff_end_date', 'is_current']\n\n    # Work with list-of-dict records so we can mutate \"in place\" like the\n    # procedural UPDATE statements in the legacy SP.\n    records = dim.to_dict('records')\n\n    # Map member_id -> index of the currently-active row (is_current == 1).\n    current_idx = {}\n    for i, r in enumerate(records):\n        if r.get('is_current') == 1:\n            current_idx[r['member_id']] = i\n\n    new_rows = []\n\n    for _, s in stg.iterrows():\n        mid = s['member_id']\n        s_city = s['city']\n        s_tier = s['tier']\n        s_update_date = s['update_date']\n\n        if mid in current_idx:\n            idx = current_idx[mid]\n            c = records[idx]\n\n            if _sig(s_city, s_tier) != _sig(c.get('city'), c.get('tier')):\n                # Close out the prior current row.\n                records[idx]['eff_end_date'] = s_update_date\n                records[idx]['is_current'] = 0\n\n                # Insert new current version, storing staged values exactly.\n                new_rows.append({\n                    'member_id': mid,\n                    'city': s_city,\n                    'tier': s_tier,\n                    'eff_start_date': s_update_date,\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                })\n            # else: signatures match -> no-op, existing row untouched.\n        else:\n            # No current row for this member -> straight insert.\n            new_rows.append({\n                'member_id': mid,\n                'city': s_city,\n                'tier': s_tier,\n                'eff_start_date': s_update_date,\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n\n    all_rows = records + new_rows\n\n    if all_rows:\n        result = pd.DataFrame(all_rows, columns=out_cols)\n    else:\n        result = pd.DataFrame(columns=out_cols)\n\n    return {'dim_member_out': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1114,
+   "tokens_out": 2279,
+   "usd": 0.037527,
+   "wall_s": 19.288623094558716
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5789,
+  "tokens_out": 10743,
+  "usd": 0.178512,
+  "wall_s": 103.11588287353516
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

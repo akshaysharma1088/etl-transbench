@@ -1,0 +1,67 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t3e_effective_lookup_route",
+ "category": "T3",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 4,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    price_list = inputs[\"price_list\"].copy()\n\n    # ---- expression: sku_norm = UPPER(TRIM(sku)) ----\n    def norm_sku(x):\n        if pd.isna(x):\n            return np.nan\n        return str(x).strip().upper()\n\n    orders[\"sku_norm\"] = orders[\"sku\"].apply(norm_sku)\n\n    # normalize price_list sku for matching\n    price_list[\"_sku_norm_pl\"] = price_list[\"sku\"].apply(norm_sku)\n\n    # preserve original order index\n    orders = orders.reset_index(drop=True)\n    orders[\"_row_id\"] = orders.index\n\n    # ---- lookup ----\n    # only rows with non-null sku_norm can match\n    candidates = orders[orders[\"sku_norm\"].notna()][[\"_row_id\", \"sku_norm\", \"order_date\"]].merge(\n        price_list[[\"list_id\", \"_sku_norm_pl\", \"unit_price\", \"valid_from\"]],\n        left_on=\"sku_norm\",\n        right_on=\"_sku_norm_pl\",\n        how=\"inner\",\n    )\n\n    # apply condition: valid_from <= order_date\n    candidates = candidates[candidates[\"valid_from\"] <= candidates[\"order_date\"]]\n\n    # tie-break: greatest valid_from, then lowest list_id\n    if not candidates.empty:\n        candidates = candidates.sort_values(\n            by=[\"_row_id\", \"valid_from\", \"list_id\"],\n            ascending=[True, False, True],\n        )\n        best = candidates.groupby(\"_row_id\", as_index=False).first()\n    else:\n        best = candidates.assign(unit_price=pd.Series(dtype=float))\n\n    best = best[[\"_row_id\", \"unit_price\"]]\n\n    df = orders.merge(best, on=\"_row_id\", how=\"left\")\n\n    matched_mask = df[\"unit_price\"].notna()\n    df[\"price_flag\"] = np.where(matched_mask, \"OK\", \"NO_PRICE\")\n    df[\"unit_price\"] = np.where(matched_mask, df[\"unit_price\"], 0)\n\n    # ---- expression: ext_amount = qty * unit_price ----\n    df[\"ext_amount\"] = df[\"qty\"] * df[\"unit_price\"]\n    # if qty is NULL, ext_amount should be NULL (multiplication with NaN already yields NaN)\n\n    # ---- router ----\n    qty_isna = df[\"qty\"].isna()\n    cond_review = (df[\"price_flag\"] == \"NO_PRICE\") | qty_isna | (df[\"qty\"] >= 100)\n    cond_bulk = df[\"ext_amount\"] >= 1000\n    cond_small = df[\"ext_amount\"] < 50\n\n    cond_review = cond_review.fillna(False)\n    cond_bulk = cond_bulk.fillna(False)\n    cond_small = cond_small.fillna(False)\n\n    route = np.select(\n        [cond_review, cond_bulk, cond_small],\n        [\"REVIEW\", \"BULK\", \"SMALL\"],\n        default=\"STANDARD\",\n    )\n    df[\"route\"] = route\n\n    # ---- output1: order_enriched ----\n    order_enriched = df[[\"order_id\", \"sku_norm\", \"unit_price\", \"route\"]].copy()\n\n    # ---- aggregator ----\n    grouped = df.groupby([\"route\", \"order_date\"], dropna=False)\n    order_count = grouped.size().rename(\"order_count\")\n    total_ext = grouped[\"ext_amount\"].apply(lambda s: s.sum(min_count=0)).rename(\"total_ext\")\n\n    agg = pd.concat([order_count, total_ext], axis=1).reset_index()\n\n    route_daily = agg[[\"route\", \"order_date\", \"order_count\", \"total_ext\"]].copy()\n\n    return {\n        \"order_enriched\": order_enriched,\n        \"route_daily\": route_daily,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1407,
+   "tokens_out": 4000,
+   "usd": 0.064221,
+   "wall_s": 37.77445650100708
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 7179,
+  "tokens_out": 15130,
+  "usd": 0.248487,
+  "wall_s": 140.75452733039856
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

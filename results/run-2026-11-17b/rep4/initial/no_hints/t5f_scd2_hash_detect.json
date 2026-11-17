@@ -1,0 +1,16 @@
+{
+ "task": "t5f_scd2_hash_detect",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef _sig(value_city, value_tier):\n    \"\"\"Compute the row signature exactly as the legacy procedure does.\n\n    SIG(city, tier) = RTRIM(COALESCE(city, '')) || '|' || RTRIM(COALESCE(tier, ''))\n    NULL and '' collapse to the same thing; trailing spaces are stripped;\n    leading spaces and case are preserved; the '|' delimiter is not escaped.\n    \"\"\"\n    c = '' if pd.isna(value_city) else str(value_city)\n    t = '' if pd.isna(value_tier) else str(value_tier)\n    return c.rstrip() + '|' + t.rstrip()\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_MEMBER'].copy()\n    stg = inputs['STG_MEMBER']\n\n    # Ensure expected columns exist even if DIM_MEMBER arrives empty.\n    expected_cols = ['member_id', 'city', 'tier', 'eff_start_date',\n                      'eff_end_date', 'is_current']\n    for col in expected_cols:\n        if col not in dim.columns:\n            dim[col] = pd.Series(dtype=object)\n\n    new_rows = []\n\n    for _, s in stg.iterrows():\n        member_id = s['member_id']\n\n        mask = (dim['member_id'] == member_id) & (dim['is_current'] == 1)\n        current_idxs = dim.index[mask]\n\n        if len(current_idxs) == 0:\n            # No current row for this member -> plain insert.\n            new_rows.append({\n                'member_id': member_id,\n                'city': s['city'],\n                'tier': s['tier'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n        else:\n            # At most one staged record per member_id; if somehow multiple\n            # current rows exist, take the first found (legacy behaviour\n            # is undefined for that case, so we preserve a deterministic,\n            # minimal-surprise choice).\n            cidx = current_idxs[0]\n            c_city = dim.at[cidx, 'city']\n            c_tier = dim.at[cidx, 'tier']\n\n            if _sig(s['city'], s['tier']) != _sig(c_city, c_tier):\n                # Close out the current row.\n                dim.at[cidx, 'eff_end_date'] = s['update_date']\n                dim.at[cidx, 'is_current'] = 0\n\n                # Insert the new current row with staged values verbatim.\n                new_rows.append({\n                    'member_id': member_id,\n                    'city': s['city'],\n                    'tier': s['tier'],\n                    'eff_start_date': s['update_date'],\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                })\n            # else: signatures equal -> no-op, keep stored row untouched.\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=expected_cols)\n        result = pd.concat([dim, new_df], ignore_index=True, sort=False)\n    else:\n        result = dim\n\n    result = result[expected_cols]\n\n    return {'dim_member_out': result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1059,
+   "tokens_out": 2147,
+   "usd": 0.035382,
+   "wall_s": 18.660208463668823
+  }
+ ]
+}

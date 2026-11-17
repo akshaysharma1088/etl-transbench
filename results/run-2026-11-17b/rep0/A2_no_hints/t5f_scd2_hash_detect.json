@@ -1,0 +1,52 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _sig_val(v):\n    if pd.isna(v):\n        v = \"\"\n    else:\n        v = str(v)\n    return v.rstrip()\n\n\ndef _sig(city, tier):\n    return _sig_val(city) + \"|\" + _sig_val(tier)\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    # Case-insensitive / tolerant lookup of input relation by name.\n    if name in inputs:\n        return inputs[name]\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    key = name.lower()\n    if key in lower_map:\n        return inputs[lower_map[key]]\n    # try stripped variants\n    for k in inputs.keys():\n        if k.strip().lower() == key:\n            return inputs[k]\n    raise KeyError(name)\n\n\ndef run(inputs: dict) -> dict:\n    dim = _get_input(inputs, \"DIM_MEMBER\").copy()\n    stg = _get_input(inputs, \"STG_MEMBER\").copy()\n\n    # Ensure expected columns exist, preserve dtypes as much as possible.\n    cols = [\"member_id\", \"city\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    for c in cols:\n        if c not in dim.columns:\n            dim[c] = pd.NA\n\n    dim = dim.reset_index(drop=True)\n\n    # Build a lookup of current row index per member_id (first match if multiple).\n    current_idx_by_member = {}\n    for idx, row in dim.iterrows():\n        if row.get(\"is_current\") == 1:\n            mid = row[\"member_id\"]\n            if mid not in current_idx_by_member:\n                current_idx_by_member[mid] = idx\n\n    new_rows = []\n\n    for _, s in stg.iterrows():\n        mid = s[\"member_id\"]\n        s_city = s.get(\"city\", pd.NA)\n        s_tier = s.get(\"tier\", pd.NA)\n        s_update_date = s.get(\"update_date\", pd.NA)\n\n        if mid in current_idx_by_member:\n            idx = current_idx_by_member[mid]\n            c_city = dim.at[idx, \"city\"]\n            c_tier = dim.at[idx, \"tier\"]\n\n            sig_s = _sig(s_city, s_tier)\n            sig_c = _sig(c_city, c_tier)\n\n            if sig_s != sig_c:\n                # close out current row\n                dim.at[idx, \"eff_end_date\"] = s_update_date\n                dim.at[idx, \"is_current\"] = 0\n\n                new_rows.append({\n                    \"member_id\": mid,\n                    \"city\": s_city,\n                    \"tier\": s_tier,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NA,\n                    \"is_current\": 1,\n                })\n            # else: no-op, keep c as is\n        else:\n            # no current row for this member -> insert new\n            new_rows.append({\n                \"member_id\": mid,\n                \"city\": s_city,\n                \"tier\": s_tier,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NA,\n                \"is_current\": 1,\n            })\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=cols)\n        result = pd.concat([dim[cols], new_df], ignore_index=True)\n    else:\n        result = dim[cols].copy()\n\n    return {\"dim_member_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1059,
+   "tokens_out": 1431,
+   "usd": 0.024642,
+   "wall_s": 12.251075267791748
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2401,
+  "tokens_out": 1249,
+  "usd": 0.025938,
+  "wall_s": 9.071536540985107
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

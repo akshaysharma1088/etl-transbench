@@ -1,0 +1,52 @@
+{
+ "config": "A1_trace_only",
+ "rep": 4,
+ "task": "t5e_scd2_late_arriving",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    def get_input(d, name):\n        if name in d:\n            return d[name]\n        lname = name.lower()\n        for k, v in d.items():\n            if k.lower() == lname:\n                return v\n        raise KeyError(name)\n\n    dim = get_input(inputs, 'DIM_ACCOUNT').copy()\n    stg = get_input(inputs, 'STG_ACCOUNT').copy()\n\n    # Normalize dtypes\n    dim['eff_start_date'] = pd.to_datetime(dim['eff_start_date'])\n    dim['eff_end_date'] = pd.to_datetime(dim['eff_end_date'])\n    stg['update_date'] = pd.to_datetime(stg['update_date'])\n\n    # Build mutable in-memory list of version dicts\n    versions = []\n    for _, row in dim.iterrows():\n        versions.append({\n            'account_id': row['account_id'],\n            'plan': row['plan'],\n            'eff_start_date': row['eff_start_date'],\n            'eff_end_date': row['eff_end_date'],\n            'is_current': int(row['is_current']) if not pd.isna(row['is_current']) else row['is_current']\n        })\n\n    # Order staging rows: account_id, update_date ascending (stable sort)\n    stg_sorted = stg.sort_values(['account_id', 'update_date'], kind='mergesort')\n\n    def plans_equal(a, b):\n        a_null = pd.isna(a)\n        b_null = pd.isna(b)\n        if a_null and b_null:\n            return True\n        if a_null != b_null:\n            return False\n        return a == b\n\n    for _, s in stg_sorted.iterrows():\n        acc = s['account_id']\n        plan = s['plan']\n        upd = s['update_date']\n\n        acc_versions = [v for v in versions if v['account_id'] == acc]\n\n        if not acc_versions:\n            versions.append({\n                'account_id': acc,\n                'plan': plan,\n                'eff_start_date': upd,\n                'eff_end_date': pd.NaT,\n                'is_current': 1\n            })\n            continue\n\n        # find the version that covers upd: start <= upd < end (end NaT = open/infinite)\n        covering = None\n        for v in acc_versions:\n            start = v['eff_start_date']\n            end = v['eff_end_date']\n            if start <= upd and (pd.isna(end) or upd < end):\n                covering = v\n                break\n\n        if covering is None:\n            # upd is earlier than the account's earliest version start\n            f = min(acc_versions, key=lambda v: v['eff_start_date'])\n            versions.append({\n                'account_id': acc,\n                'plan': plan,\n                'eff_start_date': upd,\n                'eff_end_date': f['eff_start_date'],\n                'is_current': 0\n            })\n            continue\n\n        if plans_equal(covering['plan'], plan):\n            # unchanged -> no-op\n            continue\n\n        if upd == covering['eff_start_date']:\n            # same-day correction, no new version\n            covering['plan'] = plan\n            continue\n\n        # split the covering version at upd\n        versions.append({\n            'account_id': acc,\n            'plan': plan,\n            'eff_start_date': upd,\n            'eff_end_date': covering['eff_end_date'],\n            'is_current': covering['is_current']\n        })\n        covering['eff_end_date'] = upd\n        covering['is_current'] = 0\n\n    out = pd.DataFrame(\n        versions,\n        columns=['account_id', 'plan', 'eff_start_date', 'eff_end_date', 'is_current']\n    )\n\n    if not out.empty:\n        out = out.sort_values(['account_id', 'eff_start_date'], kind='mergesort').reset_index(drop=True)\n\n    return {'dim_account_out': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1165,
+   "tokens_out": 3208,
+   "usd": 0.051615,
+   "wall_s": 26.50430393218994
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2742,
+  "tokens_out": 1395,
+  "usd": 0.029151,
+  "wall_s": 10.751279830932617
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

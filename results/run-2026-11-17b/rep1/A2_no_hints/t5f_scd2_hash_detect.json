@@ -1,0 +1,52 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _sig(city, tier):\n    \"\"\"Compute the legacy row signature:\n    RTRIM(COALESCE(city, '')) || '|' || RTRIM(COALESCE(tier, ''))\n    \"\"\"\n    def clean(x):\n        if x is None:\n            return ''\n        try:\n            if pd.isna(x):\n                return ''\n        except (TypeError, ValueError):\n            pass\n        s = str(x)\n        return s.rstrip(' ')\n\n    return clean(city) + '|' + clean(tier)\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    \"\"\"Case-insensitive / flexible lookup of an input DataFrame by name.\"\"\"\n    if name in inputs:\n        return inputs[name]\n    # Try case-insensitive match\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    if name.lower() in lower_map:\n        return inputs[lower_map[name.lower()]]\n    raise KeyError(name)\n\n\ndef run(inputs: dict) -> dict:\n    dim = _get_input(inputs, 'DIM_MEMBER').copy()\n    stg = _get_input(inputs, 'STG_MEMBER').copy()\n\n    # Work with a list of dict records so we can mutate \"in place\"\n    # the same way the legacy UPDATE statement would.\n    dim_records = dim.to_dict('records')\n\n    # Map member_id -> index of the current (is_current == 1) row, if any.\n    current_idx = {}\n    for i, r in enumerate(dim_records):\n        is_cur = r.get('is_current')\n        try:\n            is_cur_flag = int(is_cur) == 1\n        except (TypeError, ValueError):\n            is_cur_flag = False\n        if is_cur_flag:\n            # legacy assumption: at most one current row per member_id;\n            # if duplicates exist, keep the first one encountered.\n            current_idx.setdefault(r.get('member_id'), i)\n\n    new_records = []\n\n    for _, s in stg.iterrows():\n        mid = s['member_id']\n        s_city = s['city']\n        s_tier = s['tier']\n        s_update_date = s['update_date']\n\n        if mid in current_idx:\n            idx = current_idx[mid]\n            c = dim_records[idx]\n\n            if _sig(s_city, s_tier) != _sig(c.get('city'), c.get('tier')):\n                # Close out the current row.\n                dim_records[idx]['eff_end_date'] = s_update_date\n                dim_records[idx]['is_current'] = 0\n\n                # Insert new current row with staged values exactly as given.\n                new_records.append({\n                    'member_id': mid,\n                    'city': s_city,\n                    'tier': s_tier,\n                    'eff_start_date': s_update_date,\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                })\n            # else: signatures match -> no-op, current row stays as-is.\n        else:\n            # No current row for this member_id -> plain insert.\n            new_records.append({\n                'member_id': mid,\n                'city': s_city,\n                'tier': s_tier,\n                'eff_start_date': s_update_date,\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n\n    all_records = dim_records + new_records\n\n    out_cols = ['member_id', 'city', 'tier', 'eff_start_date', 'eff_end_date', 'is_current']\n    out = pd.DataFrame(all_records, columns=out_cols)\n\n    return {'dim_member_out': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1059,
+   "tokens_out": 2378,
+   "usd": 0.038847,
+   "wall_s": 20.213446855545044
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2458,
+  "tokens_out": 1263,
+  "usd": 0.026319,
+  "wall_s": 9.149522304534912
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

@@ -1,0 +1,52 @@
+{
+ "config": "B2_retranslate",
+ "rep": 2,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    inbound = inputs[\"inbound\"]\n    target_snapshot = inputs[\"target_snapshot\"]\n\n    # Step 1: build STG_NEW\n    filtered = inbound[inbound[\"qty\"] > 0]\n\n    stg_new = (\n        filtered.groupby([\"product_id\", \"batch_date\"], as_index=False)\n        .agg(\n            total_qty=(\"qty\", \"sum\"),\n            max_unit_cost=(\"unit_cost\", \"max\"),\n        )\n    )\n\n    # Ensure column order matches target\n    stg_new = stg_new[[\"product_id\", \"batch_date\", \"total_qty\", \"max_unit_cost\"]]\n\n    # Step 2: delete rows in target_snapshot whose batch_date is in stg_new's distinct batch_dates\n    arriving_dates = set(stg_new[\"batch_date\"].unique())\n\n    if arriving_dates:\n        survivors = target_snapshot[~target_snapshot[\"batch_date\"].isin(arriving_dates)]\n    else:\n        survivors = target_snapshot\n\n    # Step 3: insert STG_NEW rows\n    result = pd.concat([survivors, stg_new], ignore_index=True)\n\n    return {\"target_snapshot\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 676,
+   "usd": 0.003778,
+   "wall_s": 4.585700511932373
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 656,
+  "tokens_out": 678,
+  "usd": 0.012138,
+  "wall_s": 6.679228067398071
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

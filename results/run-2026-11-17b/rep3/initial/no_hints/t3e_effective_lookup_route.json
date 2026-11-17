@@ -1,0 +1,16 @@
+{
+ "task": "t3e_effective_lookup_route",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1407,
+   "tokens_out": 4000,
+   "usd": 0.064221,
+   "wall_s": 40.24143648147583
+  }
+ ]
+}

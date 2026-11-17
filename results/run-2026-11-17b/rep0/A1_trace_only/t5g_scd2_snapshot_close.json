@@ -1,0 +1,52 @@
+{
+ "config": "A1_trace_only",
+ "rep": 0,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    \"\"\"Case-insensitive / flexible lookup for input relation names.\"\"\"\n    if name in inputs:\n        return inputs[name]\n    name_lower = name.lower()\n    for k in inputs:\n        if k.lower() == name_lower:\n            return inputs[k]\n    raise KeyError(name)\n\n\ndef run(inputs: dict) -> dict:\n    dim_store = _get_input(inputs, \"DIM_STORE\").copy()\n    stg = _get_input(inputs, \"STG_STORE_FULL\").copy()\n    batch_control = _get_input(inputs, \"BATCH_CONTROL\").copy()\n\n    # Expected output column order\n    cols = [\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n\n    # Make sure dim_store has all expected columns, in order\n    out = dim_store.copy()\n    for c in cols:\n        if c not in out.columns:\n            out[c] = pd.NA\n    out = out[cols]\n\n    # Single batch date\n    b = batch_control[\"batch_date\"].iloc[0]\n\n    # Distinct snapshot rows (exact duplicates collapsed)\n    S = stg[[\"store_id\", \"region\", \"format\"]].drop_duplicates().reset_index(drop=True)\n\n    def null_safe_eq(a, b):\n        a_null = pd.isna(a)\n        b_null = pd.isna(b)\n        if a_null and b_null:\n            return True\n        if a_null != b_null:\n            return False\n        return a == b\n\n    # Map store_id -> index of its current (is_current == 1) row in `out`\n    current_idx = out.index[out[\"is_current\"] == 1]\n    current_by_store = {}\n    for idx in current_idx:\n        store_id = out.at[idx, \"store_id\"]\n        current_by_store[store_id] = idx\n\n    s_store_ids = set(S[\"store_id\"].tolist())\n\n    new_rows = []\n\n    for _, srow in S.iterrows():\n        store_id = srow[\"store_id\"]\n        region = srow[\"region\"]\n        fmt = srow[\"format\"]\n\n        if store_id in current_by_store:\n            idx = current_by_store[store_id]\n            crow = out.loc[idx]\n            same = null_safe_eq(crow[\"region\"], region) and null_safe_eq(crow[\"format\"], fmt)\n\n            if not same:\n                # Close the old current row\n                out.at[idx, \"eff_end_date\"] = b\n                out.at[idx, \"is_current\"] = 0\n\n                # Insert new current version\n                new_rows.append({\n                    \"store_id\": store_id,\n                    \"region\": region,\n                    \"format\": fmt,\n                    \"eff_start_date\": b,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            # else: attributes unchanged -> no-op, no new version\n        else:\n            # No current row: brand-new store OR reactivated store.\n            # Always gets a new version, regardless of prior closed attributes.\n            new_rows.append({\n                \"store_id\": store_id,\n                \"region\": region,\n                \"format\": fmt,\n                \"eff_start_date\": b,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n\n    # Close current rows for stores no longer present in the snapshot\n    for store_id, idx in current_by_store.items():\n        if store_id not in s_store_ids:\n            out.at[idx, \"eff_end_date\"] = b\n            out.at[idx, \"is_current\"] = 0\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=cols)\n        out = pd.concat([out, new_df], ignore_index=True)\n\n    out = out[cols].reset_index(drop=True)\n\n    return {\"dim_store_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1094,
+   "tokens_out": 2998,
+   "usd": 0.048252,
+   "wall_s": 24.479207515716553
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2601,
+  "tokens_out": 1550,
+  "usd": 0.031053,
+  "wall_s": 11.80809473991394
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

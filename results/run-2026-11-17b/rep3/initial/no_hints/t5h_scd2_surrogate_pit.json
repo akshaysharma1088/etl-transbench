@@ -1,0 +1,16 @@
+{
+ "task": "t5h_scd2_surrogate_pit",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1107,
+   "tokens_out": 4000,
+   "usd": 0.063321,
+   "wall_s": 39.209738969802856
+  }
+ ]
+}

@@ -1,0 +1,67 @@
+{
+ "config": "B2_retranslate",
+ "rep": 0,
+ "task": "t5e_scd2_late_arriving",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _plan_equal(p1, p2):\n    n1 = pd.isna(p1)\n    n2 = pd.isna(p2)\n    if n1 and n2:\n        return True\n    if n1 or n2:\n        return False\n    return p1 == p2\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_ACCOUNT\"].copy()\n    stg = inputs[\"STG_ACCOUNT\"].copy()\n\n    # normalize date columns to pandas Timestamp (NaT for null end dates)\n    dim[\"eff_start_date\"] = pd.to_datetime(dim[\"eff_start_date\"])\n    dim[\"eff_end_date\"] = pd.to_datetime(dim[\"eff_end_date\"])\n    stg[\"update_date\"] = pd.to_datetime(stg[\"update_date\"])\n\n    # Build in-memory structure: account_id -> list of version dicts\n    account_versions = {}\n\n    for _, row in dim.iterrows():\n        aid = row[\"account_id\"]\n        ver = {\n            \"plan\": row[\"plan\"],\n            \"eff_start_date\": row[\"eff_start_date\"],\n            \"eff_end_date\": row[\"eff_end_date\"] if pd.notna(row[\"eff_end_date\"]) else None,\n            \"is_current\": int(row[\"is_current\"]),\n        }\n        account_versions.setdefault(aid, []).append(ver)\n\n    # Sort staging by account_id, update_date ascending\n    stg_sorted = stg.sort_values(by=[\"account_id\", \"update_date\"], kind=\"mergesort\").reset_index(drop=True)\n\n    for _, srow in stg_sorted.iterrows():\n        aid = srow[\"account_id\"]\n        s_plan = srow[\"plan\"]\n        s_date = srow[\"update_date\"]\n\n        if aid not in account_versions:\n            account_versions[aid] = []\n\n        versions = account_versions[aid]\n\n        if len(versions) == 0:\n            versions.append({\n                \"plan\": s_plan,\n                \"eff_start_date\": s_date,\n                \"eff_end_date\": None,\n                \"is_current\": 1,\n            })\n            continue\n\n        # find version covering s_date: start <= d < end (end None = open/infinite)\n        covering = None\n        for v in versions:\n            start = v[\"eff_start_date\"]\n            end = v[\"eff_end_date\"]\n            if start <= s_date and (end is None or s_date < end):\n                covering = v\n                break\n\n        if covering is None:\n            # earliest version by eff_start_date\n            f = min(versions, key=lambda v: v[\"eff_start_date\"])\n            versions.append({\n                \"plan\": s_plan,\n                \"eff_start_date\": s_date,\n                \"eff_end_date\": f[\"eff_start_date\"],\n                \"is_current\": 0,\n            })\n        else:\n            v = covering\n            if _plan_equal(v[\"plan\"], s_plan):\n                # no-op\n                pass\n            elif s_date == v[\"eff_start_date\"]:\n                v[\"plan\"] = s_plan\n            else:\n                # split\n                versions.append({\n                    \"plan\": s_plan,\n                    \"eff_start_date\": s_date,\n                    \"eff_end_date\": v[\"eff_end_date\"],\n                    \"is_current\": v[\"is_current\"],\n                })\n                v[\"eff_end_date\"] = s_date\n                v[\"is_current\"] = 0\n\n    # Build output\n    out_rows = []\n    for aid, versions in account_versions.items():\n        for v in versions:\n            out_rows.append({\n                \"account_id\": aid,\n                \"plan\": v[\"plan\"],\n                \"eff_start_date\": v[\"eff_start_date\"],\n                \"eff_end_date\": v[\"eff_end_date\"],\n                \"is_current\": v[\"is_current\"],\n            })\n\n    out_df = pd.DataFrame(out_rows, columns=[\"account_id\", \"plan\", \"eff_start_date\", \"eff_end_date\", \"is_current\"])\n\n    if not out_df.empty:\n        out_df = out_df.sort_values(\n            by=[\"account_id\", \"eff_start_date\"], kind=\"mergesort\"\n        ).reset_index(drop=True)\n        out_df[\"is_current\"] = out_df[\"is_current\"].astype(int)\n\n    return {\"dim_account_out\": out_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1165,
+   "tokens_out": 3736,
+   "usd": 0.059535,
+   "wall_s": 31.39962911605835
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4660,
+  "tokens_out": 13932,
+  "usd": 0.22296,
+  "wall_s": 119.54844284057617
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "task": "t1c_teradata_intdiv",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\nfrom math import trunc\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicates Teradata-style integer division (truncate toward zero) and\n    ZEROIFNULL semantics for balance bucket calculation.\n    \"\"\"\n    acct_balance = inputs['acct_balance'].copy()\n    \n    # Filter: WHERE acct_type <> 'CLOSED'\n    result = acct_balance[acct_balance['acct_type'] != 'CLOSED'].copy()\n    \n    # ZEROIFNULL(balance_cents) / 100 AS balance_bucket\n    # ZEROIFNULL: replace NULL with 0 before division\n    balance_cents_filled = result['balance_cents'].fillna(0)\n    result['balance_bucket'] = balance_cents_filled.apply(\n        lambda x: trunc(x / 100) if pd.notna(x) else trunc(0 / 100)\n    )\n    \n    # CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER)\n    # Teradata integer division: truncate toward zero (not floor)\n    fx_rate_filled = result['fx_rate'].fillna(0)\n    balance_cents_filled = result['balance_cents'].fillna(0)\n    \n    result['fx_units'] = (balance_cents_filled * fx_rate_filled / 100).apply(\n        lambda x: int(trunc(x)) if pd.notna(x) else 0\n    )\n    \n    # Select only the required columns\n    result = result[['account_id', 'balance_bucket', 'fx_units']]\n    \n    return {'balance_buckets': result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 373,
+   "tokens_out": 448,
+   "usd": 0.002613,
+   "wall_s": 2.902845859527588
+  }
+ ]
+}

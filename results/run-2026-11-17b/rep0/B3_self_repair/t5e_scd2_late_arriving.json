@@ -1,0 +1,67 @@
+{
+ "config": "B3_self_repair",
+ "rep": 0,
+ "task": "t5e_scd2_late_arriving",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _plan_equal(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return True\n    if a_null or b_null:\n        return False\n    return a == b\n\n\ndef _covers(start, end, d):\n    if end is None or pd.isna(end):\n        return start <= d\n    return (start <= d) and (d < end)\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_ACCOUNT\"].copy()\n    stg = inputs[\"STG_ACCOUNT\"].copy()\n\n    # Normalize dtypes for processing\n    if not dim.empty:\n        dim[\"eff_start_date\"] = pd.to_datetime(dim[\"eff_start_date\"])\n        dim[\"eff_end_date\"] = pd.to_datetime(dim[\"eff_end_date\"])\n        dim[\"is_current\"] = dim[\"is_current\"].astype(int)\n    if not stg.empty:\n        stg[\"update_date\"] = pd.to_datetime(stg[\"update_date\"])\n\n    # Build initial versions per account from DIM_ACCOUNT\n    versions_by_account = {}\n    if not dim.empty:\n        for acct_id, grp in dim.groupby(\"account_id\"):\n            versions = []\n            for _, row in grp.iterrows():\n                versions.append(\n                    {\n                        \"plan\": row[\"plan\"],\n                        \"eff_start_date\": row[\"eff_start_date\"],\n                        \"eff_end_date\": row[\"eff_end_date\"] if not pd.isna(row[\"eff_end_date\"]) else None,\n                        \"is_current\": int(row[\"is_current\"]),\n                    }\n                )\n            versions_by_account[acct_id] = versions\n\n    # Build staged records per account, sorted by update_date ascending\n    staged_by_account = {}\n    if not stg.empty:\n        stg_sorted = stg.sort_values([\"account_id\", \"update_date\"], kind=\"mergesort\")\n        for acct_id, grp in stg_sorted.groupby(\"account_id\", sort=False):\n            records = []\n            for _, row in grp.iterrows():\n                records.append({\"plan\": row[\"plan\"], \"update_date\": row[\"update_date\"]})\n            staged_by_account[acct_id] = records\n\n    all_account_ids = set(versions_by_account.keys()) | set(staged_by_account.keys())\n\n    result_rows = []\n\n    for acct_id in all_account_ids:\n        versions = list(versions_by_account.get(acct_id, []))\n        # deep-ish copy of dict entries since we mutate them\n        versions = [dict(v) for v in versions]\n        staged = staged_by_account.get(acct_id, [])\n\n        for s in staged:\n            s_plan = s[\"plan\"]\n            s_date = s[\"update_date\"]\n\n            if not versions:\n                versions.append(\n                    {\n                        \"plan\": s_plan,\n                        \"eff_start_date\": s_date,\n                        \"eff_end_date\": None,\n                        \"is_current\": 1,\n                    }\n                )\n                continue\n\n            v = None\n            for ver in versions:\n                if _covers(ver[\"eff_start_date\"], ver[\"eff_end_date\"], s_date):\n                    v = ver\n                    break\n\n            if v is None:\n                # earlier than the account's earliest version\n                f = min(versions, key=lambda x: x[\"eff_start_date\"])\n                versions.append(\n                    {\n                        \"plan\": s_plan,\n                        \"eff_start_date\": s_date,\n                        \"eff_end_date\": f[\"eff_start_date\"],\n                        \"is_current\": 0,\n                    }\n                )\n            else:\n                if _plan_equal(v[\"plan\"], s_plan):\n                    pass\n                elif s_date == v[\"eff_start_date\"]:\n                    v[\"plan\"] = s_plan\n                else:\n                    versions.append(\n                        {\n                            \"plan\": s_plan,\n                            \"eff_start_date\": s_date,\n                            \"eff_end_date\": v[\"eff_end_date\"],\n                            \"is_current\": v[\"is_current\"],\n                        }\n                    )\n                    v[\"eff_end_date\"] = s_date\n                    v[\"is_current\"] = 0\n\n        for ver in versions:\n            result_rows.append(\n                {\n                    \"account_id\": acct_id,\n                    \"plan\": ver[\"plan\"],\n                    \"eff_start_date\": ver[\"eff_start_date\"],\n                    \"eff_end_date\": ver[\"eff_end_date\"],\n                    \"is_current\": int(ver[\"is_current\"]),\n                }\n            )\n\n    out_cols = [\"account_id\", \"plan\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n\n    if result_rows:\n        out_df = pd.DataFrame(result_rows, columns=out_cols)\n        out_df[\"eff_start_date\"] = pd.to_datetime(out_df[\"eff_start_date\"])\n        out_df[\"eff_end_date\"] = pd.to_datetime(out_df[\"eff_end_date\"])\n        out_df[\"is_current\"] = out_df[\"is_current\"].astype(int)\n        out_df = out_df.sort_values(\n            [\"account_id\", \"eff_start_date\"], kind=\"mergesort\"\n        ).reset_index(drop=True)\n    else:\n        out_df = pd.DataFrame(columns=out_cols)\n\n    return {\"dim_account_out\": out_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1165,
+   "tokens_out": 3736,
+   "usd": 0.059535,
+   "wall_s": 31.39962911605835
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6130,
+  "tokens_out": 15432,
+  "usd": 0.24987,
+  "wall_s": 154.27298521995544
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

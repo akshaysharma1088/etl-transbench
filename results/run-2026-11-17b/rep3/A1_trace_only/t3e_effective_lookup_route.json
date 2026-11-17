@@ -1,0 +1,52 @@
+{
+ "config": "A1_trace_only",
+ "rep": 3,
+ "task": "t3e_effective_lookup_route",
+ "category": "T3",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    price_list = inputs[\"price_list\"].copy()\n\n    # ---------------------------------------------------------------\n    # 1. expression: sku_norm = UPPER(TRIM(sku))  (NULL sku -> NULL sku_norm)\n    # ---------------------------------------------------------------\n    def norm_sku(x):\n        if pd.isna(x):\n            return np.nan\n        return str(x).strip().upper()\n\n    orders[\"sku_norm\"] = orders[\"sku\"].apply(norm_sku)\n    price_list[\"sku_norm_pl\"] = price_list[\"sku\"].apply(norm_sku)\n\n    orders = orders.reset_index(drop=True)\n    orders[\"_row_id\"] = orders.index\n\n    # ---------------------------------------------------------------\n    # 2. lookup: price_list matched on sku_norm and valid_from <= order_date\n    #    tie-break: greatest valid_from, then lowest list_id\n    #    NULL sku_norm never matches (NaN != NaN in merge, so it's excluded\n    #    automatically by the inner merge below)\n    # ---------------------------------------------------------------\n    cand = orders[[\"_row_id\", \"sku_norm\", \"order_date\"]].merge(\n        price_list[[\"list_id\", \"sku_norm_pl\", \"unit_price\", \"valid_from\"]],\n        left_on=\"sku_norm\",\n        right_on=\"sku_norm_pl\",\n        how=\"inner\",\n    )\n\n    # Keep only rows where the price is valid as of the order date.\n    cand = cand[cand[\"valid_from\"] <= cand[\"order_date\"]]\n\n    # Tie-break: greatest valid_from, then lowest list_id.\n    cand = cand.sort_values(\n        [\"valid_from\", \"list_id\"], ascending=[False, True]\n    )\n    best = cand.groupby(\"_row_id\", as_index=False).first()\n\n    # ---------------------------------------------------------------\n    # 3. attach lookup result back to every order row (left join)\n    # ---------------------------------------------------------------\n    result = orders.merge(\n        best[[\"_row_id\", \"unit_price\"]], on=\"_row_id\", how=\"left\"\n    )\n\n    price_flag = np.where(result[\"unit_price\"].notna(), \"OK\", \"NO_PRICE\")\n    result[\"price_flag\"] = price_flag\n    result[\"unit_price\"] = result[\"unit_price\"].fillna(0)\n\n    # ---------------------------------------------------------------\n    # 4. expression: ext_amount = qty * unit_price (NULL qty -> NULL ext_amount)\n    # ---------------------------------------------------------------\n    qty_is_null = result[\"qty\"].isna()\n    result[\"ext_amount\"] = np.where(\n        qty_is_null, np.nan, result[\"qty\"] * result[\"unit_price\"]\n    )\n\n    # ---------------------------------------------------------------\n    # 5. router: evaluate rules in order, first true wins; NULL predicate\n    #    is not true. Default route = STANDARD.\n    # ---------------------------------------------------------------\n    qty_ge_100 = result[\"qty\"] >= 100  # NaN -> False, but handled via qty_is_null OR\n    cond_review = (\n        (result[\"price_flag\"] == \"NO_PRICE\")\n        | qty_is_null\n        | qty_ge_100.fillna(False)\n    )\n\n    ext = result[\"ext_amount\"]\n    cond_bulk = (ext >= 1000).fillna(False)\n    cond_small = (ext < 50).fillna(False)\n\n    route = np.select(\n        [cond_review, cond_bulk, cond_small],\n        [\"REVIEW\", \"BULK\", \"SMALL\"],\n        default=\"STANDARD\",\n    )\n    result[\"route\"] = route\n\n    # ---------------------------------------------------------------\n    # 6. output1: order_enriched - one row per input order\n    # ---------------------------------------------------------------\n    order_enriched = result[\n        [\"order_id\", \"sku_norm\", \"unit_price\", \"route\"]\n    ].copy()\n\n    # ---------------------------------------------------------------\n    # 7. aggregator: group by route, order_date\n    #    order_count = COUNT(*); total_ext = SUM(ext_amount) ignoring NULLs,\n    #    all-NULL group -> 0\n    # ---------------------------------------------------------------\n    grouped = result.groupby([\"route\", \"order_date\"], dropna=False)\n    order_count = grouped.size().rename(\"order_count\")\n    total_ext = grouped[\"ext_amount\"].sum(min_count=0).rename(\"total_ext\")\n    total_ext = total_ext.fillna(0)\n\n    route_daily = pd.concat([order_count, total_ext], axis=1).reset_index()\n    route_daily = route_daily[[\"route\", \"order_date\", \"order_count\", \"total_ext\"]]\n\n    return {\n        \"order_enriched\": order_enriched,\n        \"route_daily\": route_daily,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1407,
+   "tokens_out": 4000,
+   "usd": 0.064221,
+   "wall_s": 38.63086271286011
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2405,
+  "tokens_out": 3023,
+  "usd": 0.05256,
+  "wall_s": 25.601096391677856
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

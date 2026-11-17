@@ -1,0 +1,47 @@
+{
+ "config": "LEGATO",
+ "rep": 4,
+ "task": "t6e_session_heartbeat_logout",
+ "category": "T6",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"app_events\"].copy()\n\n    # Ensure proper dtypes\n    df[\"event_ts\"] = pd.to_datetime(df[\"event_ts\"])\n    df[\"event_id\"] = df[\"event_id\"].astype(\"int64\")\n    df[\"user_id\"] = df[\"user_id\"].astype(\"int64\")\n    df[\"event_type\"] = df[\"event_type\"].astype(str)\n\n    # Order within user by event_ts, event_id as required\n    df = df.sort_values([\"user_id\", \"event_ts\", \"event_id\"], kind=\"mergesort\")\n\n    thirty_min = pd.Timedelta(minutes=30)\n\n    results = []\n\n    def flush(user_id, sess):\n        results.append(\n            {\n                \"user_id\": user_id,\n                \"session_num\": sess[\"session_num\"],\n                \"session_start\": sess[\"start\"],\n                \"session_end\": sess[\"last_activity\"],\n                \"event_count\": sess[\"event_count\"],\n                \"heartbeat_count\": sess[\"heartbeat_count\"],\n            }\n        )\n\n    for user_id, group in df.groupby(\"user_id\", sort=False):\n        session_num = 0\n        open_session = None  # dict: session_num, start, last_activity, event_count, heartbeat_count\n\n        for row in group.itertuples(index=False):\n            ts = row.event_ts\n            etype = row.event_type\n\n            if etype == \"heartbeat\":\n                if open_session is not None and (ts - open_session[\"last_activity\"]) <= thirty_min:\n                    open_session[\"event_count\"] += 1\n                    open_session[\"heartbeat_count\"] += 1\n                # else: dropped, no effect\n                continue\n\n            # Activity event: 'view', 'click', or 'logout'\n            needs_new_session = (\n                open_session is None\n                or (ts - open_session[\"last_activity\"]) > thirty_min\n            )\n\n            if needs_new_session:\n                # If there is a currently open session that wasn't closed by logout\n                # but is being superseded due to the gap, finalize it first.\n                if open_session is not None:\n                    flush(user_id, open_session)\n\n                session_num += 1\n                open_session = {\n                    \"session_num\": session_num,\n                    \"start\": ts,\n                    \"last_activity\": ts,\n                    \"event_count\": 1,\n                    \"heartbeat_count\": 0,\n                }\n            else:\n                open_session[\"last_activity\"] = ts\n                open_session[\"event_count\"] += 1\n\n            if etype == \"logout\":\n                flush(user_id, open_session)\n                open_session = None\n\n        # End of user's events: flush any still-open session\n        if open_session is not None:\n            flush(user_id, open_session)\n\n    out_cols = [\n        \"user_id\",\n        \"session_num\",\n        \"session_start\",\n        \"session_end\",\n        \"event_count\",\n        \"heartbeat_count\",\n    ]\n\n    if results:\n        result_df = pd.DataFrame(results, columns=out_cols)\n    else:\n        result_df = pd.DataFrame(columns=out_cols)\n        result_df = result_df.astype(\n            {\n                \"user_id\": \"int64\",\n                \"session_num\": \"int64\",\n                \"event_count\": \"int64\",\n                \"heartbeat_count\": \"int64\",\n            }\n        )\n\n    return {\"user_sessions\": result_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 919,
+   "tokens_out": 2499,
+   "usd": 0.040242,
+   "wall_s": 20.56741976737976
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

@@ -1,0 +1,67 @@
+{
+ "config": "B2_retranslate",
+ "rep": 0,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _sig_part(val):\n    \"\"\"RTRIM(COALESCE(val, '')) semantics.\"\"\"\n    if val is None:\n        return ''\n    try:\n        if pd.isna(val):\n            return ''\n    except (TypeError, ValueError):\n        pass\n    return str(val).rstrip(' ')\n\n\ndef _signature(city, tier):\n    return _sig_part(city) + '|' + _sig_part(tier)\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_MEMBER'].copy()\n    stg = inputs['STG_MEMBER'].copy()\n\n    # Work on a list of dict records so we can mutate \"in place\" the same\n    # way the stored procedure would UPDATE existing rows and INSERT new\n    # ones, while preserving all rows not touched by any staged record.\n    records = dim.to_dict('records')\n\n    for s in stg.to_dict('records'):\n        mid = s['member_id']\n\n        current_idx = None\n        for i, r in enumerate(records):\n            if r.get('member_id') == mid:\n                ic = r.get('is_current')\n                try:\n                    is_cur = int(ic) == 1\n                except (TypeError, ValueError):\n                    is_cur = False\n                if is_cur:\n                    current_idx = i\n                    break\n\n        if current_idx is None:\n            # No current row for this member -> plain insert.\n            records.append({\n                'member_id': mid,\n                'city': s.get('city'),\n                'tier': s.get('tier'),\n                'eff_start_date': s.get('update_date'),\n                'eff_end_date': None,\n                'is_current': 1,\n            })\n        else:\n            c = records[current_idx]\n            staged_sig = _signature(s.get('city'), s.get('tier'))\n            current_sig = _signature(c.get('city'), c.get('tier'))\n\n            if staged_sig != current_sig:\n                # Close the prior current row.\n                c['eff_end_date'] = s.get('update_date')\n                c['is_current'] = 0\n\n                # Insert the new current version, stored exactly as staged\n                # (no trimming, NULL stays NULL, '' stays '').\n                records.append({\n                    'member_id': mid,\n                    'city': s.get('city'),\n                    'tier': s.get('tier'),\n                    'eff_start_date': s.get('update_date'),\n                    'eff_end_date': None,\n                    'is_current': 1,\n                })\n            # else: signatures match -> no-op, current row untouched.\n\n    out = pd.DataFrame(\n        records,\n        columns=['member_id', 'city', 'tier', 'eff_start_date', 'eff_end_date', 'is_current'],\n    )\n\n    return {'dim_member_out': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1114,
+   "tokens_out": 2042,
+   "usd": 0.033972,
+   "wall_s": 16.58372139930725
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4456,
+  "tokens_out": 8390,
+  "usd": 0.139218,
+  "wall_s": 75.88337850570679
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

@@ -1,0 +1,67 @@
+{
+ "config": "B3_self_repair",
+ "rep": 1,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "syntactic"
+  }
+ ],
+ "final_code": "```python\nimport pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_CUSTOMER'].copy()\n    stg = inputs['STG_CUSTOMER'].copy()\n    fact = inputs['FACT_TXN'].copy()\n\n    sk_dtype = dim['customer_sk'].dtype if len(dim) else 'int64'\n\n    # ---- Identify current rows per customer_id -------------------------\n    current = dim[dim['is_current'] == 1][['customer_id', 'customer_sk', 'segment']].copy()\n    current = current.rename(columns={'customer_sk': 'cur_sk', 'segment': 'cur_segment'})\n\n    merged = stg.merge(current, on='customer_id', how='left')\n\n    def seg_equal(a, b):\n        a_null = pd.isna(a)\n        b_null = pd.isna(b)\n        if a_null and b_null:\n            return True\n        if a_null != b_null:\n            return False\n        return a == b\n\n    merged['has_current'] = merged['cur_sk'].notna()\n\n    def should_create(row):\n        if not row['has_current']:\n            return True\n        return not seg_equal(row['segment'], row['cur_segment'])\n\n    merged['create_version'] = merged.apply(should_create, axis=1)\n\n    create_rows = merged[merged['create_version']].copy()\n    create_rows = create_rows.sort_values('customer_id', kind='mergesort').reset_index(drop=True)\n\n    if len(dim) > 0 and dim['customer_sk'].notna().any():\n        max_sk = dim['customer_sk'].max()\n    else:\n        max_sk = 0\n\n    create_rows['new_sk'] = max_sk + (create_rows.index + 1)\n\n    # ---- Expire prior current rows for customers that get a new version ----\n    expire_ids = create_rows.loc[create_rows['has_current'], 'customer_id']\n    expire_dates = create_rows.loc[create_rows['has_current'], ['customer_id', 'update_date']]\n    expire_lookup = dict(zip(expire_dates['customer_id'], expire_dates['update_date']))\n\n    dim_updated = dim.copy()\n    mask_expire = (dim_updated['is_current'] == 1) & (dim_updated['customer_id'].isin(expire_ids))\n    if mask_expire.any():\n        dim_updated.loc[mask_expire, 'eff_end_date'] = dim_updated.loc[mask_expire, 'customer_id'].map(expire_lookup)\n        dim_updated.loc[mask_expire, 'is_current'] = 0\n\n    # ---- Build new version rows ----------------------------------------\n    if len(create_rows) > 0:\n        new_rows = pd.DataFrame({\n            'customer_sk': create_rows['new_sk'].astype(sk_dtype),\n            'customer_id': create_rows['customer_id'].values,\n            'segment': create_rows['segment'].values,\n            'eff_start_date': create_rows['update_date'].values,\n            'eff_end_date': pd.NaT,\n            'is_current': 1,\n        })\n    else:\n        new_rows = pd.DataFrame(columns=['customer_sk', 'customer_id', 'segment',\n                                          'eff_start_date', 'eff_end_date', 'is_current'])\n\n    dim_out = pd.concat([dim_updated, new_rows], ignore_index=True)\n\n    # keep column order consistent with spec\n    dim_out = dim_out[['customer_sk', 'customer_id', 'segment', 'eff_start_date', 'eff_end_date', 'is_current']]\n\n    # ---- Step 2: key facts against updated dimension -------------------\n    dim_lookup = dim_out[['customer_sk', 'customer_id', 'eff_start_date', 'eff_end_date']].copy()\n\n    def find_sk(cid, tdate):\n        cands = dim_lookup[dim_lookup['customer_id'] == cid]\n        if len(cands) == 0:\n            return -1\n        covering = cands[\n            (cands['eff_start_date'] <= tdate) &\n            (cands['eff_end_date'].isna() | (tdate < cands['eff_end_date']))\n        ]\n        if len(covering) == 0:\n            return -1\n        if len(covering) > 1:\n            covering = covering.sort_values('eff_start_date', ascending=False)\n        return covering.iloc[0]['customer_sk']\n\n    if len(fact) > 0:\n        fact['customer_sk'] = fact.ap",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1162,
+   "tokens_out": 4000,
+   "usd": 0.063486,
+   "wall_s": 39.495598554611206
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 7236,
+  "tokens_out": 14839,
+  "usd": 0.24429299999999998,
+  "wall_s": 141.89040613174438
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}
