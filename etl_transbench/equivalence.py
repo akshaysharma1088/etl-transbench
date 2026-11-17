@@ -194,6 +194,14 @@ def _compare_ordered(ref, cand, spec, cols, rep, sample) -> bool:
 
 def _compare_keyed(ref, cand, spec, cols, rep, sample) -> bool:
     keys = spec.key_columns
+    # A date key may come back as date objects or ISO strings. Give it the
+    # reference's datetime type, as a "timestamp" column rule would, so key
+    # matching and the lookups below agree on what is the same key.
+    for k in keys:
+        if (pd.api.types.is_datetime64_any_dtype(ref[k])
+                and not pd.api.types.is_datetime64_any_dtype(cand[k])):
+            cand = cand.copy()
+            cand[k] = pd.to_datetime(cand[k], errors="coerce")
     rk = ref.set_index(keys, drop=False)
     ck = cand.set_index(keys, drop=False)
     if rk.index.has_duplicates or ck.index.has_duplicates:

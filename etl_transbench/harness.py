@@ -99,7 +99,16 @@ def verify_candidate(task: Task, candidate_run: RunFn,
         except Exception:
             return VerificationResult(True, False, False, list(seeds), reports,
                                       error=traceback.format_exc(limit=5))
-        rep = compare_outputs(ref_out, cand_out, task.spec)
+        try:
+            rep = compare_outputs(ref_out, cand_out, task.spec)
+        except Exception:
+            # The candidate ran but returned something the checker cannot
+            # compare (not a dict of DataFrames, unhashable keys, ...). That is
+            # never counted as equivalent. The marker makes such cases easy to
+            # find and audit afterwards.
+            return VerificationResult(True, False, False, list(seeds), reports,
+                                      error="CHECKER_COULD_NOT_COMPARE\n"
+                                            + traceback.format_exc(limit=5))
         reports.append({"seed": seed, **rep})
         if not rep["equivalent"]:
             return VerificationResult(True, True, False, list(seeds), reports)
