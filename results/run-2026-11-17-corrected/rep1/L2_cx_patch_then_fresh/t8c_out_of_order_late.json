@@ -1,0 +1,48 @@
+{
+ "config": "L2_cx_patch_then_fresh",
+ "rep": 1,
+ "task": "t8c_out_of_order_late",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n\n    # Ensure proper dtypes\n    target[\"device_id\"] = target[\"device_id\"].astype(\"int64\")\n    target[\"reading\"] = target[\"reading\"].astype(\"float64\")\n    target[\"applied_event_ts\"] = pd.to_datetime(target[\"applied_event_ts\"])\n\n    cdc[\"device_id\"] = cdc[\"device_id\"].astype(\"int64\")\n    cdc[\"reading\"] = cdc[\"reading\"].astype(\"float64\")\n    cdc[\"event_ts\"] = pd.to_datetime(cdc[\"event_ts\"])\n    cdc[\"event_seq\"] = cdc[\"event_seq\"].astype(\"int64\")\n\n    # Watermark lookup per device\n    watermark = target[[\"device_id\", \"applied_event_ts\"]].drop_duplicates(\n        subset=\"device_id\", keep=\"last\"\n    )\n\n    # Merge cdc with watermark\n    merged = cdc.merge(watermark, on=\"device_id\", how=\"left\", suffixes=(\"\", \"_wm\"))\n\n    # Determine eligibility: event_ts > applied_event_ts (watermark), or watermark is NaT (new device)\n    wm_is_null = merged[\"applied_event_ts\"].isna()\n    eligible_mask = wm_is_null | (merged[\"event_ts\"] > merged[\"applied_event_ts\"])\n\n    surviving = merged.loc[eligible_mask, [\"device_id\", \"event_ts\", \"event_seq\", \"reading\"]].copy()\n\n    if not surviving.empty:\n        # Sort to pick winner per device: latest by (event_ts, event_seq)\n        surviving_sorted = surviving.sort_values(\n            by=[\"device_id\", \"event_ts\", \"event_seq\"],\n            ascending=[True, True, True]\n        )\n        winners = surviving_sorted.groupby(\"device_id\", as_index=False).tail(1)\n    else:\n        winners = surviving.copy()\n\n    winners = winners.rename(columns={\"event_ts\": \"applied_event_ts\"})\n    winners = winners[[\"device_id\", \"reading\", \"applied_event_ts\"]]\n\n    updated_device_ids = set(winners[\"device_id\"].tolist())\n\n    # Devices in target not updated: carry forward\n    carry_forward = target[~target[\"device_id\"].isin(updated_device_ids)].copy()\n    carry_forward = carry_forward[[\"device_id\", \"reading\", \"applied_event_ts\"]]\n\n    result = pd.concat([winners, carry_forward], ignore_index=True)\n\n    # Ensure dtypes\n    result[\"device_id\"] = result[\"device_id\"].astype(\"int64\")\n    result[\"reading\"] = result[\"reading\"].astype(\"float64\")\n    result[\"applied_event_ts\"] = pd.to_datetime(result[\"applied_event_ts\"])\n\n    # Deduplicate by device_id just in case (shouldn't be needed, but ensure idempotency)\n    result = result.drop_duplicates(subset=\"device_id\", keep=\"first\").reset_index(drop=True)\n\n    return {\"new_snapshot\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 867,
+   "tokens_out": 1501,
+   "usd": 0.025116,
+   "wall_s": 13.219159603118896,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

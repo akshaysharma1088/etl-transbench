@@ -1,0 +1,68 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t7_reject_validation",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 4,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import numpy as np\nimport pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"payments\"].copy()\n\n    amount = df[\"amount\"]\n    currency = df[\"currency\"]\n    country = df[\"country\"]\n\n    # Rule evaluation in strict order; later rules only evaluated if\n    # earlier rules did not already trigger a rejection (short-circuit).\n    mask_r1 = amount.isna()\n\n    mask_r2 = (~mask_r1) & (amount <= 0)\n\n    # SQL-style NOT IN semantics: if currency is NULL the comparison is\n    # unknown (not TRUE), so it does not trigger this rule.\n    mask_r3 = (\n        (~mask_r1)\n        & (~mask_r2)\n        & currency.notna()\n        & (~currency.isin([\"USD\", \"EUR\", \"GBP\"]))\n    )\n\n    mask_r4 = (~mask_r1) & (~mask_r2) & (~mask_r3) & country.isna()\n\n    reject_mask = mask_r1 | mask_r2 | mask_r3 | mask_r4\n    clean_mask = ~reject_mask\n\n    reason_code = np.select(\n        [mask_r1, mask_r2, mask_r3, mask_r4],\n        [\"AMT_NULL\", \"AMT_NONPOS\", \"CCY_INVALID\", \"CTRY_NULL\"],\n        default=None,\n    )\n\n    payments_rejects = df.loc[reject_mask, [\"payment_id\", \"amount\", \"currency\", \"country\"]].copy()\n    payments_rejects[\"reason_code\"] = pd.Series(reason_code, index=df.index)[reject_mask]\n\n    payments_clean = df.loc[clean_mask, [\"payment_id\", \"amount\", \"currency\", \"country\"]].copy()\n    payments_clean[\"amount\"] = payments_clean[\"amount\"].round(2)\n\n    return {\n        \"payments_clean\": payments_clean.reset_index(drop=True),\n        \"payments_rejects\": payments_rejects.reset_index(drop=True),\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 615,
+   "tokens_out": 879,
+   "usd": 0.01503,
+   "wall_s": 7.820363759994507,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4393,
+  "tokens_out": 7364,
+  "usd": 0.123639,
+  "wall_s": 66.92621946334839
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

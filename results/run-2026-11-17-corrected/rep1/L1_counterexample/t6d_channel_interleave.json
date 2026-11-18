@@ -1,0 +1,48 @@
+{
+ "config": "L1_counterexample",
+ "rep": 1,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Ensure proper sorting within each (user_id, channel) group\n    events = events.sort_values(\n        by=[\"user_id\", \"channel\", \"event_ts\", \"event_id\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Create a session identifier based on the 25-minute gap rule\n    # within each (user_id, channel) group independently\n    events[\"session_num\"] = 0\n    \n    # Group by user_id and channel\n    for (user_id, channel), group_indices in events.groupby(\n        [\"user_id\", \"channel\"], sort=False\n    ).groups.items():\n        # Process events in order for this (user_id, channel) pair\n        group_indices = sorted(group_indices)\n        session_num = 1\n        events.loc[group_indices[0], \"session_num\"] = session_num\n        \n        for i in range(1, len(group_indices)):\n            curr_idx = group_indices[i]\n            prev_idx = group_indices[i - 1]\n            \n            curr_ts = events.loc[curr_idx, \"event_ts\"]\n            prev_ts = events.loc[prev_idx, \"event_ts\"]\n            \n            # Check if gap exceeds 25 minutes (1500 seconds)\n            time_diff = (curr_ts - prev_ts).total_seconds()\n            if time_diff > 25 * 60:\n                session_num += 1\n            \n            events.loc[curr_idx, \"session_num\"] = session_num\n    \n    # Aggregate to create channel_sessions\n    channel_sessions = events.groupby(\n        [\"user_id\", \"channel\", \"session_num\"],\n        sort=False\n    ).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"size\")\n    ).reset_index()\n    \n    # Ensure session_num is 1-based per (user_id, channel) pair\n    # Re-rank session numbers within each (user_id, channel) group\n    channel_sessions[\"session_num_rank\"] = channel_sessions.groupby(\n        [\"user_id\", \"channel\"],\n        sort=False\n    )[\"session_start\"].rank(method=\"first\").astype(\"int64\")\n    \n    channel_sessions[\"session_num\"] = channel_sessions[\"session_num_rank\"]\n    channel_sessions = channel_sessions.drop(columns=[\"session_num_rank\"])\n    \n    # Sort for output consistency\n    channel_sessions = channel_sessions.sort_values(\n        by=[\"user_id\", \"channel\", \"session_num\"]\n    ).reset_index(drop=True)\n    \n    # Ensure correct column order and types\n    channel_sessions = channel_sessions[\n        [\"user_id\", \"channel\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]\n    ]\n    \n    channel_sessions[\"session_num\"] = channel_sessions[\"session_num\"].astype(\"int64\")\n    channel_sessions[\"event_count\"] = channel_sessions[\"event_count\"].astype(\"int64\")\n    \n    return {\"channel_sessions\": channel_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 351,
+   "tokens_out": 844,
+   "usd": 0.004571,
+   "wall_s": 5.725489139556885,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

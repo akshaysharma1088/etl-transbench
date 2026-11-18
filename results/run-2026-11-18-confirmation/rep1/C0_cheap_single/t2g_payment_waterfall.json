@@ -1,0 +1,48 @@
+{
+ "config": "C0_cheap_single",
+ "rep": 1,
+ "task": "t2g_payment_waterfall",
+ "category": "T2",
+ "set": "confirmation",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "syntactic"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\nfrom typing import dict\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    invoices = inputs[\"invoices\"].copy()\n    payments = inputs[\"payments\"].copy()\n    \n    # Initialize tracking structures\n    allocations_list = []\n    customer_credit_dict = {}\n    \n    # Track open amounts per invoice (initially the invoice amount)\n    open_amounts = {}\n    for _, row in invoices.iterrows():\n        open_amounts[row['invoice_id']] = row['amount']\n    \n    # Track which invoices have been touched by any allocation\n    invoices_touched = set()\n    \n    # Sort payments by paid_ts, then payment_id (oldest first)\n    payments_sorted = payments.sort_values(['paid_ts', 'payment_id']).reset_index(drop=True)\n    \n    # Process each payment\n    for _, payment in payments_sorted.iterrows():\n        payment_id = payment['payment_id']\n        customer_id = payment['customer_id']\n        left = payment['amount']\n        \n        # Get invoices for this customer, filter to those with open_amount > 0\n        customer_invoices = invoices[invoices['customer_id'] == customer_id].copy()\n        \n        # Sort by due_date, then invoice_id (oldest first)\n        customer_invoices = customer_invoices.sort_values(['due_date', 'invoice_id']).reset_index(drop=True)\n        \n        # Allocate payment against invoices\n        for _, invoice in customer_invoices.iterrows():\n            invoice_id = invoice['invoice_id']\n            current_open = open_amounts[invoice_id]\n            \n            if current_open > 0 and left > 0:\n                # Pay the minimum of what's left and what's open on this invoice\n                pay = min(left, current_open)\n                \n                # Update open amount\n                open_amounts[invoice_id] -= pay\n                left -= pay\n                \n                # Record allocation\n                allocations_list.append({\n                    'payment_id': payment_id,\n                    'invoice_id': invoice_id,\n                    'applied_amount': pay\n                })\n                \n                # Mark invoice as touched\n                invoices_touched.add(invoice_id)\n                \n                if left == 0:\n                    break\n        \n        # Any remaining amount becomes unapplied credit\n        if left > 0:\n            if customer_id not in customer_credit_dict:\n                customer_credit_dict[customer_id] = 0.0\n            customer_credit_dict[customer_id] += left\n    \n    # Build invoice_status output\n    invoice_status_list = []\n    for _, invoice in invoices.iterrows():\n        invoice_id = invoice['invoice_id']\n        open_amount = open_amounts[invoice_id]\n        \n        if open_amount == 0:\n            status = 'PAID'\n        elif invoice_id not in invoices_touched:\n            status = 'OPEN'\n        else:\n            status = 'PARTIAL'\n        \n        invoice_status_list.append({\n            'invoice_id': invoice_id,\n            'open_amount': open_amount,\n            'status': status\n        })\n    \n    # Build allocations output\n    allocations_df = pd.DataFrame(allocations_list)\n    if allocations_df.empty:\n        allocations_df = pd.DataFrame(columns=['payment_id', 'invoice_id', 'applied_amount'])\n        allocations_df = allocations_df.astype({\n            'payment_id': 'int64',\n            'invoice_id': 'int64',\n            'applied_amount': 'float64'\n        })\n    else:\n        allocations_df = allocations_df.astype({\n            'payment_id': 'int64',\n            'invoice_id': 'int64',\n            'applied_amount': 'float64'\n        })\n    \n    # Build customer_credit output\n    customer_credit_list = []\n    for customer_id, unapplied_amount in customer_credit_dict.items():\n        if unapplied_amount > 0:\n            customer_credit_list.append({\n                'customer_id': customer_id,\n                'unapplied_amount': unapplied_amount\n            })\n    \n    customer_credit_df = pd.DataFrame(customer_credit_list)\n    if customer_credit_df.empty:\n        customer_credit_df = pd.DataFrame(columns=['customer_id', 'unapplied_amount'])\n        customer_credit_df = customer_credit_df.astype({\n            'customer_id': 'int64',\n            'unapplied_amount': 'float64'\n        })\n    else:\n        customer_credit_df = customer_credit_df.astype({\n            'customer_id': 'int64',\n            'unapplied_amount': 'float64'\n        })\n    \n    # Build invoice_status output dataframe\n    invoice_status_df = pd.DataFrame(invoice_status_list)\n    invoice_status_df = invoice_status_df.astype({\n        'invoice_id': 'int64',\n        'open_amount': 'float64',\n        'status': 'object'\n    })\n    \n    return {\n        'invoice_status': invoice_status_df,\n        'allocations': allocations_df,\n        'customer_credit': customer_credit_df\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 763,
+   "tokens_out": 1362,
+   "usd": 0.007573,
+   "wall_s": 7.919138193130493,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

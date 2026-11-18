@@ -1,0 +1,48 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 3,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_customer = inputs[\"dim_customer\"].copy()\n    stg_customer = inputs[\"stg_customer\"].copy()\n    fact_txn = inputs[\"fact_txn\"].copy()\n    \n    # ============================================================================\n    # STEP 1: SCD Type 2 load of DIM_CUSTOMER\n    # ============================================================================\n    \n    # Find max customer_sk before the load\n    max_sk = dim_customer[\"customer_sk\"].max() if len(dim_customer) > 0 else 0\n    if pd.isna(max_sk):\n        max_sk = 0\n    max_sk = int(max_sk)\n    \n    # Identify which staged records create a version\n    rows_to_insert = []\n    rows_to_expire = []\n    \n    for idx, stg_row in stg_customer.iterrows():\n        cust_id = stg_row[\"customer_id\"]\n        stg_segment = stg_row[\"segment\"]\n        update_date = stg_row[\"update_date\"]\n        \n        # Find current row for this customer\n        current_rows = dim_customer[\n            (dim_customer[\"customer_id\"] == cust_id) & \n            (dim_customer[\"is_current\"] == 1)\n        ]\n        \n        creates_version = False\n        \n        if len(current_rows) == 0:\n            # No current row: create a version\n            creates_version = True\n        else:\n            # Current row exists: compare segment\n            current_segment = current_rows.iloc[0][\"segment\"]\n            # NULL vs non-NULL differs; NULL vs NULL does not\n            if pd.isna(current_segment) and pd.isna(stg_segment):\n                creates_version = False  # Both NULL: no version\n            elif pd.isna(current_segment) or pd.isna(stg_segment):\n                creates_version = True  # One NULL, one not: differs\n            else:\n                creates_version = (current_segment != stg_segment)\n        \n        if creates_version:\n            # Expire current row if it exists\n            if len(current_rows) > 0:\n                current_idx = current_rows.index[0]\n                rows_to_expire.append((current_idx, update_date))\n            \n            # Mark this staged row for insertion\n            rows_to_insert.append({\n                \"customer_id\": cust_id,\n                \"segment\": stg_segment,\n                \"eff_start_date\": update_date\n            })\n    \n    # Assign customer_sk to rows to insert based on ROW_NUMBER over customer_id\n    if len(rows_to_insert) > 0:\n        insert_df = pd.DataFrame(rows_to_insert)\n        insert_df = insert_df.sort_values(\"customer_id\").reset_index(drop=True)\n        insert_df[\"row_num\"] = range(1, len(insert_df) + 1)\n        insert_df[\"customer_sk\"] = max_sk + insert_df[\"row_num\"]\n        \n        # Expire current rows\n        for dim_idx, exp_date in rows_to_expire:\n            dim_customer.loc[dim_idx, \"eff_end_date\"] = exp_date\n            dim_customer.loc[dim_idx, \"is_current\"] = 0\n        \n        # Insert new rows\n        new_rows = []\n        for _, row in insert_df.iterrows():\n            new_rows.append({\n                \"customer_sk\": int(row[\"customer_sk\"]),\n                \"customer_id\": int(row[\"customer_id\"]),\n                \"segment\": row[\"segment\"],\n                \"eff_start_date\": row[\"eff_start_date\"],\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1\n            })\n        \n        new_rows_df = pd.DataFrame(new_rows)\n        dim_customer = pd.concat([dim_customer, new_rows_df], ignore_index=True)\n    \n    # Ensure columns are properly typed\n    dim_customer[\"customer_sk\"] = dim_customer[\"customer_sk\"].astype(\"int64\")\n    dim_customer[\"customer_id\"] = dim_customer[\"customer_id\"].astype(\"int64\")\n    dim_customer[\"is_current\"] = dim_customer[\"is_current\"].astype(\"int64\")\n    dim_customer[\"eff_start_date\"] = pd.to_datetime(dim_customer[\"eff_start_date\"])\n    dim_customer[\"eff_end_date\"] = pd.to_datetime(dim_customer[\"eff_end_date\"])\n    \n    dim_customer_out = dim_customer[\n        [\"customer_sk\", \"customer_id\", \"segment\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    ]\n    \n    # ============================================================================\n    # STEP 2: Key the facts against the dimension\n    # ============================================================================\n    \n    fact_txn[\"customer_sk\"] = -1\n    \n    for txn_idx, txn_row in fact_txn.iterrows():\n        cust_id = txn_row[\"customer_id\"]\n        txn_date = txn_row[\"txn_date\"]\n        \n        # Find version that covers txn_date\n        # A version covers eff_start_date <= d < eff_end_date (end EXCLUSIVE)\n        matching_versions = dim_customer[\n            (dim_customer[\"customer_id\"] == cust_id) &\n            (dim_customer[\"eff_start_date\"] <= txn_date)\n        ]\n        \n        # Filter by eff_end_date: either NULL (open) or > txn_date\n        matching_versions = matching_versions[\n            (matching_versions[\"eff_end_date\"].isna()) |\n            (matching_versions[\"eff_end_date\"] > txn_date)\n        ]\n        \n        if len(matching_versions) > 0:\n            # Use the first matching version (should be only one)\n            fact_txn.loc[txn_idx, \"customer_sk\"] = int(matching_versions.iloc[0][\"customer_sk\"])\n        else:\n            fact_txn.loc[txn_idx, \"customer_sk\"] = -1\n    \n    fact_txn[\"customer_sk\"] = fact_txn[\"customer_sk\"].astype(\"int64\")\n    fact_txn_keyed = fact_txn[[\"txn_id\", \"customer_sk\", \"amount\"]]\n    \n    return {\n        \"dim_customer_out\": dim_customer_out,\n        \"fact_txn_keyed\": fact_txn_keyed\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 977,
+   "tokens_out": 1678,
+   "usd": 0.009367,
+   "wall_s": 9.977757215499878,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

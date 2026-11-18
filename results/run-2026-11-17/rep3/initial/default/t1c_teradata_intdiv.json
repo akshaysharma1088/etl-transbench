@@ -1,0 +1,16 @@
+{
+ "task": "t1c_teradata_intdiv",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\nimport math\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicates Teradata-style integer division (truncate-toward-zero) and\n    ZEROIFNULL semantics for balance bucket calculations.\n    \n    Teradata integer division truncates toward zero:\n    - 150 / 100 = 1\n    - -150 / 100 = -1 (not -2 as floor division would give)\n    \n    ZEROIFNULL converts NULL to 0 before operations.\n    CAST(... AS INTEGER) also truncates toward zero.\n    \"\"\"\n    \n    acct_balance = inputs['acct_balance'].copy()\n    \n    # Filter out CLOSED accounts\n    acct_balance = acct_balance[acct_balance['acct_type'] != 'CLOSED'].copy()\n    \n    # Helper function to implement Teradata-style truncate-toward-zero division\n    def teradata_int_divide(numerator, denominator):\n        \"\"\"Performs integer division that truncates toward zero (Teradata style).\"\"\"\n        if pd.isna(numerator) or pd.isna(denominator):\n            return np.nan\n        if denominator == 0:\n            return np.nan\n        # Truncate toward zero: sign(result) * floor(abs(result))\n        result = numerator / denominator\n        return math.trunc(result)\n    \n    # Helper function to implement ZEROIFNULL\n    def zeroifnull(val):\n        \"\"\"Maps NULL to 0, otherwise returns the value.\"\"\"\n        return 0 if pd.isna(val) else val\n    \n    # Vectorize the division function\n    teradata_int_divide_vec = np.vectorize(teradata_int_divide, otypes=[float])\n    zeroifnull_vec = np.vectorize(zeroifnull, otypes=[float])\n    \n    # Calculate balance_bucket: ZEROIFNULL(balance_cents) / 100\n    # Using truncate-toward-zero division\n    balance_cents_filled = zeroifnull_vec(acct_balance['balance_cents'].values)\n    acct_balance['balance_bucket'] = teradata_int_divide_vec(balance_cents_filled, 100)\n    \n    # Calculate fx_units: CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER)\n    # First apply ZEROIFNULL to balance_cents\n    balance_cents_filled = zeroifnull_vec(acct_balance['balance_cents'].values)\n    # Multiply by fx_rate\n    product = balance_cents_filled * acct_balance['fx_rate'].values\n    # Divide by 100 and cast to integer (truncate toward zero)\n    acct_balance['fx_units'] = teradata_int_divide_vec(product, 100)\n    \n    # Select only the required output columns\n    result = acct_balance[['account_id', 'balance_bucket', 'fx_units']].copy()\n    \n    # Convert to appropriate integer types where applicable (keeping NaN as float)\n    result['balance_bucket'] = result['balance_bucket'].astype('Int64')  # nullable integer\n    result['fx_units'] = result['fx_units'].astype('Int64')  # nullable integer\n    \n    return {\n        'balance_buckets': result\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 373,
+   "tokens_out": 857,
+   "usd": 0.004658,
+   "wall_s": 5.522310256958008
+  }
+ ]
+}

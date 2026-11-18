@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 4,
+ "task": "t7f_running_limit_validation",
+ "category": "T7",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    account_limits = inputs[\"account_limits\"]\n    transfers = inputs[\"transfers\"]\n\n    limits_map = dict(zip(account_limits[\"account_id\"], account_limits[\"daily_limit\"]))\n\n    rows = transfers.sort_values(\"row_num\", kind=\"mergesort\").to_dict(\"records\")\n\n    accepted_refs = set()\n    running_sums = {}  # (account_id, transfer_date) -> sum\n\n    accepted_out = []\n    rejected_out = []\n\n    for row in rows:\n        row_num = row[\"row_num\"]\n        transfer_ref = row[\"transfer_ref\"]\n        account_id = row[\"account_id\"]\n        amount = row[\"amount\"]\n        transfer_date = row[\"transfer_date\"]\n\n        # R1 UNKNOWN_ACCOUNT\n        if account_id not in limits_map:\n            rejected_out.append({\"row_num\": row_num, \"reason\": \"UNKNOWN_ACCOUNT\"})\n            continue\n\n        # R2 BAD_AMOUNT\n        if pd.isna(amount) or amount <= 0:\n            rejected_out.append({\"row_num\": row_num, \"reason\": \"BAD_AMOUNT\"})\n            continue\n\n        # R3 DUPLICATE_REF\n        if transfer_ref in accepted_refs:\n            rejected_out.append({\"row_num\": row_num, \"reason\": \"DUPLICATE_REF\"})\n            continue\n\n        # R4 OVER_LIMIT\n        key = (account_id, transfer_date)\n        prior_sum = running_sums.get(key, 0.0)\n        daily_limit = limits_map[account_id]\n        if prior_sum + amount > daily_limit:\n            rejected_out.append({\"row_num\": row_num, \"reason\": \"OVER_LIMIT\"})\n            continue\n\n        # Accept\n        new_sum = prior_sum + amount\n        running_sums[key] = new_sum\n        accepted_refs.add(transfer_ref)\n\n        accepted_out.append({\n            \"row_num\": row_num,\n            \"account_id\": account_id,\n            \"amount\": amount,\n            \"running_total\": new_sum,\n        })\n\n    accepted_transfers = pd.DataFrame(\n        accepted_out, columns=[\"row_num\", \"account_id\", \"amount\", \"running_total\"]\n    )\n    transfer_rejects = pd.DataFrame(\n        rejected_out, columns=[\"row_num\", \"reason\"]\n    )\n\n    if accepted_transfers.empty:\n        accepted_transfers = pd.DataFrame(\n            {\n                \"row_num\": pd.Series(dtype=\"int64\"),\n                \"account_id\": pd.Series(dtype=\"int64\"),\n                \"amount\": pd.Series(dtype=\"float64\"),\n                \"running_total\": pd.Series(dtype=\"float64\"),\n            }\n        )\n    else:\n        accepted_transfers[\"row_num\"] = accepted_transfers[\"row_num\"].astype(\"int64\")\n        accepted_transfers[\"account_id\"] = accepted_transfers[\"account_id\"].astype(\"int64\")\n        accepted_transfers[\"amount\"] = accepted_transfers[\"amount\"].astype(\"float64\")\n        accepted_transfers[\"running_total\"] = accepted_transfers[\"running_total\"].astype(\"float64\")\n\n    if transfer_rejects.empty:\n        transfer_rejects = pd.DataFrame(\n            {\n                \"row_num\": pd.Series(dtype=\"int64\"),\n                \"reason\": pd.Series(dtype=\"object\"),\n            }\n        )\n    else:\n        transfer_rejects[\"row_num\"] = transfer_rejects[\"row_num\"].astype(\"int64\")\n\n    return {\n        \"accepted_transfers\": accepted_transfers,\n        \"transfer_rejects\": transfer_rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 950,
+   "tokens_out": 1543,
+   "usd": 0.025995,
+   "wall_s": 11.354061603546143,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

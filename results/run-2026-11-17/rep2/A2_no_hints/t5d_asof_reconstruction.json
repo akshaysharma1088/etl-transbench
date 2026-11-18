@@ -1,0 +1,51 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t5d_asof_reconstruction",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    if name in inputs:\n        return inputs[name]\n    lower_map = {k.lower(): k for k in inputs}\n    if name.lower() in lower_map:\n        return inputs[lower_map[name.lower()]]\n    raise KeyError(name)\n\n\ndef run(inputs: dict) -> dict:\n    emp_hist = _get_input(inputs, \"DIM_EMP_HIST\").copy()\n    asof_queries = _get_input(inputs, \"ASOF_QUERIES\").copy()\n\n    # Coerce date columns to datetime for correct comparison semantics.\n    emp_hist[\"eff_start_date\"] = pd.to_datetime(emp_hist[\"eff_start_date\"])\n    emp_hist[\"eff_end_date\"] = pd.to_datetime(emp_hist[\"eff_end_date\"])\n    asof_queries[\"as_of_date\"] = pd.to_datetime(asof_queries[\"as_of_date\"])\n\n    # Inner join on emp_id (cartesian per matching emp_id), mirroring the SQL join.\n    merged = asof_queries.merge(\n        emp_hist,\n        on=\"emp_id\",\n        how=\"inner\",\n        suffixes=(\"\", \"_hist\"),\n    )\n\n    # Half-open interval filter: start inclusive, end exclusive (NULL end = open-ended).\n    cond = (merged[\"as_of_date\"] >= merged[\"eff_start_date\"]) & (\n        merged[\"eff_end_date\"].isna() | (merged[\"as_of_date\"] < merged[\"eff_end_date\"])\n    )\n\n    result = merged.loc[cond, [\"query_id\", \"emp_id\", \"dept\", \"grade\"]].reset_index(\n        drop=True\n    )\n\n    return {\"asof_result\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 683,
+   "tokens_out": 1179,
+   "usd": 0.019734,
+   "wall_s": 10.138310194015503
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1547,
+  "tokens_out": 640,
+  "usd": 0.014241,
+  "wall_s": 5.082207202911377
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

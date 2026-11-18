@@ -1,0 +1,57 @@
+{
+ "config": "LEGATO",
+ "rep": 3,
+ "task": "t3e_effective_lookup_route",
+ "category": "T3",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    price_list = inputs[\"price_list\"].copy()\n\n    # ---------------------------------------------------------------\n    # 1. expression: sku_norm = UPPER(TRIM(sku))  (NULL sku -> NULL sku_norm)\n    # ---------------------------------------------------------------\n    def norm_sku(x):\n        if pd.isna(x):\n            return pd.NA\n        return str(x).strip().upper()\n\n    orders[\"sku_norm\"] = orders[\"sku\"].apply(norm_sku)\n    price_list[\"sku_norm_pl\"] = price_list[\"sku\"].apply(norm_sku)\n\n    orders = orders.reset_index(drop=True)\n    orders[\"_row_id\"] = orders.index\n\n    # ---------------------------------------------------------------\n    # 2. lookup: price_list matched on sku_norm and valid_from <= order_date\n    #    tie-break: greatest valid_from, then lowest list_id\n    #    NULL sku_norm never matches\n    # ---------------------------------------------------------------\n    non_null = orders[orders[\"sku_norm\"].notna()]\n\n    cand = non_null[[\"_row_id\", \"sku_norm\", \"order_date\"]].merge(\n        price_list[[\"list_id\", \"sku_norm_pl\", \"unit_price\", \"valid_from\"]],\n        left_on=\"sku_norm\",\n        right_on=\"sku_norm_pl\",\n        how=\"inner\",\n    )\n\n    # keep only rows where price_list.valid_from <= order_date\n    cand = cand[cand[\"valid_from\"] <= cand[\"order_date\"]]\n\n    # tie-break: greatest valid_from, then lowest list_id\n    cand = cand.sort_values([\"valid_from\", \"list_id\"], ascending=[False, True])\n    best = cand.drop_duplicates(subset=\"_row_id\", keep=\"first\")\n\n    orders = orders.merge(\n        best[[\"_row_id\", \"unit_price\", \"list_id\"]],\n        on=\"_row_id\",\n        how=\"left\",\n    )\n\n    orders[\"price_flag\"] = np.where(orders[\"unit_price\"].notna(), \"OK\", \"NO_PRICE\")\n    orders[\"unit_price\"] = orders[\"unit_price\"].fillna(0)\n\n    # ---------------------------------------------------------------\n    # 3. expression: ext_amount = qty * unit_price (NULL qty -> NULL ext_amount)\n    # ---------------------------------------------------------------\n    def compute_ext(row):\n        qty = row[\"qty\"]\n        if pd.isna(qty):\n            return np.nan\n        return qty * row[\"unit_price\"]\n\n    orders[\"ext_amount\"] = orders.apply(compute_ext, axis=1)\n\n    # ---------------------------------------------------------------\n    # 4. router: first matching rule wins; NULL predicate is not true\n    # ---------------------------------------------------------------\n    def route_row(row):\n        qty = row[\"qty\"]\n        price_flag = row[\"price_flag\"]\n        ext_amount = row[\"ext_amount\"]\n\n        # Rule 1: REVIEW\n        cond_no_price = (price_flag == \"NO_PRICE\")\n        cond_qty_null = pd.isna(qty)\n        cond_qty_high = (not pd.isna(qty)) and (qty >= 100)\n        if cond_no_price or cond_qty_null or cond_qty_high:\n            return \"REVIEW\"\n\n        # Rule 2: BULK\n        if (not pd.isna(ext_amount)) and (ext_amount >= 1000):\n            return \"BULK\"\n\n        # Rule 3: SMALL\n        if (not pd.isna(ext_amount)) and (ext_amount < 50):\n            return \"SMALL\"\n\n        # default\n        return \"STANDARD\"\n\n    orders[\"route\"] = orders.apply(route_row, axis=1)\n\n    # ---------------------------------------------------------------\n    # 5. output1: order_enriched\n    # ---------------------------------------------------------------\n    out1 = orders[[\"order_id\", \"sku_norm\", \"unit_price\", \"route\"]].copy()\n\n    # ---------------------------------------------------------------\n    # 6. aggregator: group by route, order_date\n    #    order_count = COUNT(*), total_ext = SUM(ext_amount) ignoring NULLs\n    #    a group whose ext_amount values are all NULL -> total_ext = 0\n    # ---------------------------------------------------------------\n    grouped = orders.groupby([\"route\", \"order_date\"], dropna=False)\n\n    agg_count = grouped.size().reset_index(name=\"order_count\")\n    agg_sum = grouped[\"ext_amount\"].apply(\n        lambda s: 0 if s.isna().all() else s.sum(skipna=True)\n    ).reset_index(name=\"total_ext\")\n\n    out2 = agg_count.merge(agg_sum, on=[\"route\", \"order_date\"], how=\"left\")\n    out2 = out2[[\"route\", \"order_date\", \"order_count\", \"total_ext\"]]\n\n    return {\"order_enriched\": out1, \"route_daily\": out2}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1407,
+   "tokens_out": 4000,
+   "usd": 0.064221,
+   "wall_s": 38.63086271286011
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5632,
+  "tokens_out": 5729,
+  "usd": 0.102831,
+  "wall_s": 44.444143772125244
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

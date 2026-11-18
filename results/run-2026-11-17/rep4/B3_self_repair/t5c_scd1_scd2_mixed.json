@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 4,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "syntactic"
+  }
+ ],
+ "final_code": "```python\nimport pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_ACCT'].copy()\n    stg = inputs['STG_ACCT'].copy()\n\n    # Preserve original column order of DIM_ACCT for output\n    dim_cols = list(dim.columns)\n\n    # Normalize date-like columns to datetime for safe comparisons\n    dim['eff_start_date'] = pd.to_datetime(dim['eff_start_date'])\n    dim['eff_end_date'] = pd.to_datetime(dim['eff_end_date'])\n    stg['update_date'] = pd.to_datetime(stg['update_date'])\n\n    # ---------------------------------------------------------------\n    # 1. Dedup STG_ACCT to latest per acct_id by update_date;\n    #    ties broken by greater (email, tier) lexicographic pair.\n    # ---------------------------------------------------------------\n    def pick_latest(group: pd.DataFrame) -> pd.Series:\n        max_date = group['update_date'].max()\n        candidates = group[group['update_date'] == max_date]\n        # sort descending by (email, tier) to pick the lexicographically greatest pair\n        candidates = candidates.sort_values(\n            by=['email', 'tier'], ascending=[False, False], kind='mergesort'\n        )\n        return candidates.iloc[0]\n\n    if len(stg) > 0:\n        stg_dedup = (\n            stg.groupby('acct_id', group_keys=False)\n               .apply(pick_latest)\n               .reset_index(drop=True)\n        )\n    else:\n        stg_dedup = stg.copy()\n\n    # ---------------------------------------------------------------\n    # 2. Process each staged record against DIM_ACCT.\n    # ---------------------------------------------------------------\n    records = dim.to_dict('records')\n\n    def find_current_idx(acct_id):\n        for i, r in enumerate(records):\n            if r['acct_id'] == acct_id and r.get('is_current') == 1:\n                return i\n        return None\n\n    def eq_null_aware(a, b):\n        a_null = pd.isna(a)\n        b_null = pd.isna(b)\n        if a_null and b_null:\n            return True\n        if a_null != b_null:\n            return False\n        return a == b\n\n    new_rows = []\n\n    for _, s in stg_dedup.iterrows():\n        acct_id = s['acct_id']\n        idx = find_current_idx(acct_id)\n\n        if idx is None:\n            # No current row exists for this acct_id -> insert new current version.\n            new_row = {\n                'acct_id': acct_id,\n                'email': s['email'],\n                'tier': s['tier'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            }\n            new_rows.append(new_row)\n            continue\n\n        c = records[idx]\n        tier_changed = not eq_null_aware(c.get('tier'), s['tier'])\n        email_changed = not eq_null_aware(c.get('email'), s['email'])\n\n        if tier_changed:\n            # Expire the current row.\n            records[idx]['eff_end_date'] = s['update_date']\n            records[idx]['is_current'] = 0\n\n            #",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 983,
+   "tokens_out": 4000,
+   "usd": 0.062949,
+   "wall_s": 36.52679228782654
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6676,
+  "tokens_out": 14336,
+  "usd": 0.235068,
+  "wall_s": 138.41403985023499
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

@@ -1,0 +1,53 @@
+{
+ "config": "B2_retranslate",
+ "rep": 2,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    events = inputs[\"events\"].copy()\n\n    if events.empty:\n        return {\n            \"user_sessions\": pd.DataFrame(\n                columns=[\n                    \"user_id\",\n                    \"session_num\",\n                    \"session_date\",\n                    \"session_start\",\n                    \"session_end\",\n                    \"event_count\",\n                ]\n            )\n        }\n\n    events[\"event_ts\"] = pd.to_datetime(events[\"event_ts\"])\n\n    # Order within user: event_ts, then event_id\n    events = events.sort_values(\n        by=[\"user_id\", \"event_ts\", \"event_id\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # Compute previous event's timestamp within same user\n    prev_ts = events.groupby(\"user_id\")[\"event_ts\"].shift(1)\n\n    # Gap in minutes from previous event\n    gap_minutes = (events[\"event_ts\"] - prev_ts).dt.total_seconds() / 60.0\n\n    # Calendar date comparison (server local, using the date part of the ts)\n    cur_date = events[\"event_ts\"].dt.date\n    prev_date = prev_ts.dt.date\n\n    is_first = prev_ts.isna()\n    gap_too_large = gap_minutes > 45\n    date_changed = cur_date != prev_date\n\n    new_session_flag = is_first | gap_too_large | date_changed\n\n    # session_num: cumulative count of new_session_flag within each user\n    events[\"_new_session\"] = new_session_flag.astype(int)\n    events[\"session_num\"] = events.groupby(\"user_id\")[\"_new_session\"].cumsum()\n\n    grouped = events.groupby([\"user_id\", \"session_num\"], sort=True).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\"),\n    ).reset_index()\n\n    grouped[\"session_date\"] = grouped[\"session_start\"].dt.date\n\n    result = grouped[\n        [\n            \"user_id\",\n            \"session_num\",\n            \"session_date\",\n            \"session_start\",\n            \"session_end\",\n            \"event_count\",\n        ]\n    ].sort_values(by=[\"user_id\", \"session_num\"], kind=\"mergesort\").reset_index(drop=True)\n\n    return {\"user_sessions\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 725,
+   "usd": 0.004005,
+   "wall_s": 6.113664865493774,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 549,
+  "tokens_out": 1018,
+  "usd": 0.016917,
+  "wall_s": 9.221629619598389
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

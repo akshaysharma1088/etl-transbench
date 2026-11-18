@@ -1,0 +1,48 @@
+{
+ "config": "LEGATO",
+ "rep": 2,
+ "task": "t8b_delete_reinsert_cdc",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_snapshot = inputs[\"target_snapshot\"]\n    cdc_events = inputs[\"cdc_events\"]\n    watermark = inputs[\"watermark\"]\n\n    # Determine watermark high_ts (assume single row; if empty, no filtering)\n    if len(watermark) > 0:\n        high_ts = watermark[\"high_ts\"].iloc[0]\n    else:\n        high_ts = None\n\n    # Filter to events not yet applied: event_ts > high_ts\n    events = cdc_events.copy()\n    if high_ts is not None:\n        events = events[events[\"event_ts\"] > high_ts]\n\n    # Sort events globally by (event_ts, event_seq) - order across items doesn't matter\n    # since items are processed independently, but we keep deterministic order.\n    events = events.sort_values(by=[\"event_ts\", \"event_seq\"], kind=\"mergesort\")\n\n    # Initialize state from target_snapshot: item_id -> (qty_on_hand, last_event_ts)\n    state = {}\n    for _, row in target_snapshot.iterrows():\n        state[row[\"item_id\"]] = (float(row[\"qty_on_hand\"]), row[\"last_event_ts\"])\n\n    # Apply events per item in sequential order\n    # Group events by item_id, preserving sorted order within each group\n    for item_id, grp in events.groupby(\"item_id\", sort=False):\n        cur = state.get(item_id, None)\n        for _, ev in grp.iterrows():\n            op = ev[\"op\"]\n            qty = float(ev[\"qty\"])\n            ts = ev[\"event_ts\"]\n\n            if op == \"R\":\n                base = cur[0] if cur is not None else 0.0\n                new_qty = base + qty\n                cur = (new_qty, ts)\n            elif op == \"A\":\n                cur = (qty, ts)\n            elif op == \"D\":\n                cur = None\n            else:\n                # Unknown op: no-op, but shouldn't occur per spec\n                pass\n\n        if cur is None:\n            if item_id in state:\n                del state[item_id]\n        else:\n            state[item_id] = cur\n\n    # Build output DataFrame\n    if len(state) == 0:\n        new_snapshot = pd.DataFrame(\n            {\n                \"item_id\": pd.Series(dtype=\"int64\"),\n                \"qty_on_hand\": pd.Series(dtype=\"float64\"),\n                \"last_event_ts\": pd.Series(dtype=\"datetime64[us]\"),\n            }\n        )\n    else:\n        rows = []\n        for item_id, (qty, ts) in state.items():\n            rows.append({\"item_id\": item_id, \"qty_on_hand\": qty, \"last_event_ts\": ts})\n        new_snapshot = pd.DataFrame(rows)\n        new_snapshot[\"item_id\"] = new_snapshot[\"item_id\"].astype(\"int64\")\n        new_snapshot[\"qty_on_hand\"] = new_snapshot[\"qty_on_hand\"].astype(\"float64\")\n        new_snapshot[\"last_event_ts\"] = pd.to_datetime(new_snapshot[\"last_event_ts\"]).astype(\n            \"datetime64[us]\"\n        )\n        new_snapshot = new_snapshot.sort_values(by=\"item_id\", kind=\"mergesort\").reset_index(\n            drop=True\n        )\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 892,
+   "tokens_out": 2198,
+   "usd": 0.035646,
+   "wall_s": 20.232935667037964,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

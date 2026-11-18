@@ -1,0 +1,68 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 3,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 4,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy SP_RUNNING_BALANCE stored procedure.\n    Computes running balance per account and overdraft flags.\n    \"\"\"\n    transactions = inputs[\"transactions\"].copy()\n    \n    # Sort by account_id, txn_date, txn_seq to match cursor ordering\n    transactions = transactions.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Replace NULL amounts with 0 for balance calculation\n    transactions[\"amount_for_balance\"] = transactions[\"amount\"].fillna(0.0)\n    \n    # Compute running balance per account\n    # Group by account_id and compute cumulative sum within each group\n    transactions[\"running_balance\"] = transactions.groupby(\"account_id\")[\"amount_for_balance\"].cumsum()\n    \n    # Compute overdraft flag: 1 if running_balance < 0, else 0\n    transactions[\"overdraft_flag\"] = (transactions[\"running_balance\"] < 0).astype(\"int16\")\n    \n    # Select output columns in order\n    result = transactions[[\n        \"account_id\",\n        \"txn_seq\",\n        \"txn_date\",\n        \"amount\",\n        \"running_balance\",\n        \"overdraft_flag\"\n    ]].copy()\n    \n    return {\"acct_balance_flags\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 520,
+   "tokens_out": 529,
+   "usd": 0.003165,
+   "wall_s": 5.077462911605835,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4493,
+  "tokens_out": 2390,
+  "usd": 0.016443,
+  "wall_s": 23.151913166046143
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

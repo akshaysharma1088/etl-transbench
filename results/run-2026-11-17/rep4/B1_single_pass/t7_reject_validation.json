@@ -1,0 +1,46 @@
+{
+ "config": "B1_single_pass",
+ "rep": 4,
+ "task": "t7_reject_validation",
+ "category": "T7",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"payments\"].copy()\n\n    # Ensure columns exist and preserve original dtypes/order\n    cols = [\"payment_id\", \"amount\", \"currency\", \"country\"]\n    df = df[cols]\n\n    n = len(df)\n    rejected = pd.Series(False, index=df.index)\n    reason_code = pd.Series([None] * n, index=df.index, dtype=object)\n\n    valid_currencies = {\"USD\", \"EUR\", \"GBP\"}\n\n    # R1: amount IS NULL\n    mask_r1 = (~rejected) & df[\"amount\"].isna()\n    reason_code[mask_r1] = \"AMT_NULL\"\n    rejected = rejected | mask_r1\n\n    # R2: amount <= 0\n    mask_r2 = (~rejected) & (df[\"amount\"] <= 0)\n    reason_code[mask_r2] = \"AMT_NONPOS\"\n    rejected = rejected | mask_r2\n\n    # R3: currency NOT IN ('USD','EUR','GBP')\n    # SQL three-valued logic: if currency is NULL, \"NOT IN\" evaluates to NULL\n    # (unknown), which does not satisfy the condition -> rule does not fire.\n    currency_notna = df[\"currency\"].notna()\n    mask_r3 = (\n        (~rejected)\n        & currency_notna\n        & (~df[\"currency\"].isin(valid_currencies))\n    )\n    reason_code[mask_r3] = \"CCY_INVALID\"\n    rejected = rejected | mask_r3\n\n    # R4: country IS NULL\n    mask_r4 = (~rejected) & df[\"country\"].isna()\n    reason_code[mask_r4] = \"CTRY_NULL\"\n    rejected = rejected | mask_r4\n\n    # Build reject output: original amount preserved, with reason_code\n    rejects_df = df.loc[rejected].copy()\n    rejects_df[\"reason_code\"] = reason_code.loc[rejected]\n    rejects_df = rejects_df[[\"payment_id\", \"amount\", \"currency\", \"country\", \"reason_code\"]]\n\n    # Build clean output: passing records, amount rounded to 2 decimals\n    clean_df = df.loc[~rejected].copy()\n    clean_df[\"amount\"] = clean_df[\"amount\"].round(2)\n    clean_df = clean_df[[\"payment_id\", \"amount\", \"currency\", \"country\"]]\n\n    return {\n        \"payments_clean\": clean_df.reset_index(drop=True),\n        \"payments_rejects\": rejects_df.reset_index(drop=True),\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 554,
+   "tokens_out": 1890,
+   "usd": 0.030012,
+   "wall_s": 17.543517589569092
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

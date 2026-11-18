@@ -1,0 +1,23 @@
+-- Legacy validation step VAL_TRANSFERS (abstracted from a graphical ETL tool).
+-- Inputs:
+--   account_limits (account_id INT, daily_limit DECIMAL(12,2))
+--   transfers      (row_num INT, transfer_ref VARCHAR, account_id INT,
+--                   amount DECIMAL(12,2), transfer_date DATE)      -- row_num is unique
+-- Outputs:
+--   accepted_transfers (row_num, account_id, amount, running_total)
+--   transfer_rejects   (row_num, reason)
+-- Every input row lands in exactly one output.
+--
+-- Rows are processed ORDER BY row_num, and each row is judged against the rows
+-- ACCEPTED before it. Rules are evaluated in this order; the first failure rejects:
+--   R1 UNKNOWN_ACCOUNT  account_id is not in account_limits.
+--   R2 BAD_AMOUNT       amount is NULL or <= 0.
+--   R3 DUPLICATE_REF    a row with the same transfer_ref was ACCEPTED earlier
+--                       (for any account). A rejected row does not reserve its ref.
+--   R4 OVER_LIMIT       (sum of amounts accepted earlier for this account_id on
+--                       this transfer_date) + amount > daily_limit.
+--                       Rejected rows do not count towards the sum, so a smaller
+--                       transfer later the same day can still be accepted.
+--                       A total exactly equal to the limit is allowed.
+-- For an accepted row, running_total = the account's accepted sum for that
+-- transfer_date INCLUDING this row.

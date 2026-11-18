@@ -1,0 +1,9 @@
+{
+  "id": "t6e_session_heartbeat_logout",
+  "category": "T6",
+  "tier": 3,
+  "description": "Sessionization where heartbeats do not refresh the inactivity clock and a logout forces a new session",
+  "legacy_artifact": "legacy_artifact.sql",
+  "target": "pandas (PySpark in full benchmark)",
+  "set": "extension"
+}

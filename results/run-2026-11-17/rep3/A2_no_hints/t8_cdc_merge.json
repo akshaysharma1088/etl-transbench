@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t8_cdc_merge",
+ "category": "T8",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n\n    # Extract watermark high_ts (single row)\n    high_ts = watermark[\"high_ts\"].iloc[0]\n\n    # 1. Keep only events with event_ts > watermark.high_ts\n    filtered = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n\n    # 2. Per product_id, apply the LATEST event by (event_ts, event_seq)\n    if not filtered.empty:\n        filtered = filtered.sort_values(\n            by=[\"event_ts\", \"event_seq\"], ascending=[True, True]\n        )\n        latest_idx = filtered.groupby(\"product_id\").tail(1).index\n        latest_events = filtered.loc[latest_idx].copy()\n    else:\n        latest_events = filtered.copy()\n\n    # Build dict of product_id -> event row for quick lookup\n    latest_events = latest_events.set_index(\"product_id\", drop=False)\n\n    # Start from target_snapshot indexed by product_id for easy update/delete\n    snapshot = target_snapshot.set_index(\"product_id\", drop=False)\n\n    # Determine deletes and upserts\n    delete_ids = latest_events.loc[latest_events[\"op\"] == \"D\", \"product_id\"].tolist()\n    upsert_ids = latest_events.loc[latest_events[\"op\"].isin([\"I\", \"U\"]), \"product_id\"].tolist()\n\n    # Apply deletes: remove products that exist in snapshot and are deleted\n    snapshot = snapshot.drop(index=[pid for pid in delete_ids if pid in snapshot.index], errors=\"ignore\")\n\n    # Apply upserts: update existing or insert new rows\n    for pid in upsert_ids:\n        ev = latest_events.loc[pid]\n        name = ev[\"name\"]\n        price = ev[\"price\"]\n        event_ts = ev[\"event_ts\"]\n\n        if pid in snapshot.index:\n            snapshot.at[pid, \"name\"] = name\n            snapshot.at[pid, \"price\"] = price\n            snapshot.at[pid, \"last_event_ts\"] = event_ts\n        else:\n            new_row = pd.DataFrame(\n                {\n                    \"product_id\": [pid],\n                    \"name\": [name],\n                    \"price\": [price],\n                    \"last_event_ts\": [event_ts],\n                }\n            )\n            new_row = new_row.set_index(\"product_id\", drop=False)\n            snapshot = pd.concat([snapshot, new_row], axis=0)\n\n    # Reset index and ensure column order matches target_snapshot schema\n    snapshot = snapshot.reset_index(drop=True)\n    snapshot = snapshot[target_snapshot.columns]\n\n    return {\"new_snapshot\": snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 593,
+   "tokens_out": 1195,
+   "usd": 0.019704,
+   "wall_s": 10.077766418457031
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

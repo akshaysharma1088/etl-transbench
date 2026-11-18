@@ -1,0 +1,17 @@
+{
+ "task": "t7_reject_validation",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\nimport numpy as np\n\nVALID_CCY = {'USD', 'EUR', 'GBP'}\n\n\ndef run(inputs: dict) -> dict:\n    payments = inputs[\"payments\"].copy()\n\n    reason_codes = []\n\n    for idx, row in payments.iterrows():\n        amount = row[\"amount\"]\n        currency = row[\"currency\"]\n        country = row[\"country\"]\n\n        reason = None\n\n        # R1: amount IS NULL\n        if pd.isna(amount):\n            reason = \"AMT_NULL\"\n        # R2: amount <= 0\n        elif amount <= 0:\n            reason = \"AMT_NONPOS\"\n        # R3: currency NOT IN (...) -- SQL NULL semantics: NULL NOT IN (...) is UNKNOWN -> not a fail\n        elif (not pd.isna(currency)) and (currency not in VALID_CCY):\n            reason = \"CCY_INVALID\"\n        # R4: country IS NULL\n        elif pd.isna(country):\n            reason = \"CTRY_NULL\"\n\n        reason_codes.append(reason)\n\n    payments = payments.assign(_reason_code=reason_codes)\n\n    clean_mask = payments[\"_reason_code\"].isna()\n    rejects_mask = ~clean_mask\n\n    payments_clean = payments.loc[clean_mask, [\"payment_id\", \"amount\", \"currency\", \"country\"]].copy()\n    payments_clean[\"amount\"] = payments_clean[\"amount\"].round(2)\n\n    payments_rejects = payments.loc[rejects_mask, [\"payment_id\", \"amount\", \"currency\", \"country\", \"_reason_code\"]].copy()\n    payments_rejects = payments_rejects.rename(columns={\"_reason_code\": \"reason_code\"})\n\n    payments_clean = payments_clean.reset_index(drop=True)\n    payments_rejects = payments_rejects.reset_index(drop=True)\n\n    return {\n        \"payments_clean\": payments_clean,\n        \"payments_rejects\": payments_rejects,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 615,
+   "tokens_out": 1039,
+   "usd": 0.01743,
+   "wall_s": 9.37375521659851,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

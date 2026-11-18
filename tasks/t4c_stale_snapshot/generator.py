@@ -24,4 +24,4 @@ def corpus(seed: int):
         "avg_score": rng.uniform(300, 850, len(overlap) + len(snap_only)),
     })
     return {"score_feed": feed.sample(frac=1, random_state=seed).reset_index(drop=True),
-            "score_snapshot_prior": prior}
+            "score_snapshot": prior}

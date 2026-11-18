@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t7_reject_validation",
+ "category": "T7",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    payments = inputs[\"payments\"].copy()\n\n    amount = payments[\"amount\"]\n    currency = payments[\"currency\"]\n    country = payments[\"country\"]\n\n    valid_currencies = {\"USD\", \"EUR\", \"GBP\"}\n\n    # Rule masks, evaluated in order; each later mask excludes rows\n    # already caught by an earlier rule.\n    mask_r1 = amount.isna()\n\n    mask_r2 = (~mask_r1) & (amount <= 0)\n\n    not_valid_ccy = ~currency.isin(valid_currencies)\n    mask_r3 = (~mask_r1) & (~mask_r2) & not_valid_ccy\n\n    mask_r4 = (~mask_r1) & (~mask_r2) & (~mask_r3) & country.isna()\n\n    reject_mask = mask_r1 | mask_r2 | mask_r3 | mask_r4\n    clean_mask = ~reject_mask\n\n    # Build rejects output\n    rejects = payments.loc[reject_mask].copy()\n    reason_code = pd.Series(index=rejects.index, dtype=\"object\")\n    reason_code.loc[mask_r1.reindex(rejects.index, fill_value=False)] = \"AMT_NULL\"\n    reason_code.loc[mask_r2.reindex(rejects.index, fill_value=False)] = \"AMT_NONPOS\"\n    reason_code.loc[mask_r3.reindex(rejects.index, fill_value=False)] = \"CCY_INVALID\"\n    reason_code.loc[mask_r4.reindex(rejects.index, fill_value=False)] = \"CTRY_NULL\"\n    rejects[\"reason_code\"] = reason_code\n\n    # Build clean output\n    clean = payments.loc[clean_mask].copy()\n    clean[\"amount\"] = clean[\"amount\"].round(2)\n\n    payments_clean = clean.reset_index(drop=True)\n    payments_rejects = rejects.reset_index(drop=True)\n\n    return {\n        \"payments_clean\": payments_clean,\n        \"payments_rejects\": payments_rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 554,
+   "tokens_out": 1704,
+   "usd": 0.027222,
+   "wall_s": 16.03830051422119
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

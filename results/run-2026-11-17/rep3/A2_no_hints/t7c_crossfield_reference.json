@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t7c_crossfield_reference",
+ "category": "T7",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs['orders'].copy()\n    ref_customers = inputs['ref_customers'].copy()\n    ref_skus = inputs['ref_skus'].copy()\n\n    # De-duplicate reference tables by key, keeping first occurrence.\n    ref_customers = ref_customers.drop_duplicates(subset='customer_id', keep='first')\n    ref_skus = ref_skus.drop_duplicates(subset='sku', keep='first')\n\n    merged = orders.merge(\n        ref_customers[['customer_id', 'status']],\n        on='customer_id',\n        how='left'\n    )\n    merged = merged.merge(\n        ref_skus[['sku', 'discontinued', 'allowed_countries']],\n        on='sku',\n        how='left'\n    )\n\n    def classify(row):\n        # R1: customer unknown\n        if pd.isna(row['status']):\n            return 'CUST_UNKNOWN'\n        # R2: customer not active\n        if row['status'] != 'ACTIVE':\n            return 'CUST_INACTIVE'\n        # R3: sku unknown\n        if pd.isna(row['discontinued']) and pd.isna(row['allowed_countries']) and pd.isna(row.get('sku_present', pd.NA)):\n            pass\n        # Use discontinued presence as proxy for sku existence (sku unknown -> both discontinued\n        # and allowed_countries will be NaN after left merge)\n        sku_known = not (pd.isna(row['discontinued']) and pd.isna(row['allowed_countries']))\n        # More robust: check if sku itself matched -- re-derive via separate flag below.\n        if not row['_sku_found']:\n            return 'SKU_UNKNOWN'\n        # R4: discontinued\n        try:\n            disc_val = row['discontinued']\n            if pd.notna(disc_val) and int(disc_val) == 1:\n                return 'SKU_DISC'\n        except Exception:\n            pass\n        # R5: country whitelist\n        allowed = row['allowed_countries']\n        if pd.notna(allowed) and str(allowed).strip() != '':\n            members = [m.strip() for m in str(allowed).split(',')]\n            ship = row['ship_country']\n            ship_str = None if pd.isna(ship) else str(ship)\n            if ship_str is None or ship_str not in members:\n                return 'CTRY_BLOCKED'\n        return None\n\n    # Flag whether sku actually exists in ref_skus (handles case where discontinued/allowed\n    # are legitimately NaN for a known sku).\n    known_skus = set(ref_skus['sku'])\n    merged['_sku_found'] = merged['sku'].isin(known_skus)\n\n    merged['reason_code'] = merged.apply(classify, axis=1)\n\n    pass_mask = merged['reason_code'].isna()\n\n    orders_clean = merged.loc[pass_mask, list(orders.columns)].copy()\n    orders_rejects = merged.loc[~pass_mask, list(orders.columns) + ['reason_code']].copy()\n\n    orders_clean = orders_clean.reset_index(drop=True)\n    orders_rejects = orders_rejects.reset_index(drop=True)\n\n    return {\n        'orders_clean': orders_clean,\n        'orders_rejects': orders_rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 704,
+   "tokens_out": 2573,
+   "usd": 0.040707,
+   "wall_s": 21.779242992401123
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

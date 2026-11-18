@@ -1,0 +1,67 @@
+{
+ "config": "B3_self_repair",
+ "rep": 1,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _differs(a, b):\n    \"\"\"NULL-safe inequality: NULL vs NULL -> not different; NULL vs non-NULL -> different.\"\"\"\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null or b_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_STORE\"].copy()\n    stg = inputs[\"STG_STORE_FULL\"].copy()\n    batch = inputs[\"BATCH_CONTROL\"].copy()\n\n    # make sure columns exist / proper order\n    cols = [\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    dim = dim.reindex(columns=cols)\n\n    b = batch[\"batch_date\"].iloc[0]\n\n    # Step 0: distinct store_id, region, format from the snapshot (dedupe exact duplicates only)\n    S = stg.drop_duplicates(subset=[\"store_id\", \"region\", \"format\"]).reset_index(drop=True)\n\n    store_ids_in_S = set(S[\"store_id\"].tolist())\n\n    # snapshot of current rows BEFORE any mutation in this batch\n    current_rows = dim[dim[\"is_current\"] == 1]\n\n    new_rows = []\n\n    for _, s in S.iterrows():\n        sid = s[\"store_id\"]\n        region = s[\"region\"]\n        fmt = s[\"format\"]\n\n        c = current_rows[current_rows[\"store_id\"] == sid]\n\n        if not c.empty:\n            c_row = c.iloc[0]\n            idx = c_row.name\n            if _differs(c_row[\"region\"], region) or _differs(c_row[\"format\"], fmt):\n                # close the old current row\n                dim.loc[idx, \"eff_end_date\"] = b\n                dim.loc[idx, \"is_current\"] = 0\n\n                new_rows.append({\n                    \"store_id\": sid,\n                    \"region\": region,\n                    \"format\": fmt,\n                    \"eff_start_date\": b,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            else:\n                # unchanged -> no-op\n                pass\n        else:\n            # no current row: brand new store OR reactivated closed store\n            new_rows.append({\n                \"store_id\": sid,\n                \"region\": region,\n                \"format\": fmt,\n                \"eff_start_date\": b,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n\n    # Step 2: close current rows whose store_id is absent from the snapshot\n    for idx, row in current_rows.iterrows():\n        if row[\"store_id\"] not in store_ids_in_S:\n            dim.loc[idx, \"eff_end_date\"] = b\n            dim.loc[idx, \"is_current\"] = 0\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=cols)\n        dim = pd.concat([dim, new_df], ignore_index=True)\n\n    dim = dim.reindex(columns=cols)\n\n    # keep is_current as integer type where possible\n    try:\n        dim[\"is_current\"] = dim[\"is_current\"].astype(\"int64\")\n    except (ValueError, TypeError):\n        pass\n\n    try:\n        dim[\"store_id\"] = dim[\"store_id\"].astype(\"int64\")\n    except (ValueError, TypeError):\n        pass\n\n    return {\"dim_store_out\": dim}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1094,
+   "tokens_out": 2750,
+   "usd": 0.044532,
+   "wall_s": 23.52058506011963
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5912,
+  "tokens_out": 12181,
+  "usd": 0.20045100000000002,
+  "wall_s": 116.18109679222107
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

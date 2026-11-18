@@ -1,0 +1,52 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _get_input(inputs: dict, name: str):\n    if name in inputs:\n        return inputs[name]\n    lname = name.lower()\n    for k, v in inputs.items():\n        if k.lower() == lname:\n            return v\n    raise KeyError(name)\n\n\ndef _is_null(x):\n    try:\n        return pd.isna(x)\n    except (TypeError, ValueError):\n        return x is None\n\n\ndef _differs(a, b):\n    a_null = _is_null(a)\n    b_null = _is_null(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim_store = _get_input(inputs, \"DIM_STORE\").copy()\n    stg = _get_input(inputs, \"STG_STORE_FULL\")\n    batch_control = _get_input(inputs, \"BATCH_CONTROL\")\n\n    cols = [\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n\n    # make sure output has the right columns, preserving existing dtypes where possible\n    out = dim_store.copy()\n    for c in cols:\n        if c not in out.columns:\n            out[c] = pd.NA\n\n    # batch date (single row control table)\n    b = batch_control[\"batch_date\"].iloc[0]\n\n    # distinct store rows from the full snapshot\n    S = stg[[\"store_id\", \"region\", \"format\"]].drop_duplicates().reset_index(drop=True)\n\n    # map store_id -> index of its current (is_current == 1) row in out, if any\n    current_mask = out[\"is_current\"] == 1\n    current_idx_map = {}\n    for idx, row in out[current_mask].iterrows():\n        current_idx_map[row[\"store_id\"]] = idx\n\n    S_store_ids = set(S[\"store_id\"].tolist())\n\n    new_rows = []\n\n    for _, s in S.iterrows():\n        store_id = s[\"store_id\"]\n        region = s[\"region\"]\n        fmt = s[\"format\"]\n\n        if store_id in current_idx_map:\n            idx = current_idx_map[store_id]\n            c_region = out.at[idx, \"region\"]\n            c_format = out.at[idx, \"format\"]\n\n            if _differs(c_region, region) or _differs(c_format, fmt):\n                # close current version\n                out.at[idx, \"eff_end_date\"] = b\n                out.at[idx, \"is_current\"] = 0\n\n                # open new version\n                new_rows.append({\n                    \"store_id\": store_id,\n                    \"region\": region,\n                    \"format\": fmt,\n                    \"eff_start_date\": b,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            # else: no-op, attributes match current row\n        else:\n            # brand-new store OR reactivated previously-closed store\n            new_rows.append({\n                \"store_id\": store_id,\n                \"region\": region,\n                \"format\": fmt,\n                \"eff_start_date\": b,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n\n    # close current rows for stores no longer present in the snapshot\n    for store_id, idx in current_idx_map.items():\n        if store_id not in S_store_ids:\n            out.at[idx, \"eff_end_date\"] = b\n            out.at[idx, \"is_current\"] = 0\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=cols)\n        out = pd.concat([out, new_df], ignore_index=True)\n\n    out = out[cols]\n\n    return {\"dim_store_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1039,
+   "tokens_out": 2759,
+   "usd": 0.044502,
+   "wall_s": 24.05415630340576
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2505,
+  "tokens_out": 1377,
+  "usd": 0.02817,
+  "wall_s": 10.285705089569092
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

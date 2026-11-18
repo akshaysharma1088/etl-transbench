@@ -1,0 +1,53 @@
+{
+ "config": "A1_trace_only",
+ "rep": 3,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _null_aware_diff(a, b):\n    # a, b are scalar values possibly NaN/None\n    a_is_null = pd.isna(a)\n    b_is_null = pd.isna(b)\n    if a_is_null and b_is_null:\n        return False\n    if a_is_null or b_is_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_customer\"].copy()\n    stg = inputs[\"stg_customer\"].copy()\n\n    # Ensure proper dtypes\n    dim[\"customer_id\"] = dim[\"customer_id\"].astype(\"int64\")\n    dim[\"is_current\"] = dim[\"is_current\"].astype(\"int64\")\n    if \"eff_start_date\" in dim.columns:\n        dim[\"eff_start_date\"] = pd.to_datetime(dim[\"eff_start_date\"])\n    if \"eff_end_date\" in dim.columns:\n        dim[\"eff_end_date\"] = pd.to_datetime(dim[\"eff_end_date\"])\n\n    stg[\"customer_id\"] = stg[\"customer_id\"].astype(\"int64\")\n    stg[\"update_date\"] = pd.to_datetime(stg[\"update_date\"])\n\n    # Step 1: Deduplicate STG_CUSTOMER to latest per customer_id by update_date,\n    # ties broken by greater (name, segment) lexicographic pair.\n    # IMPORTANT: use head(1) on a fully-sorted frame (not groupby().first())\n    # because groupby().first() selects the first *non-null* value per\n    # column independently, which can mix attributes from different rows\n    # when nulls are present among tied staged records. head(1) preserves\n    # the actual single winning row as a whole.\n    if len(stg) > 0:\n        stg_sorted = stg.sort_values(\n            by=[\"customer_id\", \"update_date\", \"name\", \"segment\"],\n            ascending=[True, False, False, False],\n            kind=\"mergesort\",\n            na_position=\"last\",\n        )\n        stg_dedup = stg_sorted.groupby(\"customer_id\", as_index=False, sort=False).head(1)\n    else:\n        stg_dedup = stg.copy()\n\n    # Working copy of dim rows (list of dict-like rows) to allow updates/inserts\n    dim_rows = dim.to_dict(\"records\")\n\n    # Build index of current row per customer_id (is_current == 1)\n    current_idx = {}\n    for i, row in enumerate(dim_rows):\n        if row.get(\"is_current\") == 1:\n            current_idx[row[\"customer_id\"]] = i\n\n    new_rows = []\n\n    for _, s in stg_dedup.iterrows():\n        cust_id = s[\"customer_id\"]\n        s_name = s[\"name\"]\n        s_segment = s[\"segment\"]\n        s_update_date = s[\"update_date\"]\n\n        if cust_id in current_idx:\n            idx = current_idx[cust_id]\n            c = dim_rows[idx]\n            name_changed = _null_aware_diff(c.get(\"name\"), s_name)\n            segment_changed = _null_aware_diff(c.get(\"segment\"), s_segment)\n\n            if name_changed or segment_changed:\n                # Expire current row\n                dim_rows[idx][\"eff_end_date\"] = s_update_date\n                dim_rows[idx][\"is_current\"] = 0\n\n                # Insert new version\n                new_row = {\n                    \"customer_id\": cust_id,\n                    \"name\": s_name,\n                    \"segment\": s_segment,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n                new_rows.append(new_row)\n            else:\n                # No change: do nothing\n                pass\n        else:\n            # No current row exists: insert new\n            new_row = {\n                \"customer_id\": cust_id,\n                \"name\": s_name,\n                \"segment\": s_segment,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            }\n            new_rows.append(new_row)\n\n    all_rows = dim_rows + new_rows\n\n    result = pd.DataFrame(all_rows, columns=[\n        \"customer_id\", \"name\", \"segment\", \"eff_start_date\", \"eff_end_date\", \"is_current\"\n    ])\n\n    result[\"customer_id\"] = result[\"customer_id\"].astype(\"int64\")\n    result[\"is_current\"] = result[\"is_current\"].astype(\"int64\")\n    result[\"eff_start_date\"] = pd.to_datetime(result[\"eff_start_date\"])\n    result[\"eff_end_date\"] = pd.to_datetime(result[\"eff_end_date\"])\n\n    # Normalize to microsecond precision to match expected schema.\n    try:\n        result[\"eff_start_date\"] = result[\"eff_start_date\"].dt.as_unit(\"us\")\n        result[\"eff_end_date\"] = result[\"eff_end_date\"].dt.as_unit(\"us\")\n    except AttributeError:\n        # Fallback for older pandas versions without as_unit support.\n        result[\"eff_start_date\"] = result[\"eff_start_date\"].astype(\"datetime64[us]\")\n        result[\"eff_end_date\"] = result[\"eff_end_date\"].astype(\"datetime64[us]\")\n\n    return {\"dim_customer_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1154,
+   "tokens_out": 1686,
+   "usd": 0.028752,
+   "wall_s": 13.867215633392334,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2806,
+  "tokens_out": 7351,
+  "usd": 0.118683,
+  "wall_s": 77.69738292694092
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

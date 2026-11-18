@@ -1,0 +1,17 @@
+{
+ "task": "t2b_stmt_cycle_reset",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    ledger = inputs[\"ledger\"]\n\n    df = ledger.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    account_ids = []\n    row_seqs = []\n    entry_dates = []\n    entry_types = []\n    amounts = []\n    cycle_nos = []\n    cycle_balances = []\n\n    prev_acct = None\n    bal = 0.0\n    cyc = 1\n\n    for row in df.itertuples(index=False):\n        acct = row.account_id\n        rseq = row.row_seq\n        edate = row.entry_date\n        etype = row.entry_type\n        amt = row.amount\n\n        if acct != prev_acct:\n            bal = 0.0\n            cyc = 1\n            prev_acct = acct\n\n        if etype == \"STMT\":\n            bal = 0.0\n            cyc = cyc + 1\n\n        amt_val = amt if pd.notna(amt) else 0.0\n        bal = bal + amt_val\n\n        account_ids.append(acct)\n        row_seqs.append(rseq)\n        entry_dates.append(edate)\n        entry_types.append(etype)\n        amounts.append(amt)\n        cycle_nos.append(cyc)\n        cycle_balances.append(bal)\n\n    result = pd.DataFrame({\n        \"account_id\": account_ids,\n        \"row_seq\": row_seqs,\n        \"entry_date\": entry_dates,\n        \"entry_type\": entry_types,\n        \"amount\": amounts,\n        \"cycle_no\": cycle_nos,\n        \"cycle_balance\": cycle_balances,\n    })\n\n    result[\"account_id\"] = result[\"account_id\"].astype(\"int64\")\n    result[\"row_seq\"] = result[\"row_seq\"].astype(\"int64\")\n    result[\"entry_date\"] = pd.to_datetime(result[\"entry_date\"])\n    result[\"entry_type\"] = result[\"entry_type\"].astype(str)\n    result[\"amount\"] = result[\"amount\"].astype(\"float64\")\n    result[\"cycle_no\"] = result[\"cycle_no\"].astype(\"int64\")\n    result[\"cycle_balance\"] = result[\"cycle_balance\"].astype(\"float64\")\n\n    return {\"cycle_balances\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 790,
+   "tokens_out": 1017,
+   "usd": 0.017625,
+   "wall_s": 8.252105712890625,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

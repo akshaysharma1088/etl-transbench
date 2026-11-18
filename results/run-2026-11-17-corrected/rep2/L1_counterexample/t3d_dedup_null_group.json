@@ -1,0 +1,48 @@
+{
+ "config": "L1_counterexample",
+ "rep": 2,
+ "task": "t3d_dedup_null_group",
+ "category": "T3",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    # Load the source data\n    df = inputs[\"meter_reads\"].copy()\n    \n    # Sort by meter_id ASC, read_ts ASC, read_seq ASC\n    df = df.sort_values(\n        by=[\"meter_id\", \"read_ts\", \"read_seq\"],\n        ascending=[True, True, True],\n        na_position=\"last\"\n    )\n    \n    # Dedup: keep LAST row per meter_id (which is the latest after sorting)\n    # This is equivalent to keeping the last occurrence of each meter_id\n    df = df.drop_duplicates(subset=[\"meter_id\"], keep=\"last\")\n    \n    # Aggregate: group by zone and compute SUM(kwh) and COUNT(*)\n    # Note: NULL zone values are treated as a real group\n    agg_result = df.groupby(\"zone\", as_index=False, dropna=False).agg({\n        \"kwh\": \"sum\",\n        \"meter_id\": \"count\"\n    })\n    \n    # Rename columns to match output schema\n    agg_result = agg_result.rename(columns={\n        \"kwh\": \"total_kwh\",\n        \"meter_id\": \"meter_count\"\n    })\n    \n    # Reorder columns to match expected output: zone, total_kwh, meter_count\n    agg_result = agg_result[[\"zone\", \"total_kwh\", \"meter_count\"]]\n    \n    return {\"zone_totals\": agg_result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 537,
+   "tokens_out": 400,
+   "usd": 0.002537,
+   "wall_s": 3.9346389770507812,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

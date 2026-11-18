@@ -1,0 +1,48 @@
+{
+ "config": "C0_cheap_single",
+ "rep": 3,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_acct = inputs[\"dim_acct\"].copy()\n    stg_acct = inputs[\"stg_acct\"].copy()\n    \n    # Step 1: Dedup STG_ACCT to latest per acct_id by update_date\n    # On ties (same update_date), keep row with greater (email, tier) lexicographic pair\n    if len(stg_acct) > 0:\n        # Sort by acct_id, update_date (desc), then by (email, tier) desc for tie-breaking\n        stg_acct = stg_acct.sort_values(\n            by=['acct_id', 'update_date', 'email', 'tier'],\n            ascending=[True, False, False, False]\n        )\n        # Keep only the first occurrence per acct_id (latest, then lex-greatest on tie)\n        stg_acct = stg_acct.drop_duplicates(subset=['acct_id'], keep='first')\n        stg_acct = stg_acct.reset_index(drop=True)\n    \n    # Step 2: Process each staged record\n    for idx, staged_row in stg_acct.iterrows():\n        s_acct_id = staged_row['acct_id']\n        s_email = staged_row['email']\n        s_tier = staged_row['tier']\n        s_update_date = staged_row['update_date']\n        \n        # Find current row for this acct_id\n        current_mask = (dim_acct['acct_id'] == s_acct_id) & (dim_acct['is_current'] == 1)\n        current_rows = dim_acct[current_mask]\n        \n        if len(current_rows) == 0:\n            # No current row: insert new current version\n            new_row = pd.DataFrame({\n                'acct_id': [s_acct_id],\n                'email': [s_email],\n                'tier': [s_tier],\n                'eff_start_date': [s_update_date],\n                'eff_end_date': [pd.NaT],\n                'is_current': [1]\n            })\n            dim_acct = pd.concat([dim_acct, new_row], ignore_index=True)\n        else:\n            # Current row exists\n            current_row = current_rows.iloc[0]\n            c_tier = current_row['tier']\n            c_email = current_row['email']\n            current_idx = current_rows.index[0]\n            \n            # Check if tier changed (TYPE-2)\n            tier_changed = c_tier != s_tier\n            # Proper NULL comparison: NaN vs NaN is False, so we need explicit handling\n            if pd.isna(c_tier) and pd.isna(s_tier):\n                tier_changed = False\n            elif pd.isna(c_tier) or pd.isna(s_tier):\n                tier_changed = True\n            else:\n                tier_changed = c_tier != s_tier\n            \n            # Check if email changed (TYPE-1)\n            email_changed = c_email != s_email\n            if pd.isna(c_email) and pd.isna(s_email):\n                email_changed = False\n            elif pd.isna(c_email) or pd.isna(s_email):\n                email_changed = True\n            else:\n                email_changed = c_email != s_email\n            \n            if tier_changed:\n                # Expire current row at s_update_date\n                dim_acct.loc[current_idx, 'eff_end_date'] = s_update_date\n                dim_acct.loc[current_idx, 'is_current'] = 0\n                \n                # Insert new current version\n                new_row = pd.DataFrame({\n                    'acct_id': [s_acct_id],\n                    'email': [s_email],\n                    'tier': [s_tier],\n                    'eff_start_date': [s_update_date],\n                    'eff_end_date': [pd.NaT],\n                    'is_current': [1]\n                })\n                dim_acct = pd.concat([dim_acct, new_row], ignore_index=True)\n            \n            if email_changed:\n                # Retro-overwrite: update ALL rows of this acct_id with new email\n                dim_acct.loc[dim_acct['acct_id'] == s_acct_id, 'email'] = s_email\n    \n    dim_acct = dim_acct.reset_index(drop=True)\n    \n    return {'dim_acct_out': dim_acct}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 809,
+   "tokens_out": 1204,
+   "usd": 0.006829,
+   "wall_s": 7.204141616821289,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

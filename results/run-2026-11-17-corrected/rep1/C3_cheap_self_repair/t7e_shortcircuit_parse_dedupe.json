@@ -1,0 +1,63 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 1,
+ "task": "t7e_shortcircuit_parse_dedupe",
+ "category": "T7",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 3,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import datetime\nimport re\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    raw_payments = inputs[\"raw_payments\"].copy()\n    \n    # Initialize reject tracking\n    rejects = []\n    valid_indices = set(range(len(raw_payments)))\n    \n    # R1: MISSING_ID\n    for idx, row in raw_payments.iterrows():\n        payment_id = row['payment_id']\n        if pd.isna(payment_id) or (isinstance(payment_id, str) and payment_id.strip() == ''):\n            rejects.append({'row_num': row['row_num'], 'reject_reason': 'MISSING_ID'})\n            valid_indices.discard(idx)\n    \n    # R2: BAD_AMOUNT\n    legacy_number_pattern = r'^[+\\-]?\\d+(\\.\\d{1,2})?$'\n    for idx in list(valid_indices):\n        row = raw_payments.loc[idx]\n        amount_txt = row['amount_txt']\n        if pd.isna(amount_txt):\n            rejects.append({'row_num': row['row_num'], 'reject_reason': 'BAD_AMOUNT'})\n            valid_indices.discard(idx)\n        else:\n            trimmed = amount_txt.strip() if isinstance(amount_txt, str) else str(amount_txt)\n            if not re.match(legacy_number_pattern, trimmed):\n                rejects.append({'row_num': row['row_num'], 'reject_reason': 'BAD_AMOUNT'})\n                valid_indices.discard(idx)\n    \n    # R3: NON_POSITIVE\n    for idx in list(valid_indices):\n        row = raw_payments.loc[idx]\n        amount_txt = row['amount_txt']\n        trimmed = amount_txt.strip() if isinstance(amount_txt, str) else str(amount_txt)\n        try:\n            amount = float(trimmed)\n            if amount <= 0:\n                rejects.append({'row_num': row['row_num'], 'reject_reason': 'NON_POSITIVE'})\n                valid_indices.discard(idx)\n        except ValueError:\n            pass\n    \n    # R4: BAD_CURRENCY\n    for idx in list(valid_indices):\n        row = raw_payments.loc[idx]\n        currency = row['currency']\n        if pd.isna(currency):\n            rejects.append({'row_num': row['row_num'], 'reject_reason': 'BAD_CURRENCY'})\n            valid_indices.discard(idx)\n        else:\n            trimmed = currency.strip() if isinstance(currency, str) else str(currency)\n            if trimmed.upper() not in ['USD', 'EUR', 'GBP']:\n                rejects.append({'row_num': row['row_num'], 'reject_reason': 'BAD_CURRENCY'})\n                valid_indices.discard(idx)\n    \n    # R5: BAD_DATE\n    for idx in list(valid_indices):\n        row = raw_payments.loc[idx]\n        pay_date_txt = row['pay_date_txt']\n        if pd.isna(pay_date_txt):\n            rejects.append({'row_num': row['row_num'], 'reject_reason': 'BAD_DATE'})\n            valid_indices.discard(idx)\n        else:\n            trimmed = pay_date_txt.strip() if isinstance(pay_date_txt, str) else str(pay_date_txt)\n            if not re.match(r'^\\d{4}-\\d{2}-\\d{2}$', trimmed):\n                rejects.append({'row_num': row['row_num'], 'reject_reason': 'BAD_DATE'})\n                valid_indices.discard(idx)\n            else:\n                try:\n                    datetime.strptime(trimmed, '%Y-%m-%d')\n                except ValueError:\n                    rejects.append({'row_num': row['row_num'], 'reject_reason': 'BAD_DATE'})\n                    valid_indices.discard(idx)\n    \n    # R6: DUPLICATE - among rows that passed R1-R5, keep only first occurrence by row_num\n    valid_rows = raw_payments.loc[list(valid_indices)].copy()\n    valid_rows['trimmed_payment_id'] = valid_rows['payment_id'].str.strip()\n    \n    # Group by trimmed_payment_id and keep the row with the lowest row_num in each group\n    duplicate_reject_indices = set()\n    for group_payment_id, group in valid_rows.groupby('trimmed_payment_id', sort=False):\n        group_sorted = group.sort_values('row_num')\n        # First row (lowest row_num) is valid, rest are duplicates\n        for _, row in group_sorted.iloc[1:].iterrows():\n            duplicate_reject_indices.add(row.name)\n            rejects.append({'row_num': row['row_num'], 'reject_reason': 'DUPLICATE'})\n    \n    # Final valid indices after R6\n    final_valid_indices = valid_indices - duplicate_reject_indices\n    \n    # Build valid_payments\n    valid_rows_final = raw_payments.loc[list(final_valid_indices)].copy()\n    valid_rows_final['payment_id'] = valid_rows_final['payment_id'].str.strip()\n    valid_rows_final['amount'] = valid_rows_final['amount_txt'].str.strip().astype(float)\n    valid_rows_final['currency'] = valid_rows_final['currency'].str.strip().str.upper()\n    valid_rows_final['pay_date'] = pd.to_datetime(valid_rows_final['pay_date_txt'].str.strip())\n    \n    valid_payments = valid_rows_final[['payment_id', 'account_id', 'amount', 'currency', 'pay_date']].reset_index(drop=True)\n    \n    # Build payment_rejects\n    payment_rejects = pd.DataFrame(rejects) if rejects else pd.DataFrame(columns=['row_num', 'reject_reason'])\n    \n    return {\n        'valid_payments': valid_payments,\n        'payment_rejects': payment_rejects\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 818,
+   "tokens_out": 1512,
+   "usd": 0.008378,
+   "wall_s": 8.577354669570923,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5810,
+  "tokens_out": 5342,
+  "usd": 0.03252,
+  "wall_s": 35.680607080459595
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

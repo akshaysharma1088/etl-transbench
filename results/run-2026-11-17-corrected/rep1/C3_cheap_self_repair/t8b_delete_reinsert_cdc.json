@@ -1,0 +1,68 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 1,
+ "task": "t8b_delete_reinsert_cdc",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom typing import Dict\n\ndef run(inputs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n    \n    # Extract the high watermark timestamp\n    high_ts = watermark[\"high_ts\"].iloc[0]\n    \n    # Filter events up to and including the watermark, ordered by application sequence\n    new_events = cdc_events[cdc_events[\"event_ts\"] <= high_ts].copy()\n    new_events = new_events.sort_values(by=[\"item_id\", \"event_ts\", \"event_seq\"]).reset_index(drop=True)\n    \n    # Convert snapshot to a dictionary for efficient updates\n    # Key: item_id, Value: (qty_on_hand, last_event_ts)\n    snapshot_dict = {}\n    for _, row in target_snapshot.iterrows():\n        snapshot_dict[row[\"item_id\"]] = {\n            \"qty_on_hand\": row[\"qty_on_hand\"],\n            \"last_event_ts\": row[\"last_event_ts\"]\n        }\n    \n    # Apply events sequentially\n    for _, event in new_events.iterrows():\n        item_id = event[\"item_id\"]\n        event_ts = event[\"event_ts\"]\n        op = event[\"op\"]\n        qty = event[\"qty\"]\n        \n        if op == \"R\":  # Receipt: add to quantity\n            if item_id not in snapshot_dict:\n                # Item doesn't exist, start from 0\n                snapshot_dict[item_id] = {\n                    \"qty_on_hand\": 0.0,\n                    \"last_event_ts\": event_ts\n                }\n            snapshot_dict[item_id][\"qty_on_hand\"] += qty\n            snapshot_dict[item_id][\"last_event_ts\"] = event_ts\n            \n        elif op == \"A\":  # Adjustment: set to absolute value\n            snapshot_dict[item_id] = {\n                \"qty_on_hand\": qty,\n                \"last_event_ts\": event_ts\n            }\n            \n        elif op == \"D\":  # Delete: remove item from snapshot\n            if item_id in snapshot_dict:\n                del snapshot_dict[item_id]\n    \n    # Reconstruct the snapshot DataFrame\n    result_rows = []\n    for item_id, data in snapshot_dict.items():\n        result_rows.append({\n            \"item_id\": item_id,\n            \"qty_on_hand\": data[\"qty_on_hand\"],\n            \"last_event_ts\": data[\"last_event_ts\"]\n        })\n    \n    if result_rows:\n        new_snapshot = pd.DataFrame(result_rows)\n        new_snapshot = new_snapshot.sort_values(by=\"item_id\").reset_index(drop=True)\n    else:\n        new_snapshot = pd.DataFrame(columns=[\"item_id\", \"qty_on_hand\", \"last_event_ts\"])\n    \n    # Ensure correct dtypes\n    new_snapshot[\"item_id\"] = new_snapshot[\"item_id\"].astype(\"int64\")\n    new_snapshot[\"qty_on_hand\"] = new_snapshot[\"qty_on_hand\"].astype(\"float64\")\n    new_snapshot[\"last_event_ts\"] = pd.to_datetime(new_snapshot[\"last_event_ts\"], utc=False).dt.as_unit(\"us\")\n    \n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 635,
+   "tokens_out": 760,
+   "usd": 0.004435,
+   "wall_s": 6.117048025131226,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4469,
+  "tokens_out": 4722,
+  "usd": 0.028079,
+  "wall_s": 33.98430848121643
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

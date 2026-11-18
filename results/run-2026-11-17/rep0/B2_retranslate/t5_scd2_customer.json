@@ -1,0 +1,66 @@
+{
+ "config": "B2_retranslate",
+ "rep": 0,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_CUSTOMER'].copy()\n    stg = inputs['STG_CUSTOMER'].copy()\n\n    # Preserve original dtypes info for is_current / customer_id if possible\n    orig_is_current_dtype = dim['is_current'].dtype if 'is_current' in dim.columns else None\n    orig_customer_id_dtype = dim['customer_id'].dtype if 'customer_id' in dim.columns else None\n\n    if stg.empty:\n        return {'dim_customer_out': dim}\n\n    # Step 1: Deduplicate STG_CUSTOMER to latest record per customer_id by update_date.\n    # On ties, keep the record with the greater (name, segment) pair (DESC lexicographic).\n    stg_sorted = stg.sort_values(\n        by=['customer_id', 'update_date', 'name', 'segment'],\n        ascending=[True, False, False, False],\n        kind='mergesort'  # stable sort to make tie-breaking deterministic\n    )\n    stg_dedup = stg_sorted.drop_duplicates(subset=['customer_id'], keep='first')\n\n    dim = dim.reset_index(drop=True)\n\n    def changed(a, b):\n        a_null = pd.isna(a)\n        b_null = pd.isna(b)\n        if a_null and b_null:\n            return False\n        if a_null != b_null:\n            return True\n        return a != b\n\n    new_rows = []\n\n    for _, s in stg_dedup.iterrows():\n        cid = s['customer_id']\n        mask_current = (dim['customer_id'] == cid) & (dim['is_current'] == 1)\n        current_idx = dim.index[mask_current]\n\n        if len(current_idx) == 0:\n            # No current row exists -> insert new version\n            new_rows.append({\n                'customer_id': cid,\n                'name': s['name'],\n                'segment': s['segment'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': pd.NaT,\n                'is_current': 1\n            })\n        else:\n            idx = current_idx[0]\n            c_name = dim.at[idx, 'name']\n            c_segment = dim.at[idx, 'segment']\n            s_name = s['name']\n            s_segment = s['segment']\n\n            if changed(c_name, s_name) or changed(c_segment, s_segment):\n                # Tracked-attribute change: expire current row, insert new version\n                dim.at[idx, 'eff_end_date'] = s['update_date']\n                dim.at[idx, 'is_current'] = 0\n                new_rows.append({\n                    'customer_id': cid,\n                    'name': s_name,\n                    'segment': s_segment,\n                    'eff_start_date': s['update_date'],\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1\n                })\n            # else: no change -> do nothing\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=[\n            'customer_id', 'name', 'segment', 'eff_start_date', 'eff_end_date', 'is_current'\n        ])\n        dim = pd.concat([dim, new_df], ignore_index=True)\n\n    # Restore dtypes where sensible\n    if orig_customer_id_dtype is not None:\n        try:\n            dim['customer_id'] = dim['customer_id'].astype(orig_customer_id_dtype)\n        except (ValueError, TypeError):\n            pass\n\n    if orig_is_current_dtype is not None:\n        try:\n            dim['is_current'] = dim['is_current'].astype(orig_is_current_dtype)\n        except (ValueError, TypeError):\n            pass\n\n    return {'dim_customer_out': dim}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1017,
+   "tokens_out": 2207,
+   "usd": 0.036156,
+   "wall_s": 18.976224660873413
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4068,
+  "tokens_out": 11834,
+  "usd": 0.189714,
+  "wall_s": 99.26010489463806
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

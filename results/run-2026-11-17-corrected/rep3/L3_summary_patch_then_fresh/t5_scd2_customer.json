@@ -1,0 +1,63 @@
+{
+ "config": "L3_summary_patch_then_fresh",
+ "rep": 3,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 3,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom pandas import NaT\n\n\ndef _attr_changed(c_val, s_val):\n    c_na = pd.isna(c_val)\n    s_na = pd.isna(s_val)\n    if c_na and s_na:\n        return False\n    if c_na != s_na:\n        return True\n    return c_val != s_val\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_customer\"].copy()\n    stg = inputs[\"stg_customer\"].copy()\n\n    # Ensure proper dtypes / reset index\n    dim = dim.reset_index(drop=True)\n    stg = stg.reset_index(drop=True)\n\n    # 1. Deduplicate staging: latest per customer_id by update_date,\n    #    tie-break on greater (name, segment) lexicographically.\n    if len(stg) > 0:\n        stg_sorted = stg.sort_values(\n            by=[\"customer_id\", \"update_date\", \"name\", \"segment\"],\n            ascending=[True, False, False, False],\n            kind=\"mergesort\",\n        )\n        stg_dedup = stg_sorted.drop_duplicates(subset=[\"customer_id\"], keep=\"first\")\n    else:\n        stg_dedup = stg.copy()\n\n    # Working copy of dim rows (list of dicts) to allow in-place updates\n    dim_records = dim.to_dict(\"records\")\n\n    # Build index: customer_id -> list of row indices in dim_records that are current\n    current_idx_by_cust = {}\n    for i, rec in enumerate(dim_records):\n        if rec.get(\"is_current\") == 1:\n            current_idx_by_cust.setdefault(rec[\"customer_id\"], []).append(i)\n\n    new_rows = []\n\n    for _, s in stg_dedup.iterrows():\n        cust_id = s[\"customer_id\"]\n        s_name = s[\"name\"]\n        s_segment = s[\"segment\"]\n        s_update_date = s[\"update_date\"]\n\n        current_indices = current_idx_by_cust.get(cust_id, [])\n\n        if not current_indices:\n            # No current row exists -> insert new version\n            new_rows.append({\n                \"customer_id\": cust_id,\n                \"name\": s_name,\n                \"segment\": s_segment,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": NaT,\n                \"is_current\": 1,\n            })\n        else:\n            # Should typically be a single current row; take the first.\n            idx = current_indices[0]\n            c = dim_records[idx]\n\n            changed = _attr_changed(c[\"name\"], s_name) or _attr_changed(c[\"segment\"], s_segment)\n\n            if changed:\n                # Expire current row\n                dim_records[idx][\"eff_end_date\"] = s_update_date\n                dim_records[idx][\"is_current\"] = 0\n\n                # Insert new version\n                new_rows.append({\n                    \"customer_id\": cust_id,\n                    \"name\": s_name,\n                    \"segment\": s_segment,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": NaT,\n                    \"is_current\": 1,\n                })\n            # else: no change, do nothing\n\n    result_records = dim_records + new_rows\n\n    result_df = pd.DataFrame(\n        result_records,\n        columns=[\"customer_id\", \"name\", \"segment\", \"eff_start_date\", \"eff_end_date\", \"is_current\"],\n    )\n\n    # Enforce dtypes consistent with expected schema\n    result_df[\"customer_id\"] = result_df[\"customer_id\"].astype(\"int64\")\n    result_df[\"is_current\"] = result_df[\"is_current\"].astype(\"int64\")\n    result_df[\"eff_start_date\"] = pd.to_datetime(result_df[\"eff_start_date\"])\n    result_df[\"eff_end_date\"] = pd.to_datetime(result_df[\"eff_end_date\"])\n\n    return {\"dim_customer_out\": result_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1154,
+   "tokens_out": 1686,
+   "usd": 0.028752,
+   "wall_s": 13.867215633392334,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 7213,
+  "tokens_out": 20788,
+  "usd": 0.333459,
+  "wall_s": 218.27377247810364
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "B3_self_repair",
+ "rep": 3,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_customer\"].copy()\n    stg = inputs[\"stg_customer\"].copy()\n    fact = inputs[\"fact_txn\"].copy()\n\n    max_sk = dim[\"customer_sk\"].max() if len(dim) > 0 else 0\n\n    creates = []  # (customer_id, segment, update_date, current_row_index_or_None)\n\n    for _, row in stg.iterrows():\n        cid = row[\"customer_id\"]\n        seg = row[\"segment\"]\n        upd = row[\"update_date\"]\n\n        cur = dim[(dim[\"customer_id\"] == cid) & (dim[\"is_current\"] == 1)]\n\n        if cur.empty:\n            creates.append((cid, seg, upd, None))\n        else:\n            cur_idx = cur.index[0]\n            cur_seg = cur.iloc[0][\"segment\"]\n\n            seg_null = pd.isna(seg)\n            cur_seg_null = pd.isna(cur_seg)\n\n            if seg_null and cur_seg_null:\n                same = True\n            elif seg_null or cur_seg_null:\n                same = False\n            else:\n                same = (seg == cur_seg)\n\n            if not same:\n                creates.append((cid, seg, upd, cur_idx))\n            # else: no-op, unchanged record, no version created\n\n    # Order creates by customer_id for ROW_NUMBER assignment\n    creates_sorted = sorted(creates, key=lambda x: x[0])\n\n    new_rows = []\n    expirations = []  # (dim_index, update_date)\n\n    for i, (cid, seg, upd, cur_idx) in enumerate(creates_sorted, start=1):\n        sk = max_sk + i\n        new_rows.append({\n            \"customer_sk\": sk,\n            \"customer_id\": cid,\n            \"segment\": seg,\n            \"eff_start_date\": upd,\n            \"eff_end_date\": pd.NaT,\n            \"is_current\": 1\n        })\n        if cur_idx is not None:\n            expirations.append((cur_idx, upd))\n\n    dim_out = dim.copy()\n\n    for idx, upd in expirations:\n        dim_out.at[idx, \"eff_end_date\"] = upd\n        dim_out.at[idx, \"is_current\"] = 0\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows)\n        dim_out = pd.concat([dim_out, new_df], ignore_index=True)\n\n    dim_out = dim_out.reset_index(drop=True)\n\n    # Ensure proper dtypes\n    dim_out[\"customer_sk\"] = dim_out[\"customer_sk\"].astype(\"int64\")\n    dim_out[\"customer_id\"] = dim_out[\"customer_id\"].astype(\"int64\")\n    dim_out[\"is_current\"] = dim_out[\"is_current\"].astype(\"int64\")\n    dim_out[\"eff_start_date\"] = pd.to_datetime(dim_out[\"eff_start_date\"])\n    dim_out[\"eff_end_date\"] = pd.to_datetime(dim_out[\"eff_end_date\"])\n\n    # Step 2: key the facts against the updated dimension\n    def find_sk(cid, txn_date):\n        candidates = dim_out[dim_out[\"customer_id\"] == cid]\n        for _, r in candidates.iterrows():\n            start = r[\"eff_start_date\"]\n            end = r[\"eff_end_date\"]\n            if pd.isna(start):\n                continue\n            if start <= txn_date and (pd.isna(end) or txn_date < end):\n                return r[\"customer_sk\"]\n        return -1\n\n    sks = []\n    for cid, td in zip(fact[\"customer_id\"], fact[\"txn_date\"]):\n        sks.append(find_sk(cid, td))\n\n    fact_out = fact.copy()\n    fact_out[\"customer_sk\"] = sks\n    fact_out[\"customer_sk\"] = fact_out[\"customer_sk\"].astype(\"int64\")\n    fact_out = fact_out[[\"txn_id\", \"customer_sk\", \"amount\"]]\n\n    return {\n        \"dim_customer_out\": dim_out,\n        \"fact_txn_keyed\": fact_out\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1349,
+   "tokens_out": 3441,
+   "usd": 0.055662,
+   "wall_s": 28.539695739746094,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

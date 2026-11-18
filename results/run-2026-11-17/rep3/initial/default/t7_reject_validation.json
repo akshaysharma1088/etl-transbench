@@ -1,0 +1,16 @@
+{
+ "task": "t7_reject_validation",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    payments = inputs['payments'].copy()\n\n    # Work on a copy, preserve original column order/values\n    df = payments.copy()\n\n    # Initialize reason_code column (object dtype, all None/NaN to start)\n    reason = pd.Series([None] * len(df), index=df.index, dtype=object)\n\n    # R1: amount IS NULL -> AMT_NULL\n    cond1 = df['amount'].isna()\n    reason = reason.mask(cond1, 'AMT_NULL')\n\n    # R2: amount <= 0 -> AMT_NONPOS (only evaluated for rows not already rejected)\n    remaining = reason.isna()\n    cond2 = remaining & (~cond1) & (df['amount'] <= 0)\n    reason = reason.mask(cond2, 'AMT_NONPOS')\n\n    # R3: currency NOT IN ('USD','EUR','GBP') -> CCY_INVALID\n    valid_currencies = {'USD', 'EUR', 'GBP'}\n    remaining = reason.isna()\n    cond3 = remaining & (~df['currency'].isin(valid_currencies))\n    reason = reason.mask(cond3, 'CCY_INVALID')\n\n    # R4: country IS NULL -> CTRY_NULL\n    remaining = reason.isna()\n    cond4 = remaining & df['country'].isna()\n    reason = reason.mask(cond4, 'CTRY_NULL')\n\n    df['reason_code'] = reason\n\n    # Split into clean and rejects based on presence of reason_code\n    is_rejected = df['reason_code'].notna()\n\n    # payments_clean: passing records, amount rounded to 2 decimals\n    payments_clean = df.loc[~is_rejected, payments.columns].copy()\n    payments_clean['amount'] = payments_clean['amount'].round(2)\n    payments_clean = payments_clean.reset_index(drop=True)\n\n    # payments_rejects: rejected records, original amount + reason_code\n    reject_cols = list(payments.columns) + ['reason_code']\n    payments_rejects = df.loc[is_rejected, reject_cols].copy()\n    payments_rejects = payments_rejects.reset_index(drop=True)\n\n    return {\n        'payments_clean': payments_clean,\n        'payments_rejects': payments_rejects,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 554,
+   "tokens_out": 2928,
+   "usd": 0.045582,
+   "wall_s": 28.192578554153442
+  }
+ ]
+}

@@ -1,0 +1,47 @@
+{
+ "config": "B1_single_pass",
+ "rep": 0,
+ "task": "t5e_scd2_late_arriving",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_ACCOUNT'].copy()\n    stg = inputs['STG_ACCOUNT'].copy()\n\n    def is_na(x):\n        return pd.isna(x)\n\n    def plan_eq(a, b):\n        a_na = is_na(a)\n        b_na = is_na(b)\n        if a_na and b_na:\n            return True\n        if a_na != b_na:\n            return False\n        return a == b\n\n    # Build per-account version lists from existing dim state\n    versions = {}\n    for _, row in dim.iterrows():\n        acc = row['account_id']\n        versions.setdefault(acc, []).append({\n            'plan': row['plan'],\n            'start': row['eff_start_date'],\n            'end': row['eff_end_date'],\n            'is_current': row['is_current'],\n        })\n\n    # Sort staging rows: account_id, update_date ascending (stable)\n    stg_sorted = stg.sort_values(by=['account_id', 'update_date'], kind='mergesort')\n\n    for _, s in stg_sorted.iterrows():\n        acc = s['account_id']\n        plan = s['plan']\n        upd = s['update_date']\n\n        vlist = versions.setdefault(acc, [])\n\n        if len(vlist) == 0:\n            vlist.append({\n                'plan': plan,\n                'start': upd,\n                'end': None,\n                'is_current': 1,\n            })\n            continue\n\n        # find the version covering upd: start <= upd < end (end NULL = open)\n        covering = None\n        for v in vlist:\n            start_ok = v['start'] <= upd\n            end_ok = is_na(v['end']) or upd < v['end']\n            if start_ok and end_ok:\n                covering = v\n                break\n\n        if covering is None:\n            # upd is earlier than the account's earliest version\n            f = min(vlist, key=lambda v: v['start'])\n            vlist.append({\n                'plan': plan,\n                'start': upd,\n                'end': f['start'],\n                'is_current': 0,\n            })\n        else:\n            v = covering\n            if plan_eq(v['plan'], plan):\n                # no-op: unchanged attribute, no new version\n                pass\n            elif upd == v['start']:\n                # same-day correction, no new version\n                v['plan'] = plan\n            else:\n                # split v at upd\n                vlist.append({\n                    'plan': plan,\n                    'start': upd,\n                    'end': v['end'],\n                    'is_current': v['is_current'],\n                })\n                v['end'] = upd\n                v['is_current'] = 0\n\n    records = []\n    for acc, vlist in versions.items():\n        for v in vlist:\n            records.append({\n                'account_id': acc,\n                'plan': v['plan'],\n                'eff_start_date': v['start'],\n                'eff_end_date': v['end'],\n                'is_current': v['is_current'],\n            })\n\n    out = pd.DataFrame(\n        records,\n        columns=['account_id', 'plan', 'eff_start_date', 'eff_end_date', 'is_current'],\n    )\n\n    if len(out) > 0:\n        out = out.sort_values(\n            by=['account_id', 'eff_start_date'], kind='mergesort'\n        ).reset_index(drop=True)\n\n    return {'dim_account_out': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1165,
+   "tokens_out": 3736,
+   "usd": 0.059535,
+   "wall_s": 31.39962911605835
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

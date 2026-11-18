@@ -1,0 +1,17 @@
+{
+ "task": "t6c_midnight_split",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(by=[\"user_id\", \"event_ts\", \"event_id\"]).reset_index(drop=True)\n    \n    # Extract date (local calendar date) from event_ts\n    events[\"event_date\"] = events[\"event_ts\"].dt.date\n    \n    # Initialize session tracking columns\n    events[\"session_num\"] = 0\n    session_num = 0\n    \n    # Process each user separately\n    for user_id in events[\"user_id\"].unique():\n        user_mask = events[\"user_id\"] == user_id\n        user_indices = events[user_mask].index.tolist()\n        \n        if len(user_indices) == 0:\n            continue\n        \n        # First event of user starts session 1\n        session_num += 1\n        events.loc[user_indices[0], \"session_num\"] = session_num\n        \n        prev_ts = events.loc[user_indices[0], \"event_ts\"]\n        prev_date = events.loc[user_indices[0], \"event_date\"]\n        \n        # Process remaining events for this user\n        for i in range(1, len(user_indices)):\n            curr_idx = user_indices[i]\n            curr_ts = events.loc[curr_idx, \"event_ts\"]\n            curr_date = events.loc[curr_idx, \"event_date\"]\n            \n            # Check if new session should start\n            time_gap = (curr_ts - prev_ts).total_seconds() / 60  # gap in minutes\n            date_changed = curr_date != prev_date\n            \n            if time_gap > 45 or date_changed:\n                session_num += 1\n            \n            events.loc[curr_idx, \"session_num\"] = session_num\n            prev_ts = curr_ts\n            prev_date = curr_date\n    \n    # Group by user_id and session_num to create sessions\n    session_groups = events.groupby([\"user_id\", \"session_num\"], sort=False).agg(\n        session_date=(\"event_date\", \"first\"),\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    ).reset_index()\n    \n    # Ensure columns are in the right order\n    user_sessions = session_groups[[\"user_id\", \"session_num\", \"session_date\", \"session_start\", \"session_end\", \"event_count\"]]\n    \n    return {\"user_sessions\": user_sessions}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 696,
+   "usd": 0.00386,
+   "wall_s": 5.833287954330444,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

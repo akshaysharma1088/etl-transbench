@@ -1,0 +1,16 @@
+{
+ "task": "t4d_union_dedup_precedence",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Merge two feeds (CRM and web) with SOURCE PRECEDENCE golden-record deduplication.\n    CRM (source rank 1) beats web (source rank 2) regardless of recency.\n    Within same source, newer records win. Email breaks ties deterministically.\n    \"\"\"\n    crm_feed = inputs[\"crm_feed\"].copy()\n    web_feed = inputs[\"web_feed\"].copy()\n    \n    # Step 1: Create STG_COMBINED with UNION ALL and source ranking\n    crm_feed[\"src_rank\"] = 1\n    web_feed[\"src_rank\"] = 2\n    \n    # Combine both feeds\n    stg_combined = pd.concat([crm_feed, web_feed], ignore_index=True)\n    \n    # Step 2: Apply windowed deduplication with deterministic ordering\n    # ORDER BY: src_rank ASC (CRM wins), updated_at DESC (newer wins), email ASC (deterministic tie-break)\n    stg_combined[\"rn\"] = stg_combined.groupby(\"customer_id\", sort=False).apply(\n        lambda group: group.sort_values(\n            by=[\"src_rank\", \"updated_at\", \"email\"],\n            ascending=[True, False, True],\n            na_position=\"last\"\n        ).reset_index(drop=True).index + 1\n    ).reset_index(drop=True, level=0)\n    \n    # Keep only the first record per customer_id (rn = 1)\n    golden = stg_combined[stg_combined[\"rn\"] == 1].copy()\n    \n    # Select only the output columns (drop src_rank and rn)\n    golden = golden[[\"customer_id\", \"email\", \"updated_at\"]].reset_index(drop=True)\n    \n    return {\"golden\": golden}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 417,
+   "tokens_out": 477,
+   "usd": 0.002802,
+   "wall_s": 3.4902920722961426
+  }
+ ]
+}

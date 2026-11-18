@@ -1,0 +1,67 @@
+{
+ "config": "B3_self_repair",
+ "rep": 1,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _sig(city, tier):\n    \"\"\"\n    Compute the legacy row signature:\n    SIG(city, tier) = RTRIM(COALESCE(city, '')) || '|' || RTRIM(COALESCE(tier, ''))\n    - NULL/NaN treated as empty string.\n    - Only trailing spaces are stripped (RTRIM semantics), leading spaces\n      and case are preserved.\n    - Delimiter '|' is not escaped, so the concatenation itself defines\n      equality (intentional quirk).\n    \"\"\"\n    c = '' if pd.isna(city) else str(city)\n    t = '' if pd.isna(tier) else str(tier)\n    c = c.rstrip(' ')\n    t = t.rstrip(' ')\n    return c + '|' + t\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_MEMBER'].copy()\n    stg = inputs['STG_MEMBER'].copy()\n\n    # Work on a mutable copy that will become the output state.\n    out = dim.copy()\n\n    new_rows = []\n\n    for _, s in stg.iterrows():\n        mid = s['member_id']\n\n        mask = (out['member_id'] == mid) & (out['is_current'] == 1)\n        current_idx = out.index[mask]\n\n        if len(current_idx) == 0:\n            # No current row -> plain insert, staged values stored verbatim.\n            new_rows.append({\n                'member_id': mid,\n                'city': s['city'],\n                'tier': s['tier'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n        else:\n            idx = current_idx[0]\n            cur_city = out.at[idx, 'city']\n            cur_tier = out.at[idx, 'tier']\n\n            if _sig(s['city'], s['tier']) != _sig(cur_city, cur_tier):\n                # Close the prior current row.\n                out.at[idx, 'eff_end_date'] = s['update_date']\n                out.at[idx, 'is_current'] = 0\n\n                # Insert the new current version with staged values verbatim.\n                new_rows.append({\n                    'member_id': mid,\n                    'city': s['city'],\n                    'tier': s['tier'],\n                    'eff_start_date': s['update_date'],\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                })\n            # else: identical signature -> no-op, keep existing current row\n            # exactly as it was (city/tier untouched).\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=out.columns)\n        out = pd.concat([out, new_df], ignore_index=True)\n\n    return {'dim_member_out': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1114,
+   "tokens_out": 2859,
+   "usd": 0.046227,
+   "wall_s": 25.765127897262573
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5676,
+  "tokens_out": 11271,
+  "usd": 0.186093,
+  "wall_s": 109.46588611602783
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

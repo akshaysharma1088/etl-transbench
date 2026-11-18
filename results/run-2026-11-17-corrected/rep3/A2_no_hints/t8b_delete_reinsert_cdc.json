@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t8b_delete_reinsert_cdc",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_snapshot = inputs[\"target_snapshot\"]\n    cdc_events = inputs[\"cdc_events\"]\n    watermark = inputs[\"watermark\"]\n\n    # Determine watermark high_ts\n    if len(watermark) > 0:\n        high_ts = watermark[\"high_ts\"].max()\n    else:\n        high_ts = None\n\n    # Filter events that are not yet applied (event_ts > high_ts)\n    if high_ts is not None:\n        events = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n    else:\n        events = cdc_events.copy()\n\n    # Sort events per item, then by event_ts, then event_seq for sequential application\n    events = events.sort_values(by=[\"item_id\", \"event_ts\", \"event_seq\"],\n                                 kind=\"mergesort\")\n\n    # Build initial state from target_snapshot\n    state = {}\n    for row in target_snapshot.itertuples(index=False):\n        state[row.item_id] = {\n            \"qty\": float(row.qty_on_hand),\n            \"ts\": row.last_event_ts,\n            \"exists\": True,\n        }\n\n    # Apply events sequentially per item\n    for row in events.itertuples(index=False):\n        item_id = row.item_id\n        op = row.op\n        qty = row.qty\n        ts = row.event_ts\n\n        if item_id not in state:\n            state[item_id] = {\"qty\": 0.0, \"ts\": None, \"exists\": False}\n\n        s = state[item_id]\n\n        if op == \"R\":\n            if s[\"exists\"]:\n                s[\"qty\"] = s[\"qty\"] + qty\n            else:\n                # recreate starting from 0\n                s[\"qty\"] = 0.0 + qty\n                s[\"exists\"] = True\n        elif op == \"A\":\n            s[\"qty\"] = qty\n            s[\"exists\"] = True\n        elif op == \"D\":\n            s[\"exists\"] = False\n            # qty value irrelevant while deleted; keep as-is or reset,\n            # doesn't matter since not exists until recreated\n\n        s[\"ts\"] = ts\n\n    # Build output snapshot from items that exist\n    records = []\n    for item_id, s in state.items():\n        if s[\"exists\"]:\n            records.append({\n                \"item_id\": item_id,\n                \"qty_on_hand\": s[\"qty\"],\n                \"last_event_ts\": s[\"ts\"],\n            })\n\n    if records:\n        new_snapshot = pd.DataFrame.from_records(records)\n        new_snapshot = new_snapshot.astype({\n            \"item_id\": \"int64\",\n            \"qty_on_hand\": \"float64\",\n        })\n        new_snapshot[\"last_event_ts\"] = pd.to_datetime(new_snapshot[\"last_event_ts\"])\n        new_snapshot = new_snapshot.sort_values(by=\"item_id\").reset_index(drop=True)\n    else:\n        new_snapshot = pd.DataFrame({\n            \"item_id\": pd.Series(dtype=\"int64\"),\n            \"qty_on_hand\": pd.Series(dtype=\"float64\"),\n            \"last_event_ts\": pd.Series(dtype=\"datetime64[us]\"),\n        })\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 841,
+   "tokens_out": 2008,
+   "usd": 0.032643,
+   "wall_s": 18.47090172767639,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

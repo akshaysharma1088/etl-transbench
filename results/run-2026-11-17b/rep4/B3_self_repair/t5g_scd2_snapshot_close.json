@@ -1,0 +1,67 @@
+{
+ "config": "B3_self_repair",
+ "rep": 4,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_null(x):\n    try:\n        return pd.isna(x)\n    except (TypeError, ValueError):\n        return x is None\n\n\ndef _differs(a, b):\n    a_null = _is_null(a)\n    b_null = _is_null(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim_store = inputs['DIM_STORE'].copy()\n    stg = inputs['STG_STORE_FULL'].copy()\n    batch_control = inputs['BATCH_CONTROL']\n\n    b = batch_control['batch_date'].iloc[0]\n\n    # Step 0: DISTINCT store_id, region, format from staging, preserving\n    # first-seen order (exact duplicates collapsed).\n    S = stg.drop_duplicates(subset=['store_id', 'region', 'format'],\n                             keep='first').reset_index(drop=True)\n\n    working = dim_store.copy()\n\n    # Map store_id -> row index of its current row (is_current == 1).\n    current_idx = {}\n    current_rows = working[working['is_current'] == 1]\n    for idx, row in current_rows.iterrows():\n        current_idx[row['store_id']] = idx\n\n    new_rows = []\n    s_store_ids = set()\n\n    for _, srow in S.iterrows():\n        sid = srow['store_id']\n        region = srow['region']\n        fmt = srow['format']\n        s_store_ids.add(sid)\n\n        if sid in current_idx:\n            idx = current_idx[sid]\n            crow = working.loc[idx]\n            if _differs(crow['region'], region) or _differs(crow['format'], fmt):\n                # Close the existing current row.\n                working.at[idx, 'eff_end_date'] = b\n                working.at[idx, 'is_current'] = 0\n                # Insert the new current version.\n                new_rows.append({\n                    'store_id': sid,\n                    'region': region,\n                    'format': fmt,\n                    'eff_start_date': b,\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                })\n            # else: unchanged attributes -> no-op, no new version.\n        else:\n            # No current row exists: brand-new store or reactivated store.\n            new_rows.append({\n                'store_id': sid,\n                'region': region,\n                'format': fmt,\n                'eff_start_date': b,\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n\n    # Step 2: close current rows whose store_id is absent from the snapshot.\n    for sid, idx in current_idx.items():\n        if sid not in s_store_ids:\n            working.at[idx, 'eff_end_date'] = b\n            working.at[idx, 'is_current'] = 0\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=working.columns)\n        result = pd.concat([working, new_df], ignore_index=True)\n    else:\n        result = working.reset_index(drop=True)\n\n    return {'dim_store_out': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1094,
+   "tokens_out": 2655,
+   "usd": 0.043107,
+   "wall_s": 21.139800786972046
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5828,
+  "tokens_out": 13721,
+  "usd": 0.223299,
+  "wall_s": 133.43081951141357
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

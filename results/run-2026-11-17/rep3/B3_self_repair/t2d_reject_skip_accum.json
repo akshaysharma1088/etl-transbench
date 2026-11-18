@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 3,
+ "task": "t2d_reject_skip_accum",
+ "category": "T2",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    postings = inputs[\"POSTINGS\"].copy()\n\n    # Ensure expected columns exist\n    cols = [\"account_id\", \"post_seq\", \"post_date\", \"qty\", \"unit_price\"]\n    for c in cols:\n        if c not in postings.columns:\n            postings[c] = pd.NA\n\n    # Stable sort mimicking cursor ORDER BY account_id, post_date, post_seq\n    postings = postings.sort_values(\n        by=[\"account_id\", \"post_date\", \"post_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    qty = postings[\"qty\"]\n    unit_price = postings[\"unit_price\"]\n\n    valid_mask = (\n        qty.notna()\n        & (qty > 0)\n        & unit_price.notna()\n        & (unit_price >= 0)\n    )\n\n    # Compute post_value only for valid rows\n    post_value = qty * unit_price\n\n    valid_rows = postings.loc[valid_mask].copy()\n    valid_rows[\"post_value\"] = post_value.loc[valid_mask]\n\n    # running_total: cumulative sum within account_id, over valid rows only,\n    # in the already-established sorted order (stable, preserves row order)\n    valid_rows[\"running_total\"] = (\n        valid_rows.groupby(\"account_id\", sort=False)[\"post_value\"].cumsum()\n    )\n\n    posted_totals = valid_rows[\n        [\"account_id\", \"post_seq\", \"post_date\", \"post_value\", \"running_total\"]\n    ].reset_index(drop=True)\n\n    # Reject counts: every account_id seen in POSTINGS gets a row,\n    # including accounts with zero rejects.\n    reject_mask = ~valid_mask\n    reject_series = (\n        postings.loc[reject_mask]\n        .groupby(\"account_id\", sort=False)\n        .size()\n    )\n\n    all_accounts = postings[\"account_id\"].drop_duplicates()\n\n    reject_counts = pd.DataFrame({\"account_id\": all_accounts})\n    reject_counts[\"reject_count\"] = (\n        reject_counts[\"account_id\"].map(reject_series).fillna(0).astype(int)\n    )\n    reject_counts = reject_counts.reset_index(drop=True)\n\n    return {\n        \"posted_totals\": posted_totals,\n        \"reject_counts\": reject_counts,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 975,
+   "tokens_out": 1437,
+   "usd": 0.02448,
+   "wall_s": 13.56697416305542
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4951,
+  "tokens_out": 7998,
+  "usd": 0.134823,
+  "wall_s": 84.37042379379272
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

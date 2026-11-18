@@ -1,0 +1,48 @@
+{
+ "config": "C4_cheap_trace_only",
+ "rep": 2,
+ "task": "t7e_shortcircuit_parse_dedupe",
+ "category": "T7",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport re\nfrom datetime import datetime\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    raw_payments = inputs[\"raw_payments\"].copy()\n    \n    # Initialize reject tracking\n    rejects = []\n    valid_indices = []\n    \n    for idx, row in raw_payments.iterrows():\n        row_num = row['row_num']\n        reject_reason = None\n        \n        # R1: MISSING_ID\n        payment_id = row['payment_id']\n        if pd.isna(payment_id) or (isinstance(payment_id, str) and payment_id.strip() == ''):\n            reject_reason = 'MISSING_ID'\n        \n        # R2: BAD_AMOUNT\n        if reject_reason is None:\n            amount_txt = row['amount_txt']\n            if pd.isna(amount_txt):\n                reject_reason = 'BAD_AMOUNT'\n            else:\n                amount_str = str(amount_txt).strip()\n                # Legacy number: optional +/-, one or more digits, optional .DD\n                pattern = r'^[+-]?\\d+(\\.\\d{1,2})?$'\n                if not re.match(pattern, amount_str):\n                    reject_reason = 'BAD_AMOUNT'\n        \n        # R3: NON_POSITIVE\n        if reject_reason is None:\n            try:\n                amount_val = float(str(row['amount_txt']).strip())\n                if amount_val <= 0:\n                    reject_reason = 'NON_POSITIVE'\n            except:\n                reject_reason = 'BAD_AMOUNT'\n        \n        # R4: BAD_CURRENCY\n        if reject_reason is None:\n            currency = row['currency']\n            if pd.isna(currency):\n                reject_reason = 'BAD_CURRENCY'\n            else:\n                currency_upper = str(currency).strip().upper()\n                if currency_upper not in ['USD', 'EUR', 'GBP']:\n                    reject_reason = 'BAD_CURRENCY'\n        \n        # R5: BAD_DATE\n        if reject_reason is None:\n            pay_date_txt = row['pay_date_txt']\n            if pd.isna(pay_date_txt):\n                reject_reason = 'BAD_DATE'\n            else:\n                date_str = str(pay_date_txt).strip()\n                # Must be exactly YYYY-MM-DD\n                if not re.match(r'^\\d{4}-\\d{2}-\\d{2}$', date_str):\n                    reject_reason = 'BAD_DATE'\n                else:\n                    try:\n                        datetime.strptime(date_str, '%Y-%m-%d')\n                    except ValueError:\n                        reject_reason = 'BAD_DATE'\n        \n        if reject_reason is not None:\n            rejects.append({'row_num': row_num, 'reject_reason': reject_reason})\n        else:\n            valid_indices.append(idx)\n    \n    # Build valid_payments from non-rejected rows\n    valid_rows = raw_payments.loc[valid_indices].copy()\n    \n    # R6: DUPLICATE - keep only the row with lowest row_num per trimmed payment_id\n    if len(valid_rows) > 0:\n        valid_rows['payment_id_trimmed'] = valid_rows['payment_id'].str.strip()\n        # Group by trimmed payment_id and find the row with minimum row_num in each group\n        min_row_num_per_id = valid_rows.groupby('payment_id_trimmed', as_index=False)['row_num'].min()\n        min_row_num_per_id.columns = ['payment_id_trimmed', 'min_row_num']\n        \n        # Merge to identify duplicates\n        valid_rows = valid_rows.merge(min_row_num_per_id, on='payment_id_trimmed', how='left')\n        \n        # Identify duplicates (rows where row_num != min_row_num)\n        duplicates = valid_rows[valid_rows['row_num'] != valid_rows['min_row_num']].copy()\n        for dup_idx, dup_row in duplicates.iterrows():\n            rejects.append({'row_num': int(dup_row['row_num']), 'reject_reason': 'DUPLICATE'})\n        \n        # Keep only non-duplicate rows\n        valid_rows = valid_rows[valid_rows['row_num'] == valid_rows['min_row_num']].copy()\n        valid_rows = valid_rows.drop(columns=['payment_id_trimmed', 'min_row_num'])\n    \n    # Build output for valid_payments\n    if len(valid_rows) > 0:\n        valid_payments = pd.DataFrame({\n            'payment_id': valid_rows['payment_id'].str.strip(),\n            'account_id': valid_rows['account_id'],\n            'amount': valid_rows['amount_txt'].str.strip().astype(float),\n            'currency': valid_rows['currency'].str.strip().str.upper(),\n            'pay_date': valid_rows['pay_date_txt'].str.strip()\n        })\n    else:\n        valid_payments = pd.DataFrame({\n            'payment_id': pd.Series(dtype='object'),\n            'account_id': pd.Series(dtype='int64'),\n            'amount': pd.Series(dtype='float64'),\n            'currency': pd.Series(dtype='object'),\n            'pay_date': pd.Series(dtype='object')\n        })\n    \n    # Build output for payment_rejects\n    if rejects:\n        payment_rejects = pd.DataFrame(rejects)\n    else:\n        payment_rejects = pd.DataFrame({\n            'row_num': pd.Series(dtype='int64'),\n            'reject_reason': pd.Series(dtype='object')\n        })\n    \n    return {\n        'valid_payments': valid_payments,\n        'payment_rejects': payment_rejects\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 818,
+   "tokens_out": 1516,
+   "usd": 0.008398,
+   "wall_s": 8.983777284622192,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

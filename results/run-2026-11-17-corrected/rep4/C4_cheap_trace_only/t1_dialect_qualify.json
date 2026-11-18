@@ -1,0 +1,48 @@
+{
+ "config": "C4_cheap_trace_only",
+ "rep": 4,
+ "task": "t1_dialect_qualify",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Teradata-style QUALIFY filter: latest high-value transaction per account.\n    \n    - WHERE filters amount > 100\n    - Adds size_band categorization via CASE\n    - QUALIFY keeps only ROW_NUMBER() = 1 per account\n      (ordered by txn_ts DESC, then txn_id DESC)\n    \"\"\"\n    acct_txn = inputs[\"acct_txn\"].copy()\n    \n    # WHERE amount > 100\n    filtered = acct_txn[acct_txn[\"amount\"] > 100].copy()\n    \n    # Add size_band column via CASE logic\n    def categorize_size(amount):\n        if amount >= 1000:\n            return \"JUMBO\"\n        elif amount >= 500:\n            return \"LARGE\"\n        else:\n            return \"STANDARD\"\n    \n    filtered[\"size_band\"] = filtered[\"amount\"].apply(categorize_size)\n    \n    # Compute ROW_NUMBER() over (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC)\n    # In Teradata, NULLs sort high (first) in DESC order\n    # We explicitly handle this by sorting with na_position='first' for DESC\n    filtered[\"rn\"] = filtered.groupby(\"account_id\", sort=False).cumcount(ascending=False) + 1\n    \n    # Actually, let's use a more precise approach with proper sorting\n    # Sort by account_id, then by txn_ts DESC, then by txn_id DESC\n    # In pandas, to replicate Teradata DESC with NULLs high, we sort ascending=False\n    # and set na_position='first' (NULLs at top in descending order)\n    \n    sorted_df = filtered.sort_values(\n        by=[\"account_id\", \"txn_ts\", \"txn_id\"],\n        ascending=[True, False, False],\n        na_position=\"first\"\n    )\n    \n    # Assign row numbers within each partition\n    sorted_df[\"rn\"] = sorted_df.groupby(\"account_id\", sort=False).cumcount() + 1\n    \n    # QUALIFY: keep only rows where rn = 1\n    result = sorted_df[sorted_df[\"rn\"] == 1].copy()\n    \n    # Select output columns (drop rn)\n    output = result[[\n        \"account_id\",\n        \"txn_id\",\n        \"txn_ts\",\n        \"amount\",\n        \"channel\",\n        \"size_band\"\n    ]].reset_index(drop=True)\n    \n    return {\"latest_high_value_txn\": output}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 432,
+   "tokens_out": 681,
+   "usd": 0.003837,
+   "wall_s": 6.3224897384643555,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

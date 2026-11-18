@@ -1,0 +1,17 @@
+{
+ "task": "t8_cdc_merge",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"]\n\n    # Step 0: get watermark high_ts\n    if len(watermark) > 0:\n        high_ts = watermark[\"high_ts\"].iloc[0]\n    else:\n        high_ts = pd.NaT\n\n    # Step 1: keep only events strictly after watermark\n    if pd.isna(high_ts):\n        filtered = cdc_events.copy()\n    else:\n        filtered = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n\n    # Step 2: per product_id, pick the latest event by (event_ts, event_seq)\n    if len(filtered) > 0:\n        filtered_sorted = filtered.sort_values(\n            by=[\"event_ts\", \"event_seq\"], kind=\"mergesort\"\n        )\n        latest = filtered_sorted.groupby(\"product_id\", as_index=False).tail(1)\n    else:\n        latest = filtered\n\n    # Step 3/4: build new snapshot\n    snapshot = target_snapshot.set_index(\"product_id\")\n\n    for _, row in latest.iterrows():\n        pid = row[\"product_id\"]\n        op = row[\"op\"]\n        if op == \"D\":\n            if pid in snapshot.index:\n                snapshot = snapshot.drop(index=pid)\n        else:\n            snapshot.loc[pid, \"name\"] = row[\"name\"]\n            snapshot.loc[pid, \"price\"] = row[\"price\"]\n            snapshot.loc[pid, \"last_event_ts\"] = row[\"event_ts\"]\n\n    new_snapshot = snapshot.reset_index()\n\n    # Enforce column order and types\n    new_snapshot = new_snapshot[[\"product_id\", \"name\", \"price\", \"last_event_ts\"]]\n    new_snapshot[\"product_id\"] = new_snapshot[\"product_id\"].astype(\"int64\")\n    new_snapshot[\"price\"] = new_snapshot[\"price\"].astype(\"float64\")\n    new_snapshot[\"last_event_ts\"] = pd.to_datetime(\n        new_snapshot[\"last_event_ts\"]\n    ).astype(\"datetime64[us]\")\n\n    new_snapshot = new_snapshot.sort_values(\"product_id\").reset_index(drop=True)\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 744,
+   "tokens_out": 1606,
+   "usd": 0.026322,
+   "wall_s": 13.135460376739502,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

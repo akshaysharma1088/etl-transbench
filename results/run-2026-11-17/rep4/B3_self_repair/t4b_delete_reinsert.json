@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 4,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    inbound = inputs['inbound']\n    target_snapshot = inputs['target_snapshot']\n\n    # Step 1: STG_NEW = SELECT product_id, batch_date, SUM(qty), MAX(unit_cost)\n    #         FROM inbound WHERE qty > 0 GROUP BY product_id, batch_date\n    filtered = inbound[inbound['qty'] > 0]\n\n    stg_new = (\n        filtered.groupby(['product_id', 'batch_date'], dropna=False, as_index=False)\n        .agg(total_qty=('qty', 'sum'), max_unit_cost=('unit_cost', 'max'))\n    )\n\n    # Step 2: DELETE FROM TARGET_SNAPSHOT WHERE batch_date IN (SELECT DISTINCT batch_date FROM STG_NEW)\n    arriving_dates = set(stg_new['batch_date'].dropna().unique().tolist())\n    has_null_date = stg_new['batch_date'].isna().any()\n\n    if has_null_date:\n        mask_delete = target_snapshot['batch_date'].isin(arriving_dates) | target_snapshot['batch_date'].isna()\n    else:\n        mask_delete = target_snapshot['batch_date'].isin(arriving_dates)\n\n    surviving = target_snapshot[~mask_delete]\n\n    # Step 3: INSERT INTO TARGET_SNAPSHOT SELECT * FROM STG_NEW\n    result = pd.concat([surviving, stg_new], ignore_index=True)\n\n    # Ensure column order matches target schema\n    result = result[['product_id', 'batch_date', 'total_qty', 'max_unit_cost']]\n\n    return {'target_snapshot': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 508,
+   "usd": 0.002938,
+   "wall_s": 3.1398861408233643
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4646,
+  "tokens_out": 8458,
+  "usd": 0.14080800000000002,
+  "wall_s": 88.1051893234253
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

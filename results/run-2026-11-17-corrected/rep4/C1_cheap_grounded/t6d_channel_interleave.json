@@ -1,0 +1,48 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 4,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by (user_id, channel, event_ts, event_id) to get deterministic order\n    events = events.sort_values(\n        by=[\"user_id\", \"channel\", \"event_ts\", \"event_id\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Group by (user_id, channel) for independent sessionization\n    events[\"session_num\"] = 0\n    events[\"session_start\"] = pd.NaT\n    events[\"session_end\"] = pd.NaT\n    \n    session_counter = {}  # (user_id, channel) -> next session number\n    \n    for idx in range(len(events)):\n        user_id = events.loc[idx, \"user_id\"]\n        channel = events.loc[idx, \"channel\"]\n        event_ts = events.loc[idx, \"event_ts\"]\n        \n        key = (user_id, channel)\n        \n        # Initialize session counter if needed\n        if key not in session_counter:\n            session_counter[key] = 1\n            events.loc[idx, \"session_num\"] = 1\n            events.loc[idx, \"session_start\"] = event_ts\n            events.loc[idx, \"session_end\"] = event_ts\n        else:\n            # Check if previous event in this (user_id, channel) group is within 25 minutes\n            # Find the previous event for this (user_id, channel)\n            prev_idx = None\n            for search_idx in range(idx - 1, -1, -1):\n                if (events.loc[search_idx, \"user_id\"] == user_id and\n                    events.loc[search_idx, \"channel\"] == channel):\n                    prev_idx = search_idx\n                    break\n            \n            if prev_idx is not None:\n                prev_ts = events.loc[prev_idx, \"event_ts\"]\n                time_diff = (event_ts - prev_ts).total_seconds() / 60  # in minutes\n                \n                if pd.isna(time_diff) or time_diff > 25:\n                    # Start a new session\n                    session_counter[key] += 1\n                    events.loc[idx, \"session_num\"] = session_counter[key]\n                    events.loc[idx, \"session_start\"] = event_ts\n                    events.loc[idx, \"session_end\"] = event_ts\n                else:\n                    # Continue the same session\n                    events.loc[idx, \"session_num\"] = session_counter[key]\n                    events.loc[idx, \"session_start\"] = events.loc[prev_idx, \"session_start\"]\n                    events.loc[idx, \"session_end\"] = event_ts\n            else:\n                # First event for this group\n                session_counter[key] = 1\n                events.loc[idx, \"session_num\"] = 1\n                events.loc[idx, \"session_start\"] = event_ts\n                events.loc[idx, \"session_end\"] = event_ts\n    \n    # Update session_end by back-propagating within each session\n    for idx in range(len(events) - 2, -1, -1):\n        user_id = events.loc[idx, \"user_id\"]\n        channel = events.loc[idx, \"channel\"]\n        session_num = events.loc[idx, \"session_num\"]\n        \n        # Check the next event\n        for next_idx in range(idx + 1, len(events)):\n            if (events.loc[next_idx, \"user_id\"] == user_id and\n                events.loc[next_idx, \"channel\"] == channel):\n                next_session_num = events.loc[next_idx, \"session_num\"]\n                if next_session_num == session_num:\n                    events.loc[idx, \"session_end\"] = events.loc[next_idx, \"session_end\"]\n                break\n    \n    # Group by (user_id, channel, session_num) to aggregate\n    channel_sessions = events.groupby(\n        [\"user_id\", \"channel\", \"session_num\"],\n        as_index=False\n    ).agg(\n        session_start=(\"session_start\", \"first\"),\n        session_end=(\"session_end\", \"first\"),\n        event_count=(\"event_id\", \"count\")\n    )\n    \n    # Ensure columns are in the right order\n    channel_sessions = channel_sessions[\n        [\"user_id\", \"channel\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]\n    ]\n    \n    return {\"channel_sessions\": channel_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 351,
+   "tokens_out": 1176,
+   "usd": 0.006231,
+   "wall_s": 7.169020414352417,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

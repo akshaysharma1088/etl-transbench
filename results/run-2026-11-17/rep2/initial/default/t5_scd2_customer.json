@@ -1,0 +1,16 @@
+{
+ "task": "t5_scd2_customer",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_CUSTOMER'].copy()\n    stg = inputs['STG_CUSTOMER'].copy()\n\n    # --- Step 1: Deduplicate STG_CUSTOMER ---\n    # Latest record per customer_id by update_date; ties broken by\n    # greatest (name, segment) lexicographic pair (descending).\n    stg_sorted = stg.sort_values(\n        by=['customer_id', 'update_date', 'name', 'segment'],\n        ascending=[True, False, False, False],\n        kind='mergesort'  # stable sort to keep deterministic behavior\n    )\n    dedup = stg_sorted.drop_duplicates(subset=['customer_id'], keep='first')\n    dedup = dedup.sort_values('customer_id', kind='mergesort').reset_index(drop=True)\n\n    dim = dim.reset_index(drop=True)\n\n    def null_safe_eq(a, b):\n        a_null = pd.isna(a)\n        b_null = pd.isna(b)\n        if a_null and b_null:\n            return True\n        if a_null or b_null:\n            return False\n        return a == b\n\n    new_rows = []\n\n    for _, s in dedup.iterrows():\n        cust_id = s['customer_id']\n        mask = (dim['customer_id'] == cust_id) & (dim['is_current'] == 1)\n        idxs = dim.index[mask]\n\n        if len(idxs) == 0:\n            # No current row exists -> insert new current version\n            new_rows.append({\n                'customer_id': cust_id,\n                'name': s['name'],\n                'segment': s['segment'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': pd.NaT,\n                'is_current': 1\n            })\n        else:\n            idx = idxs[0]\n            c = dim.loc[idx]\n\n            changed = (not null_safe_eq(c['name'], s['name'])) or \\\n                      (not null_safe_eq(c['segment'], s['segment']))\n\n            if changed:\n                # Expire current row\n                dim.at[idx, 'eff_end_date'] = s['update_date']\n                dim.at[idx, 'is_current'] = 0\n\n                # Insert new current version\n                new_rows.append({\n                    'customer_id': cust_id,\n                    'name': s['name'],\n                    'segment': s['segment'],\n                    'eff_start_date': s['update_date'],\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1\n                })\n            # else: no change -> do nothing, no new version created\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=dim.columns)\n        dim = pd.concat([dim, new_df], ignore_index=True)\n\n    return {'dim_customer_out': dim}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1017,
+   "tokens_out": 2751,
+   "usd": 0.044316,
+   "wall_s": 23.68339967727661
+  }
+ ]
+}

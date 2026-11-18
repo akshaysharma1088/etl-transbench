@@ -1,0 +1,17 @@
+{
+ "task": "t6_sessionize_events",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\nfrom datetime import timedelta\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, event_ts, event_id to ensure correct ordering\n    events = events.sort_values(by=[\"user_id\", \"event_ts\", \"event_id\"]).reset_index(drop=True)\n    \n    # Mark the start of a new session\n    # A new session starts when:\n    # 1. It's the first event for a user (LAG is NULL)\n    # 2. Gap from previous event > 30 minutes\n    \n    events[\"prev_event_ts\"] = events.groupby(\"user_id\")[\"event_ts\"].shift(1)\n    events[\"time_gap\"] = events[\"event_ts\"] - events[\"prev_event_ts\"]\n    \n    # new_sess = 1 if first event for user OR gap > 30 minutes, else 0\n    events[\"new_sess\"] = (\n        (events[\"prev_event_ts\"].isna()) | \n        (events[\"time_gap\"] > timedelta(minutes=30))\n    ).astype(int)\n    \n    # Cumulative sum within each user to assign session numbers\n    events[\"session_num\"] = events.groupby(\"user_id\")[\"new_sess\"].cumsum()\n    \n    # Group by user_id and session_num to aggregate\n    user_sessions = events.groupby([\"user_id\", \"session_num\"]).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    ).reset_index()\n    \n    # Ensure session_num is 1-based per user (it should already be from cumsum)\n    # Verify: session_num starts at 1 for first session of each user\n    user_sessions = user_sessions.sort_values(by=[\"user_id\", \"session_num\"]).reset_index(drop=True)\n    \n    return {\"user_sessions\": user_sessions}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 472,
+   "tokens_out": 526,
+   "usd": 0.003102,
+   "wall_s": 3.5327513217926025,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

@@ -1,0 +1,67 @@
+{
+ "config": "B3_self_repair",
+ "rep": 0,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_different(a, b):\n    \"\"\"Compare two scalar values with legacy NULL semantics:\n    NULL vs NULL -> not different; NULL vs non-NULL -> different;\n    otherwise plain inequality.\"\"\"\n    a_na = pd.isna(a)\n    b_na = pd.isna(b)\n    if a_na and b_na:\n        return False\n    if a_na != b_na:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim_store = inputs[\"DIM_STORE\"].copy()\n    stg = inputs[\"STG_STORE_FULL\"].copy()\n    batch_control = inputs[\"BATCH_CONTROL\"].copy()\n\n    # Exactly one batch date.\n    b = batch_control[\"batch_date\"].iloc[0]\n\n    # Distinct snapshot rows (exact duplicates collapse).\n    stg_distinct = stg.drop_duplicates(subset=[\"store_id\", \"region\", \"format\"])\n\n    # Build lookup of snapshot attributes keyed by store_id.\n    stg_dict = {}\n    for row in stg_distinct.itertuples(index=False):\n        stg_dict[row.store_id] = (row.region, row.format)\n\n    # Ensure dim_store has the expected columns even if empty.\n    cols = [\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    for c in cols:\n        if c not in dim_store.columns:\n            dim_store[c] = pd.NA\n\n    # Split historical (non-current) rows - never touched.\n    is_current_mask = dim_store[\"is_current\"] == 1\n    hist_rows = dim_store[~is_current_mask].copy()\n\n    current_rows_df = dim_store[is_current_mask].copy()\n    current_dict = {}\n    for row in current_rows_df.itertuples(index=False):\n        current_dict[row.store_id] = row\n\n    updated_current_records = []\n    new_records = []\n\n    processed_current_ids = set()\n\n    for store_id, (region, fmt) in stg_dict.items():\n        if store_id in current_dict:\n            c = current_dict[store_id]\n            region_diff = _is_different(c.region, region)\n            format_diff = _is_different(c.format, fmt)\n\n            if region_diff or format_diff:\n                # Close the old current row.\n                updated_current_records.append({\n                    \"store_id\": store_id,\n                    \"region\": c.region,\n                    \"format\": c.format,\n                    \"eff_start_date\": c.eff_start_date,\n                    \"eff_end_date\": b,\n                    \"is_current\": 0,\n                })\n                # Insert the new current version.\n                new_records.append({\n                    \"store_id\": store_id,\n                    \"region\": region,\n                    \"format\": fmt,\n                    \"eff_start_date\": b,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            else:\n                # No-op: keep the current row exactly as-is.\n                updated_current_records.append({\n                    \"store_id\": store_id,\n                    \"region\": c.region,\n                    \"format\": c.format,\n                    \"eff_start_date\": c.eff_start_date,\n                    \"eff_end_date\": c.eff_end_date,\n                    \"is_current\": c.is_current,\n                })\n            processed_current_ids.add(store_id)\n        else:\n            # Brand-new store or reactivated store: always a new version.\n            new_records.append({\n                \"store_id\": store_id,\n                \"region\": region,\n                \"format\": fmt,\n                \"eff_start_date\": b,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n\n    # Current rows whose store_id is not in the snapshot: close them (store closed).\n    for store_id, c in current_dict.items():\n        if store_id not in stg_dict:\n            updated_current_records.append({\n                \"store_id\": store_id,\n                \"region\": c.region,\n                \"format\": c.format,\n                \"eff_start_date\": c.eff_start_date,\n                \"eff_end_date\": b,\n                \"is_current\": 0,\n            })\n\n    pieces = [hist_rows]\n\n    if updated_current_records:\n        pieces.append(pd.DataFrame(updated_current_records, columns=cols))\n\n    if new_records:\n        pieces.append(pd.DataFrame(new_records, columns=cols))\n\n    if pieces:\n        result = pd.concat(pieces, ignore_index=True, sort=False)\n    else:\n        result = pd.DataFrame(columns=cols)\n\n    # Ensure column order and presence.\n    result = result.reindex(columns=cols)\n\n    return {\"dim_store_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1094,
+   "tokens_out": 2998,
+   "usd": 0.048252,
+   "wall_s": 24.479207515716553
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5872,
+  "tokens_out": 12522,
+  "usd": 0.205446,
+  "wall_s": 122.48988652229309
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

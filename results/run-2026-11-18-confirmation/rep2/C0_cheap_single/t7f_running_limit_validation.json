@@ -1,0 +1,48 @@
+{
+ "config": "C0_cheap_single",
+ "rep": 2,
+ "task": "t7f_running_limit_validation",
+ "category": "T7",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\nfrom datetime import datetime\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    account_limits = inputs[\"account_limits\"].copy()\n    transfers = inputs[\"transfers\"].copy()\n    \n    # Sort by row_num to process in order\n    transfers = transfers.sort_values(\"row_num\").reset_index(drop=True)\n    \n    # Initialize output lists\n    accepted_rows = []\n    rejected_rows = []\n    \n    # Track accepted transfer refs (case-sensitive)\n    accepted_refs = set()\n    \n    # Track daily running totals by (account_id, transfer_date)\n    daily_running = {}\n    \n    # Create a set of valid accounts for quick lookup\n    valid_accounts = set(account_limits[\"account_id\"].values)\n    \n    # Create a mapping of account_id to daily_limit\n    limits_map = dict(zip(account_limits[\"account_id\"], account_limits[\"daily_limit\"]))\n    \n    for idx, row in transfers.iterrows():\n        row_num = row[\"row_num\"]\n        transfer_ref = row[\"transfer_ref\"]\n        account_id = row[\"account_id\"]\n        amount = row[\"amount\"]\n        transfer_date = row[\"transfer_date\"]\n        \n        reason = None\n        \n        # R1: UNKNOWN_ACCOUNT\n        if account_id not in valid_accounts:\n            reason = \"UNKNOWN_ACCOUNT\"\n        \n        # R2: BAD_AMOUNT\n        elif pd.isna(amount) or amount <= 0:\n            reason = \"BAD_AMOUNT\"\n        \n        # R3: DUPLICATE_REF (checked against accepted rows only)\n        elif transfer_ref in accepted_refs:\n            reason = \"DUPLICATE_REF\"\n        \n        # R4: OVER_LIMIT\n        else:\n            # Get the daily limit for this account\n            daily_limit = limits_map[account_id]\n            \n            # Get current running total for this account on this date\n            key = (account_id, transfer_date)\n            current_total = daily_running.get(key, 0.0)\n            \n            # Check if adding this amount would exceed the limit\n            if current_total + amount > daily_limit:\n                reason = \"OVER_LIMIT\"\n        \n        if reason:\n            # Reject the row\n            rejected_rows.append({\n                \"row_num\": row_num,\n                \"reason\": reason\n            })\n        else:\n            # Accept the row\n            key = (account_id, transfer_date)\n            current_total = daily_running.get(key, 0.0)\n            new_total = current_total + amount\n            daily_running[key] = new_total\n            \n            accepted_rows.append({\n                \"row_num\": row_num,\n                \"account_id\": account_id,\n                \"amount\": amount,\n                \"running_total\": new_total\n            })\n            \n            # Mark ref as accepted\n            accepted_refs.add(transfer_ref)\n    \n    # Create output DataFrames\n    if accepted_rows:\n        accepted_transfers = pd.DataFrame(accepted_rows)\n        accepted_transfers = accepted_transfers[[\"row_num\", \"account_id\", \"amount\", \"running_total\"]]\n    else:\n        accepted_transfers = pd.DataFrame(columns=[\"row_num\", \"account_id\", \"amount\", \"running_total\"])\n    \n    if rejected_rows:\n        transfer_rejects = pd.DataFrame(rejected_rows)\n        transfer_rejects = transfer_rejects[[\"row_num\", \"reason\"]]\n    else:\n        transfer_rejects = pd.DataFrame(columns=[\"row_num\", \"reason\"])\n    \n    return {\n        \"accepted_transfers\": accepted_transfers,\n        \"transfer_rejects\": transfer_rejects\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 647,
+   "tokens_out": 948,
+   "usd": 0.005387,
+   "wall_s": 6.289278984069824,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

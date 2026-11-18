@@ -1,0 +1,51 @@
+{
+ "config": "B2_retranslate",
+ "rep": 2,
+ "task": "t5d_asof_reconstruction",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    \"\"\"\n    Reconstructs point-in-time attribute values from an SCD Type 2 history\n    table (DIM_EMP_HIST) based on as-of date queries (ASOF_QUERIES).\n\n    Semantics preserved from legacy SQL:\n      - INNER JOIN on emp_id: unknown employees produce no rows.\n      - Interval is half-open [eff_start_date, eff_end_date):\n          as_of_date >= eff_start_date  (start inclusive)\n          AND (eff_end_date IS NULL OR as_of_date < eff_end_date)  (end exclusive)\n      - Queries dated before an employee's first version yield no row.\n      - On a boundary date equal to a new version's eff_start_date, the\n        NEW version applies (since old version's eff_end_date is that same\n        date and the comparison on old version is strictly '<', excluding it).\n    \"\"\"\n    hist = inputs[\"dim_emp_hist\"].copy()\n    queries = inputs[\"asof_queries\"].copy()\n\n    # Normalize date columns to pandas datetime for correct comparisons.\n    hist[\"eff_start_date\"] = pd.to_datetime(hist[\"eff_start_date\"])\n    hist[\"eff_end_date\"] = pd.to_datetime(hist[\"eff_end_date\"])\n    queries[\"as_of_date\"] = pd.to_datetime(queries[\"as_of_date\"])\n\n    # Inner join on emp_id (cartesian within matching emp_id groups,\n    # then filter by interval condition -- mirrors SQL JOIN ... ON ... AND ...).\n    merged = queries.merge(hist, on=\"emp_id\", how=\"inner\", suffixes=(\"\", \"_h\"))\n\n    cond_start = merged[\"as_of_date\"] >= merged[\"eff_start_date\"]\n    cond_end = merged[\"eff_end_date\"].isna() | (merged[\"as_of_date\"] < merged[\"eff_end_date\"])\n    mask = cond_start & cond_end\n\n    result = merged.loc[mask, [\"query_id\", \"emp_id\", \"dept\", \"grade\"]].reset_index(drop=True)\n\n    return {\"asof_result\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 738,
+   "tokens_out": 1136,
+   "usd": 0.019254,
+   "wall_s": 10.363462924957275
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 738,
+  "tokens_out": 1387,
+  "usd": 0.023019,
+  "wall_s": 12.691213130950928
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

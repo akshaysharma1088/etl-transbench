@@ -1,0 +1,66 @@
+{
+ "config": "A1_trace_only",
+ "rep": 4,
+ "task": "t1c_teradata_intdiv",
+ "category": "T1",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import math\nimport pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs['acct_balance'].copy()\n\n    # WHERE acct_type <> 'CLOSED'\n    # Teradata: comparisons with NULL yield UNKNOWN, which is excluded by WHERE.\n    mask = df['acct_type'].notna() & (df['acct_type'] != 'CLOSED')\n    df = df[mask].copy()\n\n    # ZEROIFNULL(balance_cents): map NULL -> 0 before any arithmetic.\n    balance_cents = df['balance_cents'].apply(lambda v: 0 if pd.isna(v) else v)\n\n    fx_rate = df['fx_rate']\n\n    def trunc_toward_zero(x):\n        # Truncate toward zero (Teradata INTEGER division / CAST AS INTEGER semantics).\n        return math.trunc(x)\n\n    # balance_bucket = ZEROIFNULL(balance_cents) / 100, integer division truncating toward zero.\n    balance_bucket_vals = []\n    for b in balance_cents:\n        balance_bucket_vals.append(trunc_toward_zero(b / 100))\n\n    # fx_units = CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER)\n    # If fx_rate is NULL, the multiplication yields NULL, and CAST(NULL AS INTEGER) is NULL.\n    fx_units_vals = []\n    for b, r in zip(balance_cents, fx_rate):\n        if pd.isna(r):\n            fx_units_vals.append(pd.NA)\n        else:\n            fx_units_vals.append(trunc_toward_zero((b * r) / 100))\n\n    result = pd.DataFrame({\n        'account_id': df['account_id'].values,\n        'balance_bucket': balance_bucket_vals,\n        'fx_units': fx_units_vals,\n    })\n\n    result['balance_bucket'] = result['balance_bucket'].astype('Int64')\n    result['fx_units'] = result['fx_units'].astype('Int64')\n\n    result = result.reset_index(drop=True)\n\n    return {'balance_buckets': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 373,
+   "tokens_out": 592,
+   "usd": 0.003333,
+   "wall_s": 4.022776365280151
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3467,
+  "tokens_out": 8969,
+  "usd": 0.144936,
+  "wall_s": 87.04484939575195
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

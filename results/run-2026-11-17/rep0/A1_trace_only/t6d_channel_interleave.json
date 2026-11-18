@@ -1,0 +1,51 @@
+{
+ "config": "A1_trace_only",
+ "rep": 0,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize events per (user_id, channel) independently.\n    A STRICT 25-minute gap within the same (user_id, channel) stream starts\n    a new session.  Events from different channels (even for the same user)\n    never interact with each other.\n\n    Ordering within a (user_id, channel) stream: event_ts, then event_id.\n    \"\"\"\n\n    events = inputs['events'].copy()\n\n    # Only coerce the timestamp column - leave user_id / channel / event_id\n    # in their original dtypes so values are not altered (e.g. ints turned\n    # into strings), which would break equality comparisons downstream.\n    events['event_ts'] = pd.to_datetime(events['event_ts'])\n\n    # Stable sort by (user_id, channel, event_ts, event_id) -- ties broken\n    # deterministically by event_id as specified.\n    events_sorted = events.sort_values(\n        by=['user_id', 'channel', 'event_ts', 'event_id'],\n        kind='mergesort',\n        na_position='last'\n    ).reset_index(drop=True)\n\n    grp_keys = ['user_id', 'channel']\n\n    # Previous timestamp within each (user_id, channel) group.\n    prev_ts = events_sorted.groupby(grp_keys, sort=False, dropna=False)['event_ts'].shift(1)\n\n    gap = events_sorted['event_ts'] - prev_ts\n\n    gap_threshold = pd.Timedelta(minutes=25)\n\n    # A new session starts:\n    #   - at the very first event of a (user_id, channel) group (prev_ts is NaT), OR\n    #   - when the gap to the previous event strictly exceeds 25 minutes.\n    # If either the current or previous timestamp is null, the gap comparison\n    # is NaT, which evaluates to False, so the session simply continues\n    # (matching the legacy \"treat null as continuation\" behaviour).\n    new_session = prev_ts.isna() | (gap > gap_threshold)\n\n    events_sorted['_new_session'] = new_session\n    events_sorted['session_num'] = (\n        events_sorted.groupby(grp_keys, sort=False, dropna=False)['_new_session']\n        .cumsum()\n        .astype('int64')\n    )\n\n    channel_sessions = (\n        events_sorted\n        .groupby(grp_keys + ['session_num'], sort=False, dropna=False)\n        .agg(\n            session_start=('event_ts', 'min'),\n            session_end=('event_ts', 'max'),\n            event_count=('event_ts', 'size')\n        )\n        .reset_index()\n    )\n\n    # Ensure the final row order is user_id, channel, session_num ascending.\n    channel_sessions = channel_sessions.sort_values(\n        by=['user_id', 'channel', 'session_num'],\n        kind='mergesort'\n    ).reset_index(drop=True)\n\n    channel_sessions['session_num'] = channel_sessions['session_num'].astype('int64')\n    channel_sessions['event_count'] = channel_sessions['event_count'].astype('int64')\n\n    channel_sessions = channel_sessions[\n        ['user_id', 'channel', 'session_num', 'session_start', 'session_end', 'event_count']\n    ]\n\n    return {'channel_sessions': channel_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 299,
+   "tokens_out": 988,
+   "usd": 0.005239,
+   "wall_s": 6.100339889526367
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1846,
+  "tokens_out": 3850,
+  "usd": 0.063288,
+  "wall_s": 40.23172307014465
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

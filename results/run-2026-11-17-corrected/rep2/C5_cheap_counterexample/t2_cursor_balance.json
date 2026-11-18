@@ -1,0 +1,63 @@
+{
+ "config": "C5_cheap_counterexample",
+ "rep": 2,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 3,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy SP_RUNNING_BALANCE cursor logic as set-oriented operations.\n    \n    Computes running balance per account (reset at account boundaries) and\n    overdraft flag (1 if balance < 0, else 0). Null amounts treated as 0.\n    \"\"\"\n    transactions = inputs[\"transactions\"].copy()\n    \n    # Sort by account_id, txn_date, txn_seq to match cursor order\n    transactions = transactions.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        ignore_index=True\n    )\n    \n    # Handle NULL amounts: replace with 0 for balance computation\n    transactions[\"amount_filled\"] = transactions[\"amount\"].fillna(0.0)\n    \n    # Identify account boundaries: account_id changes\n    account_changes = transactions[\"account_id\"].ne(\n        transactions[\"account_id\"].shift(fill_value=transactions[\"account_id\"].iloc[0])\n    )\n    \n    # Create account groups (cumulative sum of boundaries)\n    account_group = account_changes.cumsum()\n    \n    # Compute running balance within each account group\n    transactions[\"running_balance\"] = transactions.groupby(account_group)[\"amount_filled\"].cumsum()\n    \n    # Compute overdraft flag: 1 if balance < 0, else 0\n    transactions[\"overdraft_flag\"] = (transactions[\"running_balance\"] < 0).astype(\"int64\")\n    \n    # Select output columns in order, using original amount (may contain NaN)\n    acct_balance_flags = transactions[[\n        \"account_id\",\n        \"txn_seq\",\n        \"txn_date\",\n        \"amount\",\n        \"running_balance\",\n        \"overdraft_flag\"\n    ]].reset_index(drop=True)\n    \n    return {\"acct_balance_flags\": acct_balance_flags}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 520,
+   "tokens_out": 444,
+   "usd": 0.00274,
+   "wall_s": 4.183244705200195,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6925,
+  "tokens_out": 2014,
+  "usd": 0.016995,
+  "wall_s": 19.791278839111328
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

@@ -1,0 +1,53 @@
+{
+ "config": "LEGATO",
+ "rep": 1,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n\n    # Sort by user_id, then event_ts, then event_id (ordering requirement)\n    events = events.sort_values(by=[\"user_id\", \"event_ts\", \"event_id\"]).reset_index(drop=True)\n\n    # Extract calendar date (server local) from event_ts\n    events[\"event_date\"] = events[\"event_ts\"].dt.date\n\n    # Compute previous event's timestamp and date within the same user group\n    grp = events.groupby(\"user_id\")\n    prev_ts = grp[\"event_ts\"].shift()\n    prev_date = grp[\"event_date\"].shift()\n\n    # Gap in minutes from previous event (same user)\n    gap_minutes = (events[\"event_ts\"] - prev_ts).dt.total_seconds() / 60.0\n\n    # New session starts when:\n    #   - it's the first event for the user (prev_ts is NaT), OR\n    #   - the calendar date differs from the previous event's date, OR\n    #   - the gap from the previous event is strictly > 45 minutes\n    new_session = prev_ts.isna() | (events[\"event_date\"] != prev_date) | (gap_minutes > 45)\n\n    # Session number per user: cumulative sum of new_session flags within each user group\n    events[\"session_num\"] = new_session.groupby(events[\"user_id\"]).cumsum().astype(\"int64\")\n\n    # Aggregate into sessions\n    user_sessions = events.groupby([\"user_id\", \"session_num\"], as_index=False).agg(\n        session_date=(\"event_date\", \"first\"),\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\"),\n    )\n\n    # Ensure correct types\n    user_sessions[\"user_id\"] = user_sessions[\"user_id\"].astype(\"int64\")\n    user_sessions[\"session_num\"] = user_sessions[\"session_num\"].astype(\"int64\")\n    user_sessions[\"session_date\"] = user_sessions[\"session_date\"].astype(\"object\")  # keep as date object\n    user_sessions[\"session_start\"] = user_sessions[\"session_start\"].astype(\"datetime64[us]\")\n    user_sessions[\"session_end\"] = user_sessions[\"session_end\"].astype(\"datetime64[us]\")\n    user_sessions[\"event_count\"] = user_sessions[\"event_count\"].astype(\"int64\")\n\n    # Sort output by user_id and session_num\n    user_sessions = user_sessions.sort_values(by=[\"user_id\", \"session_num\"]).reset_index(drop=True)\n\n    return {\"user_sessions\": user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 995,
+   "usd": 0.005355,
+   "wall_s": 8.033911228179932,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2342,
+  "tokens_out": 1749,
+  "usd": 0.033261,
+  "wall_s": 15.629926443099976
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

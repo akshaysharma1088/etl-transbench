@@ -1,0 +1,46 @@
+{
+ "config": "B3_self_repair",
+ "rep": 1,
+ "task": "t3b_dup_lookup_first",
+ "category": "T3",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy ETL graphical lookup component with duplicate-key resolution.\n    \n    Flow:\n    1. Source: shipments\n    2. Lookup: carrier_rates with duplicate-key resolution (first-by effective_date DESC, rate_id DESC)\n    3. Reformat: compute freight_cost = weight_kg * rate_per_kg\n    4. Output: shipment_costs\n    \"\"\"\n    \n    # Stage 1: Source\n    src = inputs[\"shipments\"].copy()\n    \n    # Stage 2: Lookup\n    carrier_rates = inputs[\"carrier_rates\"].copy()\n    \n    # Sort carrier_rates by carrier_id, then by effective_date DESC, then by rate_id DESC\n    # This ensures that when we deduplicate by keeping first, we get the latest date and highest rate_id\n    carrier_rates_sorted = carrier_rates.sort_values(\n        by=[\"carrier_id\", \"effective_date\", \"rate_id\"],\n        ascending=[True, False, False],\n        na_position=\"last\"\n    )\n    \n    # Keep only the first occurrence per carrier_id (duplicate-key resolution policy)\n    carrier_rates_dedup = carrier_rates_sorted.drop_duplicates(\n        subset=[\"carrier_id\"],\n        keep=\"first\"\n    )\n    \n    # Merge lookup: left join src on carrier_id\n    lkp = src.merge(\n        carrier_rates_dedup[[\"carrier_id\", \"rate_per_kg\", \"service_tier\"]],\n        on=\"carrier_id\",\n        how=\"left\"\n    )\n    \n    # Apply on_miss defaults\n    lkp[\"rate_per_kg\"] = lkp[\"rate_per_kg\"].fillna(0.0)\n    lkp[\"service_tier\"] = lkp[\"service_tier\"].fillna(\"NONE\")\n    \n    # Stage 3: Reformat - compute freight_cost\n    rfm = lkp.copy()\n    rfm[\"freight_cost\"] = rfm[\"weight_kg\"] * rfm[\"rate_per_kg\"]\n    \n    # Stage 4: Output - select specified columns\n    out = rfm[[\"shipment_id\", \"carrier_id\", \"service_tier\", \"weight_kg\", \"rate_per_kg\", \"freight_cost\"]].copy()\n    \n    return {\"shipment_costs\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 486,
+   "tokens_out": 612,
+   "usd": 0.003546,
+   "wall_s": 4.250806093215942
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

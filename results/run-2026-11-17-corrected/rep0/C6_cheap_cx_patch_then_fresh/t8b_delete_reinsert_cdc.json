@@ -1,0 +1,68 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 0,
+ "task": "t8b_delete_reinsert_cdc",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark_df = inputs[\"watermark\"]\n    \n    # Extract the high_ts watermark\n    high_ts = watermark_df[\"high_ts\"].iloc[0]\n    \n    # Filter events by watermark (only events with event_ts <= high_ts)\n    cdc_events = cdc_events[cdc_events[\"event_ts\"] <= high_ts].copy()\n    \n    # Sort events by (item_id, event_ts, event_seq) for sequential application per item\n    cdc_events = cdc_events.sort_values(by=[\"item_id\", \"event_ts\", \"event_seq\"])\n    \n    # Build a dict for the snapshot (item_id -> {qty_on_hand, last_event_ts})\n    snapshot_dict = {}\n    for _, row in target_snapshot.iterrows():\n        snapshot_dict[row[\"item_id\"]] = {\n            \"qty_on_hand\": row[\"qty_on_hand\"],\n            \"last_event_ts\": row[\"last_event_ts\"]\n        }\n    \n    # Apply events sequentially\n    for _, event in cdc_events.iterrows():\n        item_id = event[\"item_id\"]\n        op = event[\"op\"]\n        qty = event[\"qty\"]\n        event_ts = event[\"event_ts\"]\n        \n        if op == \"R\":  # Receipt: add to qty_on_hand\n            if item_id not in snapshot_dict:\n                # Item doesn't exist; start from 0\n                snapshot_dict[item_id] = {\"qty_on_hand\": 0.0, \"last_event_ts\": event_ts}\n            snapshot_dict[item_id][\"qty_on_hand\"] += qty\n            snapshot_dict[item_id][\"last_event_ts\"] = event_ts\n        \n        elif op == \"A\":  # Adjustment: set absolute qty\n            # Item is set to absolute value, regardless of prior state\n            snapshot_dict[item_id] = {\"qty_on_hand\": qty, \"last_event_ts\": event_ts}\n        \n        elif op == \"D\":  # Delist: remove item\n            if item_id in snapshot_dict:\n                del snapshot_dict[item_id]\n    \n    # Convert back to DataFrame\n    result_rows = []\n    for item_id, data in snapshot_dict.items():\n        result_rows.append({\n            \"item_id\": item_id,\n            \"qty_on_hand\": data[\"qty_on_hand\"],\n            \"last_event_ts\": data[\"last_event_ts\"]\n        })\n    \n    new_snapshot = pd.DataFrame(result_rows)\n    \n    # Ensure correct dtypes\n    if len(new_snapshot) > 0:\n        new_snapshot[\"item_id\"] = new_snapshot[\"item_id\"].astype(\"int64\")\n        new_snapshot[\"qty_on_hand\"] = new_snapshot[\"qty_on_hand\"].astype(\"float64\")\n        new_snapshot[\"last_event_ts\"] = new_snapshot[\"last_event_ts\"].astype(\"datetime64[us]\")\n    else:\n        new_snapshot = pd.DataFrame(columns=[\"item_id\", \"qty_on_hand\", \"last_event_ts\"])\n        new_snapshot[\"item_id\"] = new_snapshot[\"item_id\"].astype(\"int64\")\n        new_snapshot[\"qty_on_hand\"] = new_snapshot[\"qty_on_hand\"].astype(\"float64\")\n        new_snapshot[\"last_event_ts\"] = new_snapshot[\"last_event_ts\"].astype(\"datetime64[us]\")\n    \n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 635,
+   "tokens_out": 914,
+   "usd": 0.005205,
+   "wall_s": 7.332535028457642,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 13497,
+  "tokens_out": 6494,
+  "usd": 0.045966999999999994,
+  "wall_s": 46.400025367736816
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

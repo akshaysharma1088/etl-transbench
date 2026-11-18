@@ -1,0 +1,51 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _null_aware_differs(a, b):\n    \"\"\"Return True if a and b differ, treating NaN/NaT/None as a special\n    'null' value where NULL vs NULL is NOT a change, and NULL vs non-NULL\n    IS a change.\"\"\"\n    a_is_null = pd.isna(a)\n    b_is_null = pd.isna(b)\n    if a_is_null and b_is_null:\n        return False\n    if a_is_null != b_is_null:\n        return True\n    return a != b\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    \"\"\"Fetch an input dataframe by name, tolerant of case differences.\"\"\"\n    if name in inputs:\n        return inputs[name]\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    key = lower_map.get(name.lower())\n    if key is not None:\n        return inputs[key]\n    raise KeyError(name)\n\n\ndef run(inputs: dict) -> dict:\n    dim_acct = _get_input(inputs, \"DIM_ACCT\").copy()\n    stg_acct = _get_input(inputs, \"STG_ACCT\").copy()\n\n    # Ensure expected columns exist even if input is empty\n    dim_cols = [\"acct_id\", \"email\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    for c in dim_cols:\n        if c not in dim_acct.columns:\n            dim_acct[c] = pd.Series(dtype=\"object\")\n    dim_acct = dim_acct[dim_cols]\n\n    stg_cols = [\"acct_id\", \"email\", \"tier\", \"update_date\"]\n    for c in stg_cols:\n        if c not in stg_acct.columns:\n            stg_acct[c] = pd.Series(dtype=\"object\")\n    stg_acct = stg_acct[stg_cols]\n\n    # -------------------------------------------------------------\n    # Step 1: Dedup STG_ACCT to latest per acct_id by update_date;\n    # ties broken by greater (email, tier) lexicographic pair.\n    # -------------------------------------------------------------\n    if len(stg_acct) == 0:\n        deduped = stg_acct.copy()\n    else:\n        stg_sorted = stg_acct.sort_values(\n            by=[\"update_date\", \"email\", \"tier\"],\n            ascending=[True, True, True],\n            kind=\"mergesort\",\n            na_position=\"last\",\n        )\n        deduped = stg_sorted.groupby(\"acct_id\", as_index=False, sort=False).tail(1)\n\n    # -------------------------------------------------------------\n    # Step 2: Apply staged changes to DIM_ACCT\n    # -------------------------------------------------------------\n    out = dim_acct.copy()\n    # make sure is_current is numeric for comparisons/assignments\n    if \"is_current\" in out.columns:\n        out[\"is_current\"] = out[\"is_current\"]\n\n    new_rows = []\n\n    for _, s in deduped.iterrows():\n        acct_id = s[\"acct_id\"]\n        s_email = s[\"email\"]\n        s_tier = s[\"tier\"]\n        s_update_date = s[\"update_date\"]\n\n        current_mask = (out[\"acct_id\"] == acct_id) & (out[\"is_current\"] == 1)\n\n        if not current_mask.any():\n            # No current row exists -> insert brand new current version\n            new_rows.append({\n                \"acct_id\": acct_id,\n                \"email\": s_email,\n                \"tier\": s_tier,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n            continue\n\n        # Take the first current row found (expected to be unique)\n        current_idx = out.index[current_mask][0]\n        c_email = out.at[current_idx, \"email\"]\n        c_tier = out.at[current_idx, \"tier\"]\n\n        tier_differs = _null_aware_differs(c_tier, s_tier)\n        email_differs = _null_aware_differs(c_email, s_email)\n\n        if tier_differs:\n            # Expire current row\n            out.at[current_idx, \"eff_end_date\"] = s_update_date\n            out.at[current_idx, \"is_current\"] = 0\n\n            # Insert new current version\n            new_rows.append({\n                \"acct_id\": acct_id,\n                \"email\": s_email,\n                \"tier\": s_tier,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n\n        if email_differs:\n            # Retro-overwrite email across ALL rows (history + current)\n            # for this acct_id, including any row already appended above.\n            out.loc[out[\"acct_id\"] == acct_id, \"email\"] = s_email\n            for nr in new_rows:\n                if nr[\"acct_id\"] == acct_id:\n                    nr[\"email\"] = s_email\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=dim_cols)\n        out = pd.concat([out, new_df], ignore_index=True)\n\n    out = out[dim_cols].reset_index(drop=True)\n\n    return {\"dim_acct_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 928,
+   "tokens_out": 3321,
+   "usd": 0.052599,
+   "wall_s": 29.518884658813477
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2858,
+  "tokens_out": 1876,
+  "usd": 0.036714,
+  "wall_s": 13.135349750518799
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

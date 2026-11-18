@@ -1,0 +1,16 @@
+{
+ "task": "t4d_union_dedup_precedence",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    crm_feed = inputs[\"crm_feed\"].copy()\n    web_feed = inputs[\"web_feed\"].copy()\n    \n    # Step 1: CREATE STG_COMBINED\n    crm_feed[\"src_rank\"] = 1\n    web_feed[\"src_rank\"] = 2\n    \n    stg_combined = pd.concat(\n        [crm_feed, web_feed],\n        ignore_index=True\n    )\n    \n    # Step 2: CREATE GOLDEN\n    # ROW_NUMBER() with ORDER BY src_rank ASC, updated_at DESC, email ASC\n    stg_combined = stg_combined.sort_values(\n        by=[\"customer_id\", \"src_rank\", \"updated_at\", \"email\"],\n        ascending=[True, True, False, True],\n        na_position=\"last\",\n        kind=\"stable\"\n    )\n    \n    stg_combined[\"rn\"] = stg_combined.groupby(\"customer_id\", dropna=False).cumcount() + 1\n    \n    golden = stg_combined[stg_combined[\"rn\"] == 1][[\"customer_id\", \"email\", \"updated_at\"]].reset_index(drop=True)\n    \n    return {\"golden\": golden}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 417,
+   "tokens_out": 337,
+   "usd": 0.002102,
+   "wall_s": 2.541876792907715
+  }
+ ]
+}

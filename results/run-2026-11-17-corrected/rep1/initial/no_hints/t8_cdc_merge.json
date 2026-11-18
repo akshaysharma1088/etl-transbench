@@ -1,0 +1,17 @@
+{
+ "task": "t8_cdc_merge",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n\n    high_ts = watermark[\"high_ts\"].iloc[0]\n\n    # Step 1: filter events strictly after watermark\n    cdc = cdc[cdc[\"event_ts\"] > high_ts]\n\n    # Step 2: pick latest event per product_id by (event_ts, event_seq)\n    if not cdc.empty:\n        cdc_sorted = cdc.sort_values(by=[\"event_ts\", \"event_seq\"], ascending=[True, True])\n        latest = cdc_sorted.groupby(\"product_id\", as_index=False).tail(1)\n    else:\n        latest = cdc.copy()\n\n    # Build lookup for latest events\n    latest = latest.set_index(\"product_id\", drop=False)\n\n    target = target.set_index(\"product_id\", drop=False)\n\n    # Determine deletes and upserts\n    delete_ids = set(latest.loc[latest[\"op\"] == \"D\", \"product_id\"]) if not latest.empty else set()\n    upsert_ids = set(latest.loc[latest[\"op\"].isin([\"I\", \"U\"]), \"product_id\"]) if not latest.empty else set()\n\n    # Start with carried-over products: those not touched by any surviving event\n    touched_ids = set(latest[\"product_id\"]) if not latest.empty else set()\n\n    carried = target[~target[\"product_id\"].isin(touched_ids)].copy()\n\n    # Apply upserts\n    upsert_rows = []\n    for pid in upsert_ids:\n        ev = latest.loc[pid]\n        if isinstance(ev, pd.DataFrame):\n            ev = ev.iloc[-1]\n        upsert_rows.append({\n            \"product_id\": pid,\n            \"name\": ev[\"name\"],\n            \"price\": ev[\"price\"],\n            \"last_event_ts\": ev[\"event_ts\"],\n        })\n\n    upsert_df = pd.DataFrame(upsert_rows, columns=[\"product_id\", \"name\", \"price\", \"last_event_ts\"])\n\n    # Combine carried + upserts (deletes are simply excluded)\n    result = pd.concat([carried[[\"product_id\", \"name\", \"price\", \"last_event_ts\"]], upsert_df], ignore_index=True)\n\n    # Ensure correct dtypes\n    result[\"product_id\"] = result[\"product_id\"].astype(\"int64\")\n    result[\"price\"] = result[\"price\"].astype(\"float64\")\n    result[\"last_event_ts\"] = pd.to_datetime(result[\"last_event_ts\"])\n\n    return {\"new_snapshot\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 744,
+   "tokens_out": 1009,
+   "usd": 0.017367,
+   "wall_s": 8.365414142608643,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

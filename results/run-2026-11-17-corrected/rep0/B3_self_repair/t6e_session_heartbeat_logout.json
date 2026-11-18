@@ -1,0 +1,48 @@
+{
+ "config": "B3_self_repair",
+ "rep": 0,
+ "task": "t6e_session_heartbeat_logout",
+ "category": "T6",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    events = inputs[\"app_events\"].copy()\n\n    events = events.sort_values([\"user_id\", \"event_ts\", \"event_id\"], kind=\"mergesort\")\n\n    out_rows = []\n\n    for user_id, group in events.groupby(\"user_id\", sort=False):\n        session_num = 0\n        open_session = False\n        last_activity_ts = None\n        cur_start = None\n        cur_end = None\n        cur_event_count = 0\n        cur_heartbeat_count = 0\n\n        def finalize():\n            nonlocal open_session\n            out_rows.append({\n                \"user_id\": user_id,\n                \"session_num\": session_num,\n                \"session_start\": cur_start,\n                \"session_end\": cur_end,\n                \"event_count\": cur_event_count,\n                \"heartbeat_count\": cur_heartbeat_count,\n            })\n            open_session = False\n\n        for row in group.itertuples(index=False):\n            ts = row.event_ts\n            etype = row.event_type\n\n            if etype in (\"view\", \"click\", \"logout\"):\n                needs_new = False\n                if not open_session:\n                    needs_new = True\n                else:\n                    delta = ts - last_activity_ts\n                    if delta > pd.Timedelta(minutes=30):\n                        needs_new = True\n\n                if needs_new:\n                    if open_session:\n                        finalize()\n                    session_num += 1\n                    open_session = True\n                    cur_start = ts\n                    cur_end = ts\n                    cur_event_count = 0\n                    cur_heartbeat_count = 0\n\n                last_activity_ts = ts\n                cur_end = ts\n                cur_event_count += 1\n\n                if etype == \"logout\":\n                    finalize()\n\n            else:  # heartbeat\n                if open_session:\n                    delta = ts - last_activity_ts\n                    if delta <= pd.Timedelta(minutes=30):\n                        cur_event_count += 1\n                        cur_heartbeat_count += 1\n                    # else dropped\n                # else dropped\n\n        if open_session:\n            finalize()\n\n    result = pd.DataFrame(\n        out_rows,\n        columns=[\n            \"user_id\",\n            \"session_num\",\n            \"session_start\",\n            \"session_end\",\n            \"event_count\",\n            \"heartbeat_count\",\n        ],\n    )\n\n    if not result.empty:\n        result[\"user_id\"] = result[\"user_id\"].astype(\"int64\")\n        result[\"session_num\"] = result[\"session_num\"].astype(\"int64\")\n        result[\"event_count\"] = result[\"event_count\"].astype(\"int64\")\n        result[\"heartbeat_count\"] = result[\"heartbeat_count\"].astype(\"int64\")\n        result[\"session_start\"] = pd.to_datetime(result[\"session_start\"])\n        result[\"session_end\"] = pd.to_datetime(result[\"session_end\"])\n    else:\n        result = pd.DataFrame(\n            {\n                \"user_id\": pd.Series(dtype=\"int64\"),\n                \"session_num\": pd.Series(dtype=\"int64\"),\n                \"session_start\": pd.Series(dtype=\"datetime64[us]\"),\n                \"session_end\": pd.Series(dtype=\"datetime64[us]\"),\n                \"event_count\": pd.Series(dtype=\"int64\"),\n                \"heartbeat_count\": pd.Series(dtype=\"int64\"),\n            }\n        )\n\n    return {\"user_sessions\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 991,
+   "tokens_out": 1549,
+   "usd": 0.026208,
+   "wall_s": 13.432990074157715,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

@@ -1,0 +1,68 @@
+{
+ "config": "C7_cheap_summary_patch_then_fresh",
+ "rep": 3,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "cheap",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_state = inputs[\"target_state\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    \n    # Ensure proper types\n    target_state[\"order_id\"] = target_state[\"order_id\"].astype(\"int64\")\n    target_state[\"last_seq\"] = target_state[\"last_seq\"].astype(\"int64\")\n    \n    cdc_events[\"seq\"] = cdc_events[\"seq\"].astype(\"int64\")\n    cdc_events[\"order_id\"] = cdc_events[\"order_id\"].astype(\"int64\")\n    \n    # Step 1: Deduplication - keep only distinct seq values per order\n    # (In case of duplicates, keep the first occurrence; order doesn't matter since we process by seq)\n    cdc_events = cdc_events.drop_duplicates(subset=[\"seq\"], keep=\"first\").reset_index(drop=True)\n    \n    # Step 2: Sort by seq to process in order\n    cdc_events = cdc_events.sort_values(\"seq\").reset_index(drop=True)\n    \n    # Initialize new_state from target_state\n    new_state = target_state.copy()\n    \n    # Track the last applied operation per order for tombstones\n    # Key: order_id, Value: (op, seq) of last applied event\n    last_applied_op = {}\n    \n    # Initialize with existing orders that have a row\n    for _, row in target_state.iterrows():\n        order_id = row[\"order_id\"]\n        last_applied_op[order_id] = None  # Will be updated as we process events\n    \n    # Step 3: Process events in seq order\n    for _, event in cdc_events.iterrows():\n        order_id = event[\"order_id\"]\n        seq = event[\"seq\"]\n        op = event[\"op\"]\n        status = event[\"status\"]\n        amount = event[\"amount\"]\n        \n        # Apply replay guard: skip if order exists in target_state and seq <= last_seq\n        if order_id in new_state[\"order_id\"].values:\n            existing_row = new_state[new_state[\"order_id\"] == order_id].iloc[0]\n            if seq <= existing_row[\"last_seq\"]:\n                continue  # Skip this event - it's a replay\n        \n        # Event is not replayed, so it's applied\n        # Track that this order had an applied event\n        if order_id not in last_applied_op:\n            last_applied_op[order_id] = None\n        \n        if op == \"D\":\n            # Delete: remove the row if it exists\n            new_state = new_state[new_state[\"order_id\"] != order_id].reset_index(drop=True)\n            last_applied_op[order_id] = (\"D\", seq)\n            \n        elif op in (\"I\", \"U\"):\n            # Insert or Update\n            if order_id in new_state[\"order_id\"].values:\n                # Update existing row\n                idx = new_state[new_state[\"order_id\"] == order_id].index[0]\n                new_state.at[idx, \"status\"] = status\n                # For UPDATE with NULL amount, preserve existing amount\n                if pd.notna(amount):\n                    new_state.at[idx, \"amount\"] = amount\n                # If amount is NULL in UPDATE, leave amount unchanged\n                new_state.at[idx, \"last_seq\"] = seq\n            else:\n                # Create new row\n                new_row = pd.DataFrame({\n                    \"order_id\": [order_id],\n                    \"status\": [status],\n                    \"amount\": [amount],\n                    \"last_seq\": [seq]\n                })\n                new_state = pd.concat([new_state, new_row], ignore_index=True)\n            \n            last_applied_op[order_id] = (op, seq)\n    \n    # Step 4: Build tombstones\n    # Include only orders where:\n    # 1. They had a row in target_state OR they were created during CDC processing\n    # 2. Their LAST applied event was a 'D'\n    \n    tombstones_rows = []\n    for order_id, (op, seq) in last_applied_op.items():\n        if op == \"D\":\n            tombstones_rows.append({\"order_id\": order_id, \"deleted_seq\": seq})\n    \n    if tombstones_rows:\n        tombstones = pd.DataFrame(tombstones_rows)\n    else:\n        tombstones = pd.DataFrame({\"order_id\": pd.Series(dtype=\"int64\"), \n                                   \"deleted_seq\": pd.Series(dtype=\"int64\")})\n    \n    # Ensure new_state has correct types\n    new_state[\"order_id\"] = new_state[\"order_id\"].astype(\"int64\")\n    new_state[\"last_seq\"] = new_state[\"last_seq\"].astype(\"int64\")\n    \n    # Ensure tombstones has correct types\n    if len(tombstones) > 0:\n        tombstones[\"order_id\"] = tombstones[\"order_id\"].astype(\"int64\")\n        tombstones[\"deleted_seq\"] = tombstones[\"deleted_seq\"].astype(\"int64\")\n    \n    return {\n        \"new_state\": new_state,\n        \"tombstones\": tombstones\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 948,
+   "tokens_out": 1528,
+   "usd": 0.008588,
+   "wall_s": 8.634874820709229,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6862,
+  "tokens_out": 7216,
+  "usd": 0.042941999999999994,
+  "wall_s": 48.700464487075806
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

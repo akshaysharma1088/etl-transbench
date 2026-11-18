@@ -1,0 +1,66 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    ledger = inputs[\"LEDGER\"].copy()\n\n    # Preserve original columns/types; ensure deterministic sort order\n    sort_cols = [\"account_id\", \"entry_date\", \"row_seq\"]\n    df = ledger.sort_values(by=sort_cols, kind=\"mergesort\").reset_index(drop=True)\n\n    # Determine STMT flag and filled amount\n    is_stmt = df[\"entry_type\"] == \"STMT\"\n    amount_filled = df[\"amount\"].fillna(0)\n\n    # cycle number: starts at 1 per account, increments by 1 for each STMT row\n    # (the increment happens at/including the STMT row itself)\n    stmt_cum = is_stmt.groupby(df[\"account_id\"]).cumsum()\n    cyc = 1 + stmt_cum\n\n    # cycle balance: cumulative sum of amounts within each (account_id, cyc) group,\n    # since a STMT row's reset happens before its own amount is added, the STMT\n    # row's amount lands in the new cycle's running total.\n    bal = amount_filled.groupby([df[\"account_id\"], cyc]).cumsum()\n\n    result = df.copy()\n    result[\"cycle_no\"] = cyc\n    result[\"cycle_balance\"] = bal\n\n    # Ensure output column order matches legacy output spec\n    result = result[\n        [\"account_id\", \"row_seq\", \"entry_date\", \"entry_type\", \"amount\",\n         \"cycle_no\", \"cycle_balance\"]\n    ]\n\n    return {\"cycle_balances\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 750,
+   "tokens_out": 838,
+   "usd": 0.01482,
+   "wall_s": 7.089852571487427
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3000,
+  "tokens_out": 4636,
+  "usd": 0.07854,
+  "wall_s": 45.241952896118164
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

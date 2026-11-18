@@ -1,0 +1,48 @@
+{
+ "config": "C0_cheap_single",
+ "rep": 0,
+ "task": "t6b_capped_session",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize events with both inactivity gap (20 min) AND hard cap (4 hours from session start).\n    \n    Rules:\n    - New session if gap from previous event > 20 minutes (inactivity)\n    - New session if current event would exceed 4 hours from session start\n    - Within a user, order by event_ts then event_id\n    \"\"\"\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(by=[\"user_id\", \"event_ts\", \"event_id\"]).reset_index(drop=True)\n    \n    # Initialize session tracking columns\n    events[\"session_num\"] = 0\n    events[\"session_start\"] = pd.NaT\n    \n    session_num = 0\n    current_user = None\n    current_session_start = None\n    \n    for idx in range(len(events)):\n        user_id = events.loc[idx, \"user_id\"]\n        event_ts = events.loc[idx, \"event_ts\"]\n        \n        # Check if we're starting with a new user\n        if user_id != current_user:\n            current_user = user_id\n            session_num = 1\n            current_session_start = event_ts\n            events.loc[idx, \"session_num\"] = session_num\n            events.loc[idx, \"session_start\"] = current_session_start\n        else:\n            # Same user - check if we need to start a new session\n            prev_event_ts = events.loc[idx - 1, \"event_ts\"]\n            \n            # Check inactivity gap (> 20 minutes)\n            time_gap = event_ts - prev_event_ts\n            gap_exceeds_20min = time_gap > pd.Timedelta(minutes=20)\n            \n            # Check hard cap (4 hours from session start)\n            time_from_session_start = event_ts - current_session_start\n            exceeds_4hour_cap = time_from_session_start > pd.Timedelta(hours=4)\n            \n            if gap_exceeds_20min or exceeds_4hour_cap:\n                # Start a new session\n                session_num += 1\n                current_session_start = event_ts\n            \n            events.loc[idx, \"session_num\"] = session_num\n            events.loc[idx, \"session_start\"] = current_session_start\n    \n    # Aggregate to create user_sessions\n    user_sessions = events.groupby(\n        [\"user_id\", \"session_num\"], as_index=False\n    ).agg(\n        session_start=(\"session_start\", \"first\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    )\n    \n    # Ensure correct column order\n    user_sessions = user_sessions[[\"user_id\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]]\n    \n    return {\"user_sessions\": user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 421,
+   "tokens_out": 791,
+   "usd": 0.004376,
+   "wall_s": 5.2437896728515625,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

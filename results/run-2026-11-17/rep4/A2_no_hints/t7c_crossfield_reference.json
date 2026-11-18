@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 4,
+ "task": "t7c_crossfield_reference",
+ "category": "T7",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    ref_customers = inputs[\"ref_customers\"].copy()\n    ref_skus = inputs[\"ref_skus\"].copy()\n\n    # Build lookup tables, first occurrence wins on duplicate keys\n    cust_lookup = (\n        ref_customers.drop_duplicates(subset=\"customer_id\", keep=\"first\")\n        .set_index(\"customer_id\")[\"status\"]\n    )\n\n    sku_lookup = (\n        ref_skus.drop_duplicates(subset=\"sku\", keep=\"first\")\n        .set_index(\"sku\")[[\"discontinued\", \"allowed_countries\"]]\n    )\n\n    def evaluate(row):\n        cust_id = row[\"customer_id\"]\n        # R1: customer unknown\n        if pd.isna(cust_id) or cust_id not in cust_lookup.index:\n            return \"CUST_UNKNOWN\"\n\n        status = cust_lookup.loc[cust_id]\n        # In case of unexpected duplicate index after drop_duplicates (shouldn't happen)\n        if isinstance(status, pd.Series):\n            status = status.iloc[0]\n\n        # R2: customer inactive\n        if pd.isna(status) or status != \"ACTIVE\":\n            return \"CUST_INACTIVE\"\n\n        sku = row[\"sku\"]\n        # R3: sku unknown\n        if pd.isna(sku) or sku not in sku_lookup.index:\n            return \"SKU_UNKNOWN\"\n\n        disc = sku_lookup.loc[sku, \"discontinued\"]\n        allowed = sku_lookup.loc[sku, \"allowed_countries\"]\n        if isinstance(disc, pd.Series):\n            disc = disc.iloc[0]\n        if isinstance(allowed, pd.Series):\n            allowed = allowed.iloc[0]\n\n        # R4: sku discontinued\n        if pd.notna(disc):\n            try:\n                disc_val = int(disc)\n            except (ValueError, TypeError):\n                disc_val = None\n            if disc_val == 1:\n                return \"SKU_DISC\"\n\n        # R5: country whitelist check\n        if pd.notna(allowed):\n            allowed_str = str(allowed).strip()\n            if allowed_str != \"\":\n                members = [m.strip() for m in allowed_str.split(\",\")]\n                members = [m for m in members if m != \"\"]\n                ship_country = row[\"ship_country\"]\n                if pd.isna(ship_country) or ship_country not in members:\n                    return \"CTRY_BLOCKED\"\n\n        return None\n\n    reason_codes = orders.apply(evaluate, axis=1)\n\n    is_failure = reason_codes.notna()\n\n    orders_clean = orders.loc[~is_failure].copy()\n\n    orders_rejects = orders.loc[is_failure].copy()\n    orders_rejects[\"reason_code\"] = reason_codes.loc[is_failure]\n\n    return {\n        \"orders_clean\": orders_clean,\n        \"orders_rejects\": orders_rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 704,
+   "tokens_out": 2212,
+   "usd": 0.035292,
+   "wall_s": 19.16560983657837
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

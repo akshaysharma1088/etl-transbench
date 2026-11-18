@@ -1,0 +1,68 @@
+{
+ "config": "C7_cheap_summary_patch_then_fresh",
+ "rep": 4,
+ "task": "t8b_delete_reinsert_cdc",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\nfrom datetime import datetime\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n    \n    high_ts = watermark[\"high_ts\"].iloc[0]\n    \n    # Filter events by watermark\n    cdc_events = cdc_events[cdc_events[\"event_ts\"] <= high_ts].copy()\n    \n    # Sort events by item_id, then event_ts, then event_seq for sequential application\n    cdc_events = cdc_events.sort_values([\"item_id\", \"event_ts\", \"event_seq\"]).reset_index(drop=True)\n    \n    # Initialize snapshot as a dictionary for easier manipulation\n    snapshot = {}\n    \n    # Load existing snapshot into dictionary\n    for _, row in target_snapshot.iterrows():\n        item_id = row[\"item_id\"]\n        snapshot[item_id] = {\n            \"qty_on_hand\": row[\"qty_on_hand\"],\n            \"last_event_ts\": row[\"last_event_ts\"]\n        }\n    \n    # Apply events sequentially\n    for _, event in cdc_events.iterrows():\n        item_id = event[\"item_id\"]\n        op = event[\"op\"]\n        qty = event[\"qty\"]\n        event_ts = event[\"event_ts\"]\n        \n        if op == 'R':  # Receipt - add qty\n            if item_id not in snapshot:\n                # Item doesn't exist, start from 0\n                snapshot[item_id] = {\n                    \"qty_on_hand\": 0.0,\n                    \"last_event_ts\": event_ts\n                }\n            snapshot[item_id][\"qty_on_hand\"] += qty\n            snapshot[item_id][\"last_event_ts\"] = event_ts\n            \n        elif op == 'A':  # Adjustment - absolute reset\n            # Note: 'A' creates/recreates the item with absolute qty\n            snapshot[item_id] = {\n                \"qty_on_hand\": qty,\n                \"last_event_ts\": event_ts\n            }\n            \n        elif op == 'D':  # Delist - remove item\n            if item_id in snapshot:\n                del snapshot[item_id]\n    \n    # Convert snapshot dictionary back to DataFrame\n    result_rows = []\n    for item_id, data in snapshot.items():\n        result_rows.append({\n            \"item_id\": item_id,\n            \"qty_on_hand\": data[\"qty_on_hand\"],\n            \"last_event_ts\": data[\"last_event_ts\"]\n        })\n    \n    if result_rows:\n        new_snapshot = pd.DataFrame(result_rows)\n    else:\n        new_snapshot = pd.DataFrame(columns=[\"item_id\", \"qty_on_hand\", \"last_event_ts\"])\n    \n    # Ensure correct dtypes\n    new_snapshot = new_snapshot.astype({\n        \"item_id\": \"int64\",\n        \"qty_on_hand\": \"float64\",\n        \"last_event_ts\": \"datetime64[us]\"\n    })\n    \n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 635,
+   "tokens_out": 991,
+   "usd": 0.00559,
+   "wall_s": 7.794859409332275,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5218,
+  "tokens_out": 4787,
+  "usd": 0.029153,
+  "wall_s": 31.801542043685913
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

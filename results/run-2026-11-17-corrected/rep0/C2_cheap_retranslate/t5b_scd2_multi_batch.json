@@ -1,0 +1,53 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 0,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom pandas import DataFrame\nfrom typing import Dict\n\ndef run(inputs: dict[str, DataFrame]) -> dict[str, DataFrame]:\n    dim_product = inputs[\"dim_product\"].copy()\n    stg_product = inputs[\"stg_product\"].copy()\n    \n    # Ensure datetime columns are in consistent format\n    dim_product[\"eff_start_date\"] = pd.to_datetime(dim_product[\"eff_start_date\"])\n    dim_product[\"eff_end_date\"] = pd.to_datetime(dim_product[\"eff_end_date\"])\n    stg_product[\"update_date\"] = pd.to_datetime(stg_product[\"update_date\"])\n    \n    # Sort staged records by product_id, then update_date (ascending)\n    stg_product = stg_product.sort_values(by=[\"product_id\", \"update_date\"], ascending=True).reset_index(drop=True)\n    \n    # Process each staged record in order\n    for idx, staged_row in stg_product.iterrows():\n        product_id = staged_row[\"product_id\"]\n        staged_category = staged_row[\"category\"]\n        staged_price_band = staged_row[\"price_band\"]\n        update_date = staged_row[\"update_date\"]\n        \n        # Find current row for this product_id\n        current_rows = dim_product[(dim_product[\"product_id\"] == product_id) & (dim_product[\"is_current\"] == 1)]\n        \n        if len(current_rows) == 0:\n            # No current row: insert new current version\n            new_row = {\n                \"product_id\": product_id,\n                \"category\": staged_category,\n                \"price_band\": staged_price_band,\n                \"eff_start_date\": update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1\n            }\n            dim_product = pd.concat([dim_product, DataFrame([new_row])], ignore_index=True)\n        else:\n            # Current row exists\n            current_row = current_rows.iloc[0]\n            current_idx = current_rows.index[0]\n            \n            # Check if tracked attributes differ (category or price_band)\n            category_changed = current_row[\"category\"] != staged_category\n            price_band_changed = current_row[\"price_band\"] != staged_price_band\n            \n            # Handle NULL comparisons: NULL vs non-NULL is a change, NULL vs NULL is not\n            if pd.isna(current_row[\"category\"]) and not pd.isna(staged_category):\n                category_changed = True\n            elif not pd.isna(current_row[\"category\"]) and pd.isna(staged_category):\n                category_changed = True\n            elif pd.isna(current_row[\"category\"]) and pd.isna(staged_category):\n                category_changed = False\n            \n            if pd.isna(current_row[\"price_band\"]) and not pd.isna(staged_price_band):\n                price_band_changed = True\n            elif not pd.isna(current_row[\"price_band\"]) and pd.isna(staged_price_band):\n                price_band_changed = True\n            elif pd.isna(current_row[\"price_band\"]) and pd.isna(staged_price_band):\n                price_band_changed = False\n            \n            if category_changed or price_band_changed:\n                # Expire current row\n                dim_product.loc[current_idx, \"eff_end_date\"] = update_date\n                dim_product.loc[current_idx, \"is_current\"] = 0\n                \n                # Insert new current version\n                new_row = {\n                    \"product_id\": product_id,\n                    \"category\": staged_category,\n                    \"price_band\": staged_price_band,\n                    \"eff_start_date\": update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1\n                }\n                dim_product = pd.concat([dim_product, DataFrame([new_row])], ignore_index=True)\n            # else: no-op, unchanged record\n    \n    # Reset index after all operations\n    dim_product = dim_product.reset_index(drop=True)\n    \n    return {\"dim_product_out\": dim_product}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 674,
+   "tokens_out": 2981,
+   "usd": 0.015579,
+   "wall_s": 21.00071430206299,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 674,
+  "tokens_out": 1080,
+  "usd": 0.006074,
+  "wall_s": 8.357854127883911
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 2,
+ "task": "t1d_tsql_top_ties",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    df = inputs[\"branch_scores\"].copy()\n    \n    # WHERE active = 1\n    df = df[df[\"active\"] == 1].copy()\n    \n    # Sort by score DESC to establish ranking order\n    df = df.sort_values(by=\"score\", ascending=False, na_position=\"last\").reset_index(drop=True)\n    \n    # Create rank column for TOP WITH TIES logic\n    # Rank is based on score; ties get the same rank\n    df[\"_rank\"] = df[\"score\"].rank(method=\"min\", ascending=False)\n    \n    # TOP (5) WITH TIES: include all rows where rank <= 5\n    df = df[df[\"_rank\"] <= 5].copy()\n    \n    # ISNULL(manager, 'UNASSIGNED') - coalesce null manager to 'UNASSIGNED'\n    df[\"manager_norm\"] = df[\"manager\"].fillna(\"UNASSIGNED\")\n    \n    # branch_code + '-' + region_code with NULL propagation\n    # In T-SQL, NULL + anything = NULL\n    # Create the concatenated column with NULL propagation semantics\n    def concat_with_null_propagation(row):\n        if pd.isna(row[\"branch_code\"]) or pd.isna(row[\"region_code\"]):\n            return None\n        return str(row[\"branch_code\"]) + \"-\" + str(row[\"region_code\"])\n    \n    df[\"branch_label\"] = df.apply(concat_with_null_propagation, axis=1)\n    \n    # Select the required columns in order\n    result = df[[\"branch_id\", \"manager_norm\", \"branch_label\", \"score\"]].copy()\n    \n    # Reset index to clean up\n    result = result.reset_index(drop=True)\n    \n    return {\"top_branches\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 424,
+   "tokens_out": 479,
+   "usd": 0.002819,
+   "wall_s": 3.695645809173584,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

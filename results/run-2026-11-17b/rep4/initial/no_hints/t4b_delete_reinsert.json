@@ -1,0 +1,16 @@
+{
+ "task": "t4b_delete_reinsert",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Multi-step partition refresh: DELETE whole arriving partitions then INSERT.\n    \n    Step 1: Create STG_NEW by aggregating inbound data\n    Step 2: Delete from TARGET_SNAPSHOT all rows matching arriving batch_dates\n    Step 3: Insert STG_NEW into TARGET_SNAPSHOT\n    \"\"\"\n    \n    inbound = inputs.get('inbound', pd.DataFrame())\n    target_snapshot = inputs.get('target_snapshot', pd.DataFrame())\n    \n    # Step 1: CREATE STG_NEW\n    # Filter inbound where qty > 0, then GROUP BY product_id, batch_date\n    stg_new = inbound[inbound['qty'] > 0].copy()\n    \n    if len(stg_new) > 0:\n        stg_new = stg_new.groupby(['product_id', 'batch_date'], as_index=False).agg({\n            'total_qty': 'sum',\n            'unit_cost': 'max'\n        })\n        stg_new = stg_new.rename(columns={'unit_cost': 'max_unit_cost'})\n    else:\n        # Empty result - create with correct schema\n        stg_new = pd.DataFrame(columns=['product_id', 'batch_date', 'total_qty', 'max_unit_cost'])\n    \n    # Step 2: DELETE FROM TARGET_SNAPSHOT\n    # Get distinct batch_dates from STG_NEW\n    if len(stg_new) > 0:\n        arriving_dates = stg_new['batch_date'].unique()\n        # Keep only rows from TARGET_SNAPSHOT that are NOT in arriving_dates\n        target_snapshot = target_snapshot[~target_snapshot['batch_date'].isin(arriving_dates)].copy()\n    \n    # Step 3: INSERT INTO TARGET_SNAPSHOT\n    # Append STG_NEW to TARGET_SNAPSHOT\n    if len(stg_new) > 0:\n        target_snapshot = pd.concat([target_snapshot, stg_new], ignore_index=True)\n    \n    return {\n        'target_snapshot': target_snapshot\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 552,
+   "usd": 0.003158,
+   "wall_s": 3.687730550765991
+  }
+ ]
+}

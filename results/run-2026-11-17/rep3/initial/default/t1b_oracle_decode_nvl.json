@@ -1,0 +1,16 @@
+{
+ "task": "t1b_oracle_decode_nvl",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\nfrom datetime import datetime\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicates Oracle SQL: DECODE with NULL-matching, NVL coalescing, \n    and TRUNC to month-start bucketing with aggregation.\n    \"\"\"\n    regional_txn = inputs['regional_txn'].copy()\n    \n    # Filter for status = 'POSTED'\n    regional_txn = regional_txn[regional_txn['status'] == 'POSTED'].copy()\n    \n    # TRUNC(txn_ts, 'MM') - truncate timestamp to first day of month\n    # Ensure txn_ts is datetime\n    if regional_txn['txn_ts'].dtype == 'object':\n        regional_txn['txn_ts'] = pd.to_datetime(regional_txn['txn_ts'])\n    \n    regional_txn['txn_month'] = regional_txn['txn_ts'].dt.to_period('M').dt.to_timestamp()\n    \n    # DECODE(region, NULL, 'MISSING', 'XX', 'UNKNOWN', region)\n    # Oracle DECODE matches NULL = NULL (unlike SQL CASE)\n    def decode_region(val):\n        if pd.isna(val):\n            return 'MISSING'\n        elif val == 'XX':\n            return 'UNKNOWN'\n        else:\n            return val\n    \n    regional_txn['region_norm'] = regional_txn['region'].apply(decode_region)\n    \n    # NVL(amount, 0) - coalesce NULL amounts to 0\n    regional_txn['amount_normalized'] = regional_txn['amount'].fillna(0)\n    \n    # GROUP BY txn_month, region_norm\n    grouped = regional_txn.groupby(['txn_month', 'region_norm'], as_index=False).agg({\n        'amount_normalized': 'sum',\n        'region': 'count'  # COUNT(*) - count rows\n    })\n    \n    # Rename columns to match output\n    grouped.rename(columns={\n        'amount_normalized': 'total_amount',\n        'region': 'txn_count'\n    }, inplace=True)\n    \n    # Ensure dtypes are appropriate\n    grouped['txn_month'] = pd.to_datetime(grouped['txn_month'])\n    grouped['total_amount'] = grouped['total_amount'].astype('float64')\n    grouped['txn_count'] = grouped['txn_count'].astype('int64')\n    \n    monthly_region_rollup = grouped[['txn_month', 'region_norm', 'total_amount', 'txn_count']]\n    \n    return {\n        'monthly_region_rollup': monthly_region_rollup\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 421,
+   "tokens_out": 715,
+   "usd": 0.003996,
+   "wall_s": 4.7521140575408936
+  }
+ ]
+}

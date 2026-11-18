@@ -1,0 +1,16 @@
+{
+ "task": "t4b_delete_reinsert",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Implements multi-step partition refresh: DELETE whole arriving partitions then INSERT.\n    \n    Step 1: Create STG_NEW by aggregating inbound data (qty > 0)\n    Step 2: Identify and delete rows from target_snapshot for partitions in STG_NEW\n    Step 3: Insert STG_NEW rows into target_snapshot\n    \"\"\"\n    \n    inbound = inputs.get('inbound', pd.DataFrame())\n    target_snapshot = inputs.get('target_snapshot', pd.DataFrame())\n    \n    # Step 1: CREATE STG_NEW\n    # Filter for qty > 0, then GROUP BY product_id, batch_date\n    if len(inbound) > 0:\n        stg_new = inbound[inbound['qty'] > 0].groupby(\n            ['product_id', 'batch_date'],\n            as_index=False\n        ).agg(\n            total_qty=('qty', 'sum'),\n            max_unit_cost=('unit_cost', 'max')\n        )\n    else:\n        stg_new = pd.DataFrame(columns=['product_id', 'batch_date', 'total_qty', 'max_unit_cost'])\n    \n    # Step 2: DELETE FROM TARGET_SNAPSHOT\n    # Remove all rows whose batch_date appears in STG_NEW\n    if len(stg_new) > 0:\n        arriving_batch_dates = stg_new['batch_date'].unique()\n        target_snapshot = target_snapshot[\n            ~target_snapshot['batch_date'].isin(arriving_batch_dates)\n        ]\n    \n    # Step 3: INSERT INTO TARGET_SNAPSHOT\n    # Append STG_NEW rows to target_snapshot\n    if len(stg_new) > 0:\n        target_snapshot = pd.concat(\n            [target_snapshot, stg_new],\n            ignore_index=True\n        )\n    \n    # Ensure column order and types match expected output\n    target_snapshot = target_snapshot[['product_id', 'batch_date', 'total_qty', 'max_unit_cost']]\n    \n    return {\n        'target_snapshot': target_snapshot\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 568,
+   "usd": 0.003238,
+   "wall_s": 3.5953173637390137
+  }
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "task": "t2_cursor_balance",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"transactions\"].copy()\n\n    # Preserve cursor ordering: account_id, txn_date, txn_seq (tie-breaker)\n    df = df.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        kind=\"mergesort\"  # stable sort to mimic deterministic cursor order\n    ).reset_index(drop=True)\n\n    # amount coalesced to 0 for running sum, but original amount kept in output\n    amt_for_sum = df[\"amount\"].fillna(0)\n\n    # running balance resets per account_id (grouped cumulative sum)\n    running_balance = amt_for_sum.groupby(df[\"account_id\"]).cumsum()\n\n    overdraft_flag = (running_balance < 0).astype(int)\n\n    result = pd.DataFrame({\n        \"account_id\": df[\"account_id\"],\n        \"txn_seq\": df[\"txn_seq\"],\n        \"txn_date\": df[\"txn_date\"],\n        \"amount\": df[\"amount\"],\n        \"running_balance\": running_balance,\n        \"overdraft_flag\": overdraft_flag,\n    })\n\n    return {\"acct_balance_flags\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 713,
+   "tokens_out": 572,
+   "usd": 0.010719,
+   "wall_s": 5.248934745788574
+  }
+ ]
+}

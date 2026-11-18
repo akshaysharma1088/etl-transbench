@@ -1,0 +1,52 @@
+{
+ "config": "A2_no_hints",
+ "rep": 4,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Multi-step partition refresh: DELETE whole arriving partitions then INSERT.\n    \n    Step 1: Create STG_NEW by aggregating inbound data\n    Step 2: Delete from TARGET_SNAPSHOT all rows matching arriving batch_dates\n    Step 3: Insert STG_NEW into TARGET_SNAPSHOT\n    \"\"\"\n    \n    inbound = inputs.get('inbound', pd.DataFrame())\n    target_snapshot = inputs.get('target_snapshot', pd.DataFrame())\n\n    out_cols = ['product_id', 'batch_date', 'total_qty', 'max_unit_cost']\n\n    # Step 1: CREATE STG_NEW\n    # Filter inbound where qty > 0, then GROUP BY product_id, batch_date\n    stg_new = inbound[inbound['qty'] > 0].copy()\n\n    if len(stg_new) > 0:\n        stg_new = stg_new.groupby(['product_id', 'batch_date'], as_index=False).agg(\n            total_qty=('qty', 'sum'),\n            max_unit_cost=('unit_cost', 'max')\n        )\n    else:\n        # Empty result - create with correct schema\n        stg_new = pd.DataFrame(columns=out_cols)\n\n    # Step 2: DELETE FROM TARGET_SNAPSHOT\n    # Get distinct batch_dates from STG_NEW\n    if len(stg_new) > 0:\n        arriving_dates = stg_new['batch_date'].unique()\n        # Keep only rows from TARGET_SNAPSHOT that are NOT in arriving_dates\n        target_snapshot = target_snapshot[~target_snapshot['batch_date'].isin(arriving_dates)].copy()\n\n    # Step 3: INSERT INTO TARGET_SNAPSHOT\n    # Append STG_NEW to TARGET_SNAPSHOT\n    if len(stg_new) > 0:\n        target_snapshot = pd.concat([target_snapshot, stg_new], ignore_index=True)\n\n    return {\n        'target_snapshot': target_snapshot\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 552,
+   "usd": 0.003158,
+   "wall_s": 3.687730550765991
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2129,
+  "tokens_out": 832,
+  "usd": 0.018867,
+  "wall_s": 6.542094469070435
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

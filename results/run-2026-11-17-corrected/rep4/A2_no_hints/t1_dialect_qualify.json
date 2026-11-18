@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 4,
+ "task": "t1_dialect_qualify",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    acct_txn = inputs[\"acct_txn\"].copy()\n    \n    # WHERE amount > 100\n    filtered = acct_txn[acct_txn[\"amount\"] > 100].copy()\n    \n    # Add the size_band column\n    filtered[\"size_band\"] = filtered[\"amount\"].apply(\n        lambda x: \"JUMBO\" if x >= 1000 else (\"LARGE\" if x >= 500 else \"STANDARD\")\n    )\n    \n    # QUALIFY: ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC) = 1\n    # Sort by account_id, then txn_ts descending, then txn_id descending\n    filtered = filtered.sort_values(\n        by=[\"account_id\", \"txn_ts\", \"txn_id\"],\n        ascending=[True, False, False],\n        na_position=\"last\"\n    )\n    \n    # Assign row numbers within each partition\n    filtered[\"rn\"] = filtered.groupby(\"account_id\", dropna=False).cumcount() + 1\n    \n    # Keep only rows where rn == 1\n    result = filtered[filtered[\"rn\"] == 1].copy()\n    \n    # Drop the helper column\n    result = result.drop(columns=[\"rn\"])\n    \n    # Select final columns in order\n    result = result[[\"account_id\", \"txn_id\", \"txn_ts\", \"amount\", \"channel\", \"size_band\"]]\n    \n    return {\"latest_high_value_txn\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 401,
+   "tokens_out": 420,
+   "usd": 0.002501,
+   "wall_s": 3.743640184402466,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

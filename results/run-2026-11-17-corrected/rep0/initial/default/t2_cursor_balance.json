@@ -1,0 +1,17 @@
+{
+ "task": "t2_cursor_balance",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"transactions\"].copy()\n\n    df = df.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    filled_amount = df[\"amount\"].fillna(0)\n    df[\"running_balance\"] = filled_amount.groupby(df[\"account_id\"]).cumsum()\n    df[\"overdraft_flag\"] = (df[\"running_balance\"] < 0).astype(\"int64\")\n\n    result = df[[\n        \"account_id\", \"txn_seq\", \"txn_date\", \"amount\",\n        \"running_balance\", \"overdraft_flag\"\n    ]].copy()\n\n    result[\"overdraft_flag\"] = result[\"overdraft_flag\"].astype(\"int16\")\n\n    return {\"acct_balance_flags\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 787,
+   "tokens_out": 378,
+   "usd": 0.008031,
+   "wall_s": 4.169257402420044,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "task": "t7c_crossfield_reference",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs['orders'].copy()\n    ref_customers = inputs['ref_customers'].copy()\n    ref_skus = inputs['ref_skus'].copy()\n\n    # Deduplicate reference data by key, keeping first occurrence\n    cust_map = (\n        ref_customers.drop_duplicates(subset='customer_id', keep='first')\n        .set_index('customer_id')['status']\n    )\n    sku_info = (\n        ref_skus.drop_duplicates(subset='sku', keep='first')\n        .set_index('sku')\n    )\n\n    def classify(row):\n        cid = row['customer_id']\n        if cid not in cust_map.index:\n            return 'CUST_UNKNOWN'\n        status = cust_map.loc[cid]\n        if status != 'ACTIVE':\n            return 'CUST_INACTIVE'\n\n        sku = row['sku']\n        if sku not in sku_info.index:\n            return 'SKU_UNKNOWN'\n        info = sku_info.loc[sku]\n\n        disc = info['discontinued']\n        if pd.notna(disc) and disc == 1:\n            return 'SKU_DISC'\n\n        allowed = info['allowed_countries']\n        if pd.notna(allowed) and str(allowed).strip() != '':\n            allowed_list = [c.strip() for c in str(allowed).split(',')]\n            if row['ship_country'] not in allowed_list:\n                return 'CTRY_BLOCKED'\n\n        return None\n\n    orders['reason_code'] = orders.apply(classify, axis=1)\n\n    clean = orders[orders['reason_code'].isna()].drop(columns=['reason_code']).reset_index(drop=True)\n    rejects = orders[orders['reason_code'].notna()].reset_index(drop=True)\n\n    return {\n        'orders_clean': clean,\n        'orders_rejects': rejects,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 704,
+   "tokens_out": 1768,
+   "usd": 0.028632,
+   "wall_s": 14.497254133224487
+  }
+ ]
+}

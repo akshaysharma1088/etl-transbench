@@ -1,0 +1,52 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _eq_null_aware(a, b):\n    \"\"\"NULL-aware equality: NULL vs NULL -> equal (not different),\n    NULL vs non-NULL -> not equal (different).\"\"\"\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return True\n    if a_null or b_null:\n        return False\n    return a == b\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    \"\"\"Fetch an input DataFrame by name, tolerating case/whitespace\n    differences in the key used by the harness.\"\"\"\n    if name in inputs:\n        return inputs[name]\n    target = name.strip().lower()\n    for k, v in inputs.items():\n        if str(k).strip().lower() == target:\n            return v\n    raise KeyError(name)\n\n\ndef run(inputs: dict) -> dict:\n    dim_store = _get_input(inputs, \"DIM_STORE\").copy()\n    stg = _get_input(inputs, \"STG_STORE_FULL\")\n    batch = _get_input(inputs, \"BATCH_CONTROL\")\n\n    b = batch[\"batch_date\"].iloc[0]\n\n    # Distinct snapshot rows (dedupe exact duplicates)\n    S = stg.drop_duplicates(subset=[\"store_id\", \"region\", \"format\"])\n\n    # Work on a list of dict records so we can mutate rows in place.\n    dim_records = dim_store.to_dict(\"records\")\n\n    # Map store_id -> index of its current (is_current == 1) row, if any.\n    current_idx = {}\n    for i, r in enumerate(dim_records):\n        if r.get(\"is_current\") == 1:\n            current_idx[r[\"store_id\"]] = i\n\n    new_rows = []\n    seen_stores = set()\n\n    for _, s in S.iterrows():\n        store_id = s[\"store_id\"]\n        seen_stores.add(store_id)\n\n        if store_id in current_idx:\n            idx = current_idx[store_id]\n            c = dim_records[idx]\n\n            region_diff = not _eq_null_aware(c.get(\"region\"), s.get(\"region\"))\n            format_diff = not _eq_null_aware(c.get(\"format\"), s.get(\"format\"))\n\n            if region_diff or format_diff:\n                # close current version\n                dim_records[idx][\"eff_end_date\"] = b\n                dim_records[idx][\"is_current\"] = 0\n\n                # open new version\n                new_rows.append(\n                    {\n                        \"store_id\": store_id,\n                        \"region\": s[\"region\"],\n                        \"format\": s[\"format\"],\n                        \"eff_start_date\": b,\n                        \"eff_end_date\": pd.NaT,\n                        \"is_current\": 1,\n                    }\n                )\n                # this store_id no longer has a \"current\" row to track\n                del current_idx[store_id]\n            else:\n                # attributes match exactly -> no-op\n                pass\n        else:\n            # no current row: brand-new store OR reactivated previously closed store\n            new_rows.append(\n                {\n                    \"store_id\": store_id,\n                    \"region\": s[\"region\"],\n                    \"format\": s[\"format\"],\n                    \"eff_start_date\": b,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            )\n\n    # Step 2: close current rows whose store_id is not present in S\n    for store_id, idx in list(current_idx.items()):\n        if store_id not in seen_stores:\n            dim_records[idx][\"eff_end_date\"] = b\n            dim_records[idx][\"is_current\"] = 0\n\n    all_records = dim_records + new_rows\n\n    result = pd.DataFrame(\n        all_records,\n        columns=[\n            \"store_id\",\n            \"region\",\n            \"format\",\n            \"eff_start_date\",\n            \"eff_end_date\",\n            \"is_current\",\n        ],\n    )\n\n    return {\"dim_store_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1039,
+   "tokens_out": 3013,
+   "usd": 0.048312,
+   "wall_s": 26.3290274143219
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2532,
+  "tokens_out": 1441,
+  "usd": 0.029211,
+  "wall_s": 10.802932977676392
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

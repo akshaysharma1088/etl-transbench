@@ -1,0 +1,51 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom typing import Dict\n\ndef run(inputs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize events per (user_id, channel) independently.\n    - Events are ordered by event_ts, then event_id within each (user_id, channel) group\n    - A new session starts when gap between consecutive events exceeds 25 minutes\n      (strict gap rule), or when either timestamp involved is null.\n    - Output: channel_sessions with user_id, channel, session_num, session_start,\n      session_end, event_count\n    \"\"\"\n\n    events = inputs['events'].copy()\n\n    # Preserve original dtypes for keys; only ensure event_ts is datetime for\n    # arithmetic. Do NOT coerce user_id/channel/event_id to string, as that\n    # changes identity/sort semantics vs. the legacy SQL types.\n    events['event_ts'] = pd.to_datetime(events['event_ts'])\n\n    # Sort by (user_id, channel, event_ts, event_id) using native dtypes.\n    events = events.sort_values(\n        by=['user_id', 'channel', 'event_ts', 'event_id'],\n        na_position='last',\n        kind='mergesort'  # stable sort\n    ).reset_index(drop=True)\n\n    # Determine group boundaries\n    grp_cols = ['user_id', 'channel']\n    same_group = (\n        events[grp_cols].eq(events[grp_cols].shift(1)).all(axis=1)\n    )\n\n    prev_ts = events['event_ts'].shift(1)\n    cur_ts = events['event_ts']\n\n    gap_minutes = (cur_ts - prev_ts).dt.total_seconds() / 60.0\n\n    # New session if:\n    #  - first row of a (user_id, channel) group, OR\n    #  - either prev_ts or cur_ts is NaT, OR\n    #  - gap strictly exceeds 25 minutes\n    is_first_in_group = ~same_group\n    null_ts = prev_ts.isna() | cur_ts.isna()\n    gap_exceeded = (~null_ts) & (gap_minutes > 25)\n\n    new_session = is_first_in_group | (same_group & (null_ts | gap_exceeded))\n\n    # session_num per (user_id, channel): cumulative sum of new_session flags\n    events['session_num'] = new_session.groupby(\n        [events['user_id'], events['channel']]\n    ).cumsum().astype('int64')\n\n    # But cumsum above needs to be computed within each group properly;\n    # since new_session already resets correctly at group boundaries,\n    # a straightforward cumulative sum per group works:\n    events['session_num'] = (\n        new_session.astype(int)\n        .groupby([events['user_id'], events['channel']])\n        .cumsum()\n    )\n\n    # Aggregate per (user_id, channel, session_num)\n    grouped = events.groupby(\n        ['user_id', 'channel', 'session_num'], as_index=False\n    ).agg(\n        session_start=('event_ts', 'min'),\n        session_end=('event_ts', 'max'),\n        event_count=('event_ts', 'count')\n    )\n\n    channel_sessions = grouped[\n        ['user_id', 'channel', 'session_num', 'session_start', 'session_end', 'event_count']\n    ]\n\n    channel_sessions = channel_sessions.sort_values(\n        by=['user_id', 'channel', 'session_num']\n    ).reset_index(drop=True)\n\n    return {\n        'channel_sessions': channel_sessions\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 299,
+   "tokens_out": 1083,
+   "usd": 0.005714,
+   "wall_s": 6.691977500915527
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2452,
+  "tokens_out": 1897,
+  "usd": 0.035811,
+  "wall_s": 17.766844987869263
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "task": "t2_cursor_balance",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"TRANSACTIONS\"].copy()\n\n    # Preserve original index to maintain stable ordering for ties beyond txn_seq\n    df = df.reset_index(drop=True)\n    df[\"_orig_order\"] = df.index\n\n    # Sort per cursor semantics: account_id, txn_date, txn_seq\n    df_sorted = df.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\", \"_orig_order\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # Amount treated as 0 when NULL for balance accumulation, but original amount kept in output\n    amt_filled = df_sorted[\"amount\"].fillna(0)\n\n    # Running balance resets at each new account_id\n    running_balance = amt_filled.groupby(df_sorted[\"account_id\"]).cumsum()\n\n    df_sorted[\"running_balance\"] = running_balance\n    df_sorted[\"overdraft_flag\"] = (df_sorted[\"running_balance\"] < 0).astype(\"int64\")\n\n    result = df_sorted[\n        [\"account_id\", \"txn_seq\", \"txn_date\", \"amount\", \"running_balance\", \"overdraft_flag\"]\n    ].copy()\n\n    result[\"overdraft_flag\"] = result[\"overdraft_flag\"].astype(\"int64\")\n\n    return {\"acct_balance_flags\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 673,
+   "tokens_out": 537,
+   "usd": 0.010074,
+   "wall_s": 5.197311639785767
+  }
+ ]
+}

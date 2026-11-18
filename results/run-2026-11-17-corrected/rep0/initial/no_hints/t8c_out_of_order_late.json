@@ -1,0 +1,17 @@
+{
+ "task": "t8c_out_of_order_late",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n\n    # watermark map: device_id -> applied_event_ts\n    watermark = dict(zip(target[\"device_id\"], target[\"applied_event_ts\"]))\n    current_reading = dict(zip(target[\"device_id\"], target[\"reading\"]))\n\n    # For devices with watermark, filter cdc events strictly greater than watermark\n    # For devices without watermark (new devices), all events are eligible\n\n    def eligible(row):\n        dev = row[\"device_id\"]\n        if dev in watermark:\n            wm = watermark[dev]\n            return row[\"event_ts\"] > wm\n        else:\n            return True\n\n    if len(cdc) > 0:\n        mask = cdc.apply(eligible, axis=1)\n        surviving = cdc[mask].copy()\n    else:\n        surviving = cdc.copy()\n\n    result_rows = {}\n\n    # start with carry-forward of all target devices\n    for _, row in target.iterrows():\n        result_rows[row[\"device_id\"]] = {\n            \"device_id\": row[\"device_id\"],\n            \"reading\": row[\"reading\"],\n            \"applied_event_ts\": row[\"applied_event_ts\"],\n        }\n\n    if len(surviving) > 0:\n        # pick winner per device: max by (event_ts, event_seq)\n        surviving_sorted = surviving.sort_values(\n            by=[\"event_ts\", \"event_seq\"], ascending=[True, True]\n        )\n        winners = surviving_sorted.groupby(\"device_id\", as_index=False).tail(1)\n\n        for _, row in winners.iterrows():\n            dev = row[\"device_id\"]\n            result_rows[dev] = {\n                \"device_id\": dev,\n                \"reading\": row[\"reading\"],\n                \"applied_event_ts\": row[\"event_ts\"],\n            }\n\n    if result_rows:\n        out = pd.DataFrame(list(result_rows.values()))\n        out = out[[\"device_id\", \"reading\", \"applied_event_ts\"]]\n        out[\"device_id\"] = out[\"device_id\"].astype(\"int64\")\n        out[\"reading\"] = out[\"reading\"].astype(\"float64\")\n        out[\"applied_event_ts\"] = pd.to_datetime(out[\"applied_event_ts\"])\n    else:\n        out = pd.DataFrame(columns=[\"device_id\", \"reading\", \"applied_event_ts\"])\n        out[\"device_id\"] = out[\"device_id\"].astype(\"int64\")\n        out[\"reading\"] = out[\"reading\"].astype(\"float64\")\n        out[\"applied_event_ts\"] = pd.to_datetime(out[\"applied_event_ts\"])\n\n    return {\"new_snapshot\": out}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 816,
+   "tokens_out": 1203,
+   "usd": 0.020493,
+   "wall_s": 10.697154521942139,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

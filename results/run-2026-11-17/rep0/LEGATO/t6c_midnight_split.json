@@ -1,0 +1,46 @@
+{
+ "config": "LEGATO",
+ "rep": 0,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import datetime, timedelta\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize events with gap rule (>45 min) AND forced midnight split.\n    Sessions never cross calendar dates.\n    \"\"\"\n    \n    # Assuming input has events table with user_id, event_ts, event_id\n    events = inputs['events'].copy()\n    \n    if events.empty:\n        user_sessions = pd.DataFrame(columns=[\n            'user_id', 'session_num', 'session_date', \n            'session_start', 'session_end', 'event_count'\n        ])\n        return {'user_sessions': user_sessions}\n    \n    # Ensure event_ts is datetime\n    events['event_ts'] = pd.to_datetime(events['event_ts'])\n    \n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(\n        by=['user_id', 'event_ts', 'event_id'],\n        na_position='last'\n    ).reset_index(drop=True)\n    \n    # Create session assignments\n    events['session_num'] = 0\n    events['session_date'] = events['event_ts'].dt.date\n    \n    session_num = 0\n    current_user = None\n    prev_event_ts = None\n    prev_session_date = None\n    \n    for idx in range(len(events)):\n        user_id = events.loc[idx, 'user_id']\n        event_ts = events.loc[idx, 'event_ts']\n        event_date = events.loc[idx, 'session_date']\n        \n        # Check if this is a new user\n        if user_id != current_user:\n            session_num = 1\n            current_user = user_id\n            prev_event_ts = event_ts\n            prev_session_date = event_date\n            events.loc[idx, 'session_num'] = session_num\n        else:\n            # Same user - check gap and date conditions\n            time_gap = event_ts - prev_event_ts\n            gap_minutes = time_gap.total_seconds() / 60\n            \n            # New session if: gap > 45 minutes OR different calendar date\n            if gap_minutes > 45 or event_date != prev_session_date:\n                session_num += 1\n            \n            events.loc[idx, 'session_num'] = session_num\n            prev_event_ts = event_ts\n            prev_session_date = event_date\n    \n    # Aggregate by user_id and session_num\n    grouped = events.groupby(['user_id', 'session_num'], as_index=False).agg({\n        'session_date': 'first',  # All events in a session have same date\n        'event_ts': ['min', 'max', 'count']\n    })\n    \n    # Flatten column names\n    grouped.columns = ['user_id', 'session_num', 'session_date', \n                       'session_start', 'session_end', 'event_count']\n    \n    # Ensure dtypes\n    grouped['user_id'] = grouped['user_id'].astype(events['user_id'].dtype)\n    grouped['session_num'] = grouped['session_num'].astype('int64')\n    grouped['session_date'] = pd.to_datetime(grouped['session_date']).dt.date\n    grouped['session_start'] = pd.to_datetime(grouped['session_start'])\n    grouped['session_end'] = pd.to_datetime(grouped['session_end'])\n    grouped['event_count'] = grouped['event_count'].astype('int64')\n    \n    # Sort for consistency\n    grouped = grouped.sort_values(\n        by=['user_id', 'session_num'],\n        na_position='last'\n    ).reset_index(drop=True)\n    \n    return {'user_sessions': grouped}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 332,
+   "tokens_out": 988,
+   "usd": 0.005272,
+   "wall_s": 6.210353851318359
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

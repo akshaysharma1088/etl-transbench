@@ -1,0 +1,48 @@
+{
+ "config": "LEGATO",
+ "rep": 0,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    ledger = inputs[\"ledger\"].copy()\n\n    # Sort according to cursor ORDER BY account_id, entry_date, row_seq\n    ledger = ledger.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        kind=\"mergesort\"  # stable sort to preserve deterministic tie-breaking\n    ).reset_index(drop=True)\n\n    # Cycle number: starts at 1 per account, increments by 1 for each STMT row\n    # (including the STMT row itself causing the increment before its amount is added)\n    is_stmt = (ledger[\"entry_type\"] == \"STMT\")\n    stmt_cumcount = is_stmt.groupby(ledger[\"account_id\"]).cumsum()\n    ledger[\"cycle_no\"] = 1 + stmt_cumcount\n\n    # Amount with NULLs treated as 0 (COALESCE)\n    amount_filled = ledger[\"amount\"].fillna(0.0)\n\n    # Running balance within each (account_id, cycle_no) segment.\n    # Because cycle_no increments on the STMT row itself (reset happens before add),\n    # grouping by (account_id, cycle_no) and cumsum naturally reproduces the\n    # reset-then-add semantics: the STMT row starts the new segment with bal=0+amount.\n    ledger[\"cycle_balance\"] = (\n        amount_filled.groupby([ledger[\"account_id\"], ledger[\"cycle_no\"]]).cumsum()\n    )\n\n    result = ledger[\n        [\"account_id\", \"row_seq\", \"entry_date\", \"entry_type\", \"amount\",\n         \"cycle_no\", \"cycle_balance\"]\n    ].reset_index(drop=True)\n\n    return {\"cycle_balances\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 830,
+   "tokens_out": 1163,
+   "usd": 0.019935,
+   "wall_s": 12.180346488952637,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

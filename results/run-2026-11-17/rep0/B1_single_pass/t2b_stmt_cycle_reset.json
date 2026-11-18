@@ -1,0 +1,46 @@
+{
+ "config": "B1_single_pass",
+ "rep": 0,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    ledger = inputs[\"LEDGER\"].copy()\n\n    # Preserve original columns, sort per legacy cursor ORDER BY\n    sorted_df = ledger.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    cycle_nos = []\n    cycle_bals = []\n\n    prev_acct = None\n    bal = 0.0\n    cyc = 1\n\n    for _, row in sorted_df.iterrows():\n        acct = row[\"account_id\"]\n        if acct != prev_acct:\n            bal = 0.0\n            cyc = 1\n            prev_acct = acct\n\n        if row[\"entry_type\"] == \"STMT\":\n            bal = 0.0\n            cyc = cyc + 1\n\n        amt = row[\"amount\"]\n        if pd.isna(amt):\n            amt = 0.0\n        bal = bal + amt\n\n        cycle_nos.append(cyc)\n        cycle_bals.append(bal)\n\n    result = sorted_df.copy()\n    result[\"cycle_no\"] = cycle_nos\n    result[\"cycle_balance\"] = cycle_bals\n\n    result = result[\n        [\"account_id\", \"row_seq\", \"entry_date\", \"entry_type\", \"amount\",\n         \"cycle_no\", \"cycle_balance\"]\n    ]\n\n    return {\"cycle_balances\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 750,
+   "tokens_out": 665,
+   "usd": 0.012225,
+   "wall_s": 6.436795949935913
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

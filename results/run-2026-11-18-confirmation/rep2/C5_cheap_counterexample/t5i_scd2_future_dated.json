@@ -1,0 +1,48 @@
+{
+ "config": "C5_cheap_counterexample",
+ "rep": 2,
+ "task": "t5i_scd2_future_dated",
+ "category": "T5",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import datetime\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_price = inputs[\"dim_price\"].copy()\n    stg_price = inputs[\"stg_price\"].copy()\n    batch_control = inputs[\"batch_control\"].copy()\n    \n    batch_date = batch_control[\"batch_date\"].iloc[0]\n    \n    # Convert datetime64 to date for comparison\n    batch_date_val = pd.Timestamp(batch_date).date()\n    \n    # Process each product in stg_price\n    stg_price_sorted = stg_price.sort_values(\"product_id\").reset_index(drop=True)\n    \n    # Group by product_id\n    for product_id in stg_price_sorted[\"product_id\"].unique():\n        stg_rows = stg_price_sorted[stg_price_sorted[\"product_id\"] == product_id].sort_values(\"effective_date\").reset_index(drop=True)\n        \n        for idx, stg_row in stg_rows.iterrows():\n            s_product_id = stg_row[\"product_id\"]\n            s_list_price = stg_row[\"list_price\"]\n            s_effective_date = stg_row[\"effective_date\"]\n            \n            # Find the tail: version with latest eff_start_date for this product\n            product_versions = dim_price[dim_price[\"product_id\"] == s_product_id]\n            \n            if len(product_versions) > 0:\n                tail_idx = product_versions[\"eff_start_date\"].idxmax()\n                tail = product_versions.loc[tail_idx]\n                \n                # Check if list_price is the same\n                if tail[\"list_price\"] == s_list_price:\n                    # Skip, no change\n                    continue\n                else:\n                    # Close the tail version\n                    dim_price.loc[tail_idx, \"eff_end_date\"] = s_effective_date\n                    \n                    # Insert new version\n                    new_row = {\n                        \"product_id\": s_product_id,\n                        \"list_price\": s_list_price,\n                        \"eff_start_date\": s_effective_date,\n                        \"eff_end_date\": pd.NaT,\n                        \"is_current\": 0\n                    }\n                    dim_price = pd.concat([dim_price, pd.DataFrame([new_row])], ignore_index=True)\n            else:\n                # Product is new\n                new_row = {\n                    \"product_id\": s_product_id,\n                    \"list_price\": s_list_price,\n                    \"eff_start_date\": s_effective_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 0\n                }\n                dim_price = pd.concat([dim_price, pd.DataFrame([new_row])], ignore_index=True)\n    \n    # Set is_current flag: 1 if version covers batch_date, else 0\n    for idx, row in dim_price.iterrows():\n        eff_start = pd.Timestamp(row[\"eff_start_date\"]).date()\n        eff_end = row[\"eff_end_date\"]\n        \n        # Version covers batch_date if eff_start_date <= batch_date < eff_end_date\n        # (or eff_end_date is NULL, meaning open-ended)\n        if eff_start <= batch_date_val:\n            if pd.isna(eff_end):\n                dim_price.loc[idx, \"is_current\"] = 1\n            else:\n                eff_end_val = pd.Timestamp(eff_end).date()\n                if batch_date_val < eff_end_val:\n                    dim_price.loc[idx, \"is_current\"] = 1\n                else:\n                    dim_price.loc[idx, \"is_current\"] = 0\n        else:\n            dim_price.loc[idx, \"is_current\"] = 0\n    \n    # Ensure is_current is int64\n    dim_price[\"is_current\"] = dim_price[\"is_current\"].astype(\"int64\")\n    \n    return {\"dim_price_out\": dim_price}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 915,
+   "tokens_out": 1076,
+   "usd": 0.006295,
+   "wall_s": 6.361709833145142,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

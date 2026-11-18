@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 2,
+ "task": "t7e_shortcircuit_parse_dedupe",
+ "category": "T7",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import re\nimport pandas as pd\nfrom datetime import datetime\nfrom collections import defaultdict\n\n_NUM_RE = re.compile(r'^[+-]?\\d+(\\.\\d{1,2})?$')\n_DATE_RE = re.compile(r'^\\d{4}-\\d{2}-\\d{2}$')\n_VALID_CURRENCIES = ('USD', 'EUR', 'GBP')\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"raw_payments\"]\n\n    reject_rows = []\n    survivors = []\n\n    for row in df.itertuples(index=False):\n        row_num = row.row_num\n        payment_id = row.payment_id\n        account_id = row.account_id\n        amount_txt = row.amount_txt\n        currency = row.currency\n        pay_date_txt = row.pay_date_txt\n\n        # R1 MISSING_ID\n        if pd.isna(payment_id) or str(payment_id).strip() == '':\n            reject_rows.append((row_num, 'MISSING_ID'))\n            continue\n        pid_trim = str(payment_id).strip()\n\n        # R2 BAD_AMOUNT\n        if pd.isna(amount_txt):\n            reject_rows.append((row_num, 'BAD_AMOUNT'))\n            continue\n        amt_trim = str(amount_txt).strip()\n        m = _NUM_RE.match(amt_trim)\n        if not m:\n            reject_rows.append((row_num, 'BAD_AMOUNT'))\n            continue\n        amount = float(amt_trim)\n\n        # R3 NON_POSITIVE\n        if amount <= 0:\n            reject_rows.append((row_num, 'NON_POSITIVE'))\n            continue\n\n        # R4 BAD_CURRENCY\n        if pd.isna(currency):\n            reject_rows.append((row_num, 'BAD_CURRENCY'))\n            continue\n        cur_trim = str(currency).strip().upper()\n        if cur_trim not in _VALID_CURRENCIES:\n            reject_rows.append((row_num, 'BAD_CURRENCY'))\n            continue\n\n        # R5 BAD_DATE\n        if pd.isna(pay_date_txt):\n            reject_rows.append((row_num, 'BAD_DATE'))\n            continue\n        date_trim = str(pay_date_txt).strip()\n        if not _DATE_RE.match(date_trim):\n            reject_rows.append((row_num, 'BAD_DATE'))\n            continue\n        try:\n            parsed_date = datetime.strptime(date_trim, '%Y-%m-%d').date()\n        except ValueError:\n            reject_rows.append((row_num, 'BAD_DATE'))\n            continue\n\n        survivors.append({\n            'row_num': row_num,\n            'payment_id': pid_trim,\n            'account_id': account_id,\n            'amount': amount,\n            'currency': cur_trim,\n            'pay_date': parsed_date\n        })\n\n    # R6 DUPLICATE\n    groups = defaultdict(list)\n    for s in survivors:\n        groups[s['payment_id']].append(s)\n\n    final_valid = []\n    for pid, rows in groups.items():\n        rows_sorted = sorted(rows, key=lambda r: r['row_num'])\n        winner = rows_sorted[0]\n        final_valid.append(winner)\n        for loser in rows_sorted[1:]:\n            reject_rows.append((loser['row_num'], 'DUPLICATE'))\n\n    # Build valid_payments output, ordered by row_num (file order of winners)\n    final_valid.sort(key=lambda r: r['row_num'])\n\n    valid_payments = pd.DataFrame(\n        final_valid,\n        columns=['row_num', 'payment_id', 'account_id', 'amount', 'currency', 'pay_date']\n    )\n    if not valid_payments.empty:\n        valid_payments = valid_payments.drop(columns=['row_num']).reset_index(drop=True)\n    else:\n        valid_payments = pd.DataFrame(\n            columns=['payment_id', 'account_id', 'amount', 'currency', 'pay_date']\n        )\n\n    payment_rejects = pd.DataFrame(\n        reject_rows, columns=['row_num', 'reject_reason']\n    ).sort_values('row_num').reset_index(drop=True)\n\n    return {\n        'valid_payments': valid_payments,\n        'payment_rejects': payment_rejects\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1185,
+   "tokens_out": 3148,
+   "usd": 0.050775,
+   "wall_s": 23.325228691101074,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

@@ -1,0 +1,46 @@
+{
+ "config": "LEGATO",
+ "rep": 0,
+ "task": "t7d_quarantine_threshold",
+ "category": "T7",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"readings\"].copy()\n\n    # Row-level rule: value IS NULL OR value < 0 OR value > 1000 -> bad\n    bad = df[\"value\"].isna() | (df[\"value\"] < 0) | (df[\"value\"] > 1000)\n    df[\"_bad\"] = bad\n\n    # Per-batch aggregation\n    grouped = df.groupby(\"batch_id\")[\"_bad\"].agg(\n        bad_count=\"sum\", total_rows=\"count\"\n    )\n    grouped[\"reject_pct\"] = grouped[\"bad_count\"] * 100.0 / grouped[\"total_rows\"]\n    grouped[\"quarantine\"] = grouped[\"bad_count\"] * 100 > grouped[\"total_rows\"] * 20\n\n    df = df.merge(\n        grouped[[\"quarantine\", \"reject_pct\"]],\n        left_on=\"batch_id\",\n        right_index=True,\n        how=\"left\",\n    )\n\n    quarantine_mask = df[\"quarantine\"].fillna(False)\n\n    # Quarantined batches: all rows (good and bad) go here\n    readings_quarantine = df[quarantine_mask].copy()\n    readings_quarantine[\"batch_reject_pct\"] = readings_quarantine[\"reject_pct\"].round(2)\n    readings_quarantine = readings_quarantine.drop(\n        columns=[\"_bad\", \"quarantine\", \"reject_pct\"]\n    )\n\n    # Non-quarantined batches: split into clean / rejects\n    rest = df[~quarantine_mask]\n    readings_clean = rest[~rest[\"_bad\"]].drop(\n        columns=[\"_bad\", \"quarantine\", \"reject_pct\"]\n    )\n    readings_rejects = rest[rest[\"_bad\"]].drop(\n        columns=[\"_bad\", \"quarantine\", \"reject_pct\"]\n    )\n\n    return {\n        \"readings_clean\": readings_clean.reset_index(drop=True),\n        \"readings_rejects\": readings_rejects.reset_index(drop=True),\n        \"readings_quarantine\": readings_quarantine.reset_index(drop=True),\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 558,
+   "tokens_out": 2252,
+   "usd": 0.035454,
+   "wall_s": 19.88087272644043
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

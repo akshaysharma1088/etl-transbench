@@ -1,0 +1,57 @@
+{
+ "config": "A1_trace_only",
+ "rep": 1,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _segments_differ(a, b):\n    a_na = pd.isna(a)\n    b_na = pd.isna(b)\n    if a_na and b_na:\n        return False\n    if a_na != b_na:\n        return True\n    return a != b\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    # Try exact match first\n    if name in inputs:\n        return inputs[name]\n    # Try case-insensitive match\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    key = name.lower()\n    if key in lower_map:\n        return inputs[lower_map[key]]\n    # Try stripped/alternate forms (e.g. with/without underscores, different case)\n    for k in inputs.keys():\n        if k.lower().replace(\"_\", \"\") == name.lower().replace(\"_\", \"\"):\n            return inputs[k]\n    raise KeyError(f\"Could not find input matching '{name}' among {list(inputs.keys())}\")\n\n\ndef run(inputs: dict) -> dict:\n    dim = _get_input(inputs, \"DIM_CUSTOMER\").copy()\n    stg = _get_input(inputs, \"STG_CUSTOMER\").copy()\n    fact = _get_input(inputs, \"FACT_TXN\").copy()\n\n    # Ensure expected columns exist even if inputs are empty\n    for col in [\"customer_sk\", \"customer_id\", \"segment\", \"eff_start_date\",\n                \"eff_end_date\", \"is_current\"]:\n        if col not in dim.columns:\n            dim[col] = pd.Series(dtype=object)\n\n    # Normalize dtypes a bit\n    if not dim.empty:\n        dim[\"is_current\"] = dim[\"is_current\"].astype(int)\n\n    # Determine max surrogate key before load\n    if dim.empty or dim[\"customer_sk\"].isna().all():\n        max_sk_before = 0\n    else:\n        max_sk_before = int(dim[\"customer_sk\"].max())\n\n    # Current rows per customer_id (assume at most one current row per customer_id)\n    current_rows = dim[dim[\"is_current\"] == 1].copy()\n    current_rows = current_rows.set_index(\"customer_id\", drop=False)\n\n    # Build list of staged rows with their current segment (if any)\n    stg = stg.reset_index(drop=True)\n\n    def get_current_segment(cid):\n        if cid in current_rows.index:\n            row = current_rows.loc[cid]\n            if isinstance(row, pd.DataFrame):\n                row = row.iloc[0]\n            return row[\"segment\"], True\n        return None, False\n\n    creates_version_flags = []\n    for _, srow in stg.iterrows():\n        cur_seg, has_current = get_current_segment(srow[\"customer_id\"])\n        if not has_current:\n            creates_version_flags.append(True)\n        else:\n            creates_version_flags.append(_segments_differ(cur_seg, srow[\"segment\"]))\n\n    stg[\"_creates_version\"] = creates_version_flags\n\n    creating = stg[stg[\"_creates_version\"]].copy()\n    # ROW_NUMBER() OVER (ORDER BY customer_id) only over creating rows\n    creating = creating.sort_values(by=[\"customer_id\"], kind=\"mergesort\").reset_index(drop=True)\n    creating[\"_row_num\"] = np.arange(1, len(creating) + 1)\n    creating[\"_new_sk\"] = max_sk_before + creating[\"_row_num\"]\n\n    # Work on a mutable copy of dim rows (list of dict) so we can update expired rows\n    dim_records = dim.to_dict(\"records\")\n\n    # Map customer_id -> index in dim_records of its current row (if any)\n    current_idx_map = {}\n    for idx, rec in enumerate(dim_records):\n        if rec.get(\"is_current\") == 1:\n            current_idx_map[rec[\"customer_id\"]] = idx\n\n    new_rows = []\n\n    for _, crow in creating.iterrows():\n        cid = crow[\"customer_id\"]\n        upd_date = crow[\"update_date\"]\n        seg = crow[\"segment\"]\n        new_sk = crow[\"_new_sk\"]\n\n        # Expire existing current row if present\n        if cid in current_idx_map:\n            idx = current_idx_map[cid]\n            dim_records[idx][\"eff_end_date\"] = upd_date\n            dim_records[idx][\"is_current\"] = 0\n\n        # Build new row\n        new_rows.append({\n            \"customer_sk\": new_sk,\n            \"customer_id\": cid,\n            \"segment\": seg,\n            \"eff_start_date\": upd_date,\n            \"eff_end_date\": pd.NaT,\n            \"is_current\": 1,\n        })\n\n    dim_out = pd.DataFrame(dim_records)\n    if new_rows:\n        new_df = pd.DataFrame(new_rows)\n        dim_out = pd.concat([dim_out, new_df], ignore_index=True, sort=False)\n\n    # Ensure column order / presence\n    cols = [\"customer_sk\", \"customer_id\", \"segment\", \"eff_start_date\",\n            \"eff_end_date\", \"is_current\"]\n    for c in cols:\n        if c not in dim_out.columns:\n            dim_out[c] = pd.NA\n    dim_out = dim_out[cols]\n\n    # Make sure types are sensible\n    if not dim_out.empty:\n        dim_out[\"customer_sk\"] = dim_out[\"customer_sk\"].astype(int)\n        dim_out[\"customer_id\"] = dim_out[\"customer_id\"].astype(int)\n        dim_out[\"is_current\"] = dim_out[\"is_current\"].astype(int)\n\n    # ---------- STEP 2: key facts against updated dimension ----------\n    fact = fact.reset_index(drop=True)\n\n    if dim_out.empty or fact.empty:\n        fact_out = fact.copy()\n        fact_out[\"customer_sk\"] = -1\n        fact_out = fact_out[[\"txn_id\", \"customer_sk\", \"amount\"]]\n        return {\"dim_customer_out\": dim_out, \"fact_txn_keyed\": fact_out}\n\n    merged = fact.merge(\n        dim_out,\n        on=\"customer_id\",\n        how=\"left\",\n        suffixes=(\"\", \"_dim\"),\n    )\n\n    def covers(row):\n        start = row[\"eff_start_date\"]\n        end = row[\"eff_end_date\"]\n        txn_date = row[\"txn_date\"]\n        if pd.isna(start):\n            return False\n        if txn_date < start:\n            return False\n        if pd.notna(end) and not (txn_date < end):\n            return False\n        return True\n\n    if not merged.empty:\n        mask = merged.apply(covers, axis=1)\n    else:\n        mask = pd.Series([], dtype=bool)\n\n    merged[\"_match\"] = mask\n\n    matched = merged[merged[\"_match\"]].copy()\n\n    # In case of multiple matches for a txn_id (shouldn't happen under correct\n    # non-overlapping versions), just take the first occurrence.\n    matched = matched.sort_values(by=[\"txn_id\"]).drop_duplicates(subset=[\"txn_id\"], keep=\"first\")\n\n    result = fact[[\"txn_id\", \"customer_id\", \"amount\"]].merge(\n        matched[[\"txn_id\", \"customer_sk\"]],\n        on=\"txn_id\",\n        how=\"left\",\n    )\n\n    result[\"customer_sk\"] = result[\"customer_sk\"].fillna(-1).astype(int)\n\n    fact_out = result[[\"txn_id\", \"customer_sk\", \"amount\"]]\n\n    return {\"dim_customer_out\": dim_out, \"fact_txn_keyed\": fact_out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1162,
+   "tokens_out": 4000,
+   "usd": 0.063486,
+   "wall_s": 39.495598554611206
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5511,
+  "tokens_out": 6123,
+  "usd": 0.108378,
+  "wall_s": 48.01251554489136
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

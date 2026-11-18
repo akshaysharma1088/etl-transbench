@@ -1,0 +1,16 @@
+{
+ "task": "t2_cursor_balance",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    df = inputs[\"TRANSACTIONS\"].copy()\n\n    # Preserve original index to use as a stable final tiebreaker only if needed;\n    # legacy cursor ORDER BY account_id, txn_date, txn_seq fully determines order.\n    df = df.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        kind=\"mergesort\",  # stable sort to preserve input order on exact ties\n    ).reset_index(drop=True)\n\n    running_balances = []\n    overdraft_flags = []\n\n    prev_acct = None\n    bal = 0.0\n\n    for _, row in df.iterrows():\n        acct = row[\"account_id\"]\n        if acct != prev_acct:\n            bal = 0.0\n            prev_acct = acct\n\n        amt = row[\"amount\"]\n        if pd.isna(amt):\n            amt = 0.0\n\n        bal = bal + amt\n        flag = 1 if bal < 0 else 0\n\n        running_balances.append(bal)\n        overdraft_flags.append(flag)\n\n    df[\"running_balance\"] = running_balances\n    df[\"overdraft_flag\"] = overdraft_flags\n\n    out = df[\n        [\"account_id\", \"txn_seq\", \"txn_date\", \"amount\", \"running_balance\", \"overdraft_flag\"]\n    ].copy()\n\n    out[\"overdraft_flag\"] = out[\"overdraft_flag\"].astype(\"int64\")\n\n    return {\"acct_balance_flags\": out}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 673,
+   "tokens_out": 633,
+   "usd": 0.011514,
+   "wall_s": 5.942464590072632
+  }
+ ]
+}

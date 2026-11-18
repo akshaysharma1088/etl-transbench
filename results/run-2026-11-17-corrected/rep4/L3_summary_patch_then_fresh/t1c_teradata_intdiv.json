@@ -1,0 +1,48 @@
+{
+ "config": "L3_summary_patch_then_fresh",
+ "rep": 4,
+ "task": "t1c_teradata_intdiv",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicate Teradata SQL semantics:\n    - ZEROIFNULL(balance_cents) maps NULL to 0\n    - INTEGER / INTEGER truncates toward zero (not floor division)\n    - CAST(...AS INTEGER) truncates toward zero\n    - WHERE filters out 'CLOSED' accounts\n    \"\"\"\n    acct_balance = inputs[\"acct_balance\"].copy()\n    \n    # Filter: WHERE acct_type <> 'CLOSED'\n    result = acct_balance[acct_balance[\"acct_type\"] != \"CLOSED\"].copy()\n    \n    # ZEROIFNULL(balance_cents) / 100 AS balance_bucket\n    # Replace NaN/None with 0, then divide and truncate toward zero\n    balance_cents_filled = result[\"balance_cents\"].fillna(0.0)\n    result[\"balance_bucket\"] = (balance_cents_filled / 100).apply(\n        lambda x: int(np.trunc(x))\n    )\n    \n    # CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER) AS fx_units\n    # Same ZEROIFNULL, then multiply by fx_rate, divide by 100, truncate toward zero\n    fx_units_calc = (balance_cents_filled * result[\"fx_rate\"] / 100).apply(\n        lambda x: int(np.trunc(x))\n    )\n    result[\"fx_units\"] = fx_units_calc\n    \n    # Select only the output columns\n    output = result[[\"account_id\", \"balance_bucket\", \"fx_units\"]].reset_index(drop=True)\n    \n    return {\"balance_buckets\": output}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 429,
+   "tokens_out": 452,
+   "usd": 0.002689,
+   "wall_s": 3.165611982345581,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

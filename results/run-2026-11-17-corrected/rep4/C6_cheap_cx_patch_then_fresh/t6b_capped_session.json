@@ -1,0 +1,48 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 4,
+ "task": "t6b_capped_session",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(by=[\"user_id\", \"event_ts\", \"event_id\"]).reset_index(drop=True)\n    \n    # Initialize session tracking columns\n    events[\"session_num\"] = 0\n    events[\"session_start\"] = pd.NaT\n    \n    session_num = 0\n    current_user = None\n    current_session_start = None\n    \n    for idx in range(len(events)):\n        user_id = events.loc[idx, \"user_id\"]\n        event_ts = events.loc[idx, \"event_ts\"]\n        \n        # Check if this is a new user\n        if user_id != current_user:\n            current_user = user_id\n            session_num = 1\n            current_session_start = event_ts\n            events.loc[idx, \"session_num\"] = session_num\n            events.loc[idx, \"session_start\"] = current_session_start\n        else:\n            # Same user - check conditions for new session\n            prev_event_ts = events.loc[idx - 1, \"event_ts\"]\n            \n            # Condition (a): gap from previous event > 20 minutes\n            time_gap = (event_ts - prev_event_ts).total_seconds() / 60\n            gap_exceeds_20_min = time_gap > 20\n            \n            # Condition (b): event would exceed 4-hour cap from session start\n            session_duration = (event_ts - current_session_start).total_seconds() / 3600\n            exceeds_4_hour_cap = session_duration > 4\n            \n            if gap_exceeds_20_min or exceeds_4_hour_cap:\n                # Start a new session\n                session_num += 1\n                current_session_start = event_ts\n            \n            events.loc[idx, \"session_num\"] = session_num\n            events.loc[idx, \"session_start\"] = current_session_start\n    \n    # Group by user_id and session_num to aggregate session information\n    user_sessions = events.groupby([\"user_id\", \"session_num\"], as_index=False).agg(\n        session_start=(\"session_start\", \"first\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    )\n    \n    # Ensure columns are in the right order\n    user_sessions = user_sessions[[\"user_id\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]]\n    \n    return {\"user_sessions\": user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 421,
+   "tokens_out": 703,
+   "usd": 0.003936,
+   "wall_s": 4.438868045806885,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

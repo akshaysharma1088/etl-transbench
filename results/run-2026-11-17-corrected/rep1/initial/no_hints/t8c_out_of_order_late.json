@@ -1,0 +1,17 @@
+{
+ "task": "t8c_out_of_order_late",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n\n    # Build watermark lookup from target_snapshot (per device)\n    watermark_map = dict(zip(target[\"device_id\"], target[\"applied_event_ts\"]))\n\n    # Determine watermark for each cdc event's device (default = very early timestamp for new devices)\n    default_wm = pd.Timestamp.min\n\n    def get_wm(device_id):\n        return watermark_map.get(device_id, default_wm)\n\n    cdc = cdc.copy()\n    cdc[\"watermark\"] = cdc[\"device_id\"].map(lambda d: get_wm(d))\n\n    # Keep only events strictly newer than the device's watermark\n    surviving = cdc[cdc[\"event_ts\"] > cdc[\"watermark\"]].copy()\n\n    if not surviving.empty:\n        # Among surviving events per device, pick the one with max (event_ts, event_seq)\n        surviving = surviving.sort_values(\n            by=[\"device_id\", \"event_ts\", \"event_seq\"],\n            ascending=[True, True, True]\n        )\n        # take last row per device_id group (max event_ts, then max event_seq)\n        winners = surviving.groupby(\"device_id\", as_index=False).tail(1)\n    else:\n        winners = surviving  # empty\n\n    winners = winners.set_index(\"device_id\")[[\"reading\", \"event_ts\"]]\n    winners = winners.rename(columns={\"event_ts\": \"applied_event_ts\"})\n\n    # Start with target_snapshot as base (existing devices)\n    result = target.set_index(\"device_id\")[[\"reading\", \"applied_event_ts\"]].copy()\n\n    # Update existing devices that have a winning event\n    common_devices = result.index.intersection(winners.index)\n    result.loc[common_devices, \"reading\"] = winners.loc[common_devices, \"reading\"]\n    result.loc[common_devices, \"applied_event_ts\"] = winners.loc[common_devices, \"applied_event_ts\"]\n\n    # Add new devices (present in winners but not in target_snapshot)\n    new_devices = winners.index.difference(result.index)\n    if len(new_devices) > 0:\n        new_rows = winners.loc[new_devices]\n        result = pd.concat([result, new_rows], axis=0)\n\n    result = result.reset_index().rename(columns={\"index\": \"device_id\"})\n\n    # Ensure correct column order and types\n    result = result[[\"device_id\", \"reading\", \"applied_event_ts\"]]\n    result[\"device_id\"] = result[\"device_id\"].astype(\"int64\")\n    result[\"reading\"] = result[\"reading\"].astype(\"float64\")\n    result[\"applied_event_ts\"] = pd.to_datetime(result[\"applied_event_ts\"]).astype(\"datetime64[us]\")\n\n    return {\"new_snapshot\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 816,
+   "tokens_out": 1425,
+   "usd": 0.023823,
+   "wall_s": 12.602852821350098,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

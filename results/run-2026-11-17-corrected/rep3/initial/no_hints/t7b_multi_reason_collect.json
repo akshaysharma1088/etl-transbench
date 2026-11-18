@@ -1,0 +1,17 @@
+{
+ "task": "t7b_multi_reason_collect",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"invoices\"].copy()\n\n    amount = df[\"amount\"]\n    tax = df[\"tax\"]\n    due_date = df[\"due_date\"]\n    customer_ref = df[\"customer_ref\"]\n\n    r1 = amount.isna() | (amount < 0)\n    r2 = tax.isna() | (tax < 0)\n    r3 = amount.notna() & tax.notna() & (tax > amount * 0.5)\n    r4 = due_date.isna()\n    r5 = customer_ref.isna() | (customer_ref.astype(str).str.strip() == \"\")\n\n    rule_defs = [\n        (r1, \"AMT_BAD\"),\n        (r2, \"TAX_BAD\"),\n        (r3, \"TAX_EXCESS\"),\n        (r4, \"DUE_NULL\"),\n        (r5, \"REF_EMPTY\"),\n    ]\n\n    def build_codes(idx):\n        codes = []\n        for mask, code in rule_defs:\n            if bool(mask.loc[idx]):\n                codes.append(code)\n        return \"|\".join(codes)\n\n    reason_codes = pd.Series(\n        [build_codes(idx) for idx in df.index],\n        index=df.index,\n        dtype=\"object\",\n    )\n\n    has_failure = pd.Series(False, index=df.index)\n    for mask, _ in rule_defs:\n        has_failure = has_failure | mask\n\n    clean = df.loc[~has_failure].copy()\n    rejects = df.loc[has_failure].copy()\n    rejects[\"reason_codes\"] = reason_codes.loc[has_failure]\n\n    return {\n        \"invoices_clean\": clean,\n        \"invoices_rejects\": rejects,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 747,
+   "tokens_out": 789,
+   "usd": 0.014076,
+   "wall_s": 7.017936706542969,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

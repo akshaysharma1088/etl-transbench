@@ -1,0 +1,48 @@
+{
+ "config": "L1_counterexample",
+ "rep": 4,
+ "task": "t7d_quarantine_threshold",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"readings\"].copy()\n\n    # Row-level bad rule\n    is_bad = df[\"value\"].isna() | (df[\"value\"] < 0) | (df[\"value\"] > 1000)\n    df[\"_is_bad\"] = is_bad\n\n    # Batch-level aggregates\n    batch_stats = df.groupby(\"batch_id\")[\"_is_bad\"].agg(\n        bad_count=\"sum\", total_rows=\"count\"\n    ).reset_index()\n\n    batch_stats[\"quarantine\"] = (batch_stats[\"bad_count\"] * 100) > (batch_stats[\"total_rows\"] * 20)\n    batch_stats[\"batch_reject_pct\"] = (\n        batch_stats[\"bad_count\"] * 100.0 / batch_stats[\"total_rows\"]\n    ).round(2)\n\n    df = df.merge(\n        batch_stats[[\"batch_id\", \"quarantine\", \"batch_reject_pct\"]],\n        on=\"batch_id\",\n        how=\"left\",\n    )\n\n    quarantine_mask = df[\"quarantine\"]\n\n    quarantine_df = df[quarantine_mask].copy()\n    non_quarantine_df = df[~quarantine_mask].copy()\n\n    clean_df = non_quarantine_df[~non_quarantine_df[\"_is_bad\"]].copy()\n    rejects_df = non_quarantine_df[non_quarantine_df[\"_is_bad\"]].copy()\n\n    cols = [\"batch_id\", \"reading_id\", \"sensor\", \"value\"]\n\n    clean_out = clean_df[cols].reset_index(drop=True)\n    rejects_out = rejects_df[cols].reset_index(drop=True)\n    quarantine_out = quarantine_df[cols + [\"batch_reject_pct\"]].reset_index(drop=True)\n\n    return {\n        \"readings_clean\": clean_out,\n        \"readings_rejects\": rejects_out,\n        \"readings_quarantine\": quarantine_out,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 623,
+   "tokens_out": 858,
+   "usd": 0.014739,
+   "wall_s": 7.253643274307251,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

@@ -1,0 +1,58 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 4,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import datetime, timedelta\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(by=[\"user_id\", \"event_ts\", \"event_id\"]).reset_index(drop=True)\n    \n    # Extract date (at midnight) from event_ts for calendar date comparison\n    events[\"event_date\"] = events[\"event_ts\"].dt.normalize()\n    \n    # Initialize session tracking columns\n    events[\"is_new_session\"] = False\n    events[\"session_num\"] = 0\n    \n    # Track sessions per user\n    session_counter = {}\n    current_session_num = {}\n    \n    for idx in range(len(events)):\n        user_id = events.loc[idx, \"user_id\"]\n        event_ts = events.loc[idx, \"event_ts\"]\n        event_date = events.loc[idx, \"event_date\"]\n        \n        if user_id not in session_counter:\n            # First event for this user\n            session_counter[user_id] = 1\n            current_session_num[user_id] = 1\n            events.loc[idx, \"is_new_session\"] = True\n            events.loc[idx, \"session_num\"] = 1\n        else:\n            # Find previous event for this user\n            prev_idx = idx - 1\n            while prev_idx >= 0 and events.loc[prev_idx, \"user_id\"] != user_id:\n                prev_idx -= 1\n            \n            if prev_idx >= 0:\n                prev_event_ts = events.loc[prev_idx, \"event_ts\"]\n                prev_event_date = events.loc[prev_idx, \"event_date\"]\n                \n                # Calculate time gap in minutes\n                gap_minutes = (event_ts - prev_event_ts).total_seconds() / 60.0\n                \n                # Check conditions for new session\n                # Condition 1: gap > 45 minutes\n                # Condition 2: different calendar date\n                if gap_minutes > 45 or event_date != prev_event_date:\n                    session_counter[user_id] += 1\n                    current_session_num[user_id] = session_counter[user_id]\n                    events.loc[idx, \"is_new_session\"] = True\n                \n                events.loc[idx, \"session_num\"] = current_session_num[user_id]\n            else:\n                events.loc[idx, \"session_num\"] = 1\n    \n    # Assign session numbers sequentially within user\n    events[\"session_id\"] = events.groupby(\"user_id\")[\"is_new_session\"].cumsum() + 1\n    \n    # Group by user and session to create user_sessions\n    result = []\n    for (user_id, session_id), group in events.groupby([\"user_id\", \"session_id\"]):\n        group = group.sort_values(\"event_ts\")\n        \n        session_date = group.iloc[0][\"event_date\"]\n        session_start = group.iloc[0][\"event_ts\"]\n        session_end = group.iloc[-1][\"event_ts\"]\n        event_count = len(group)\n        session_num = group.iloc[0][\"session_num\"]\n        \n        result.append({\n            \"user_id\": user_id,\n            \"session_num\": session_num,\n            \"session_date\": session_date,\n            \"session_start\": session_start,\n            \"session_end\": session_end,\n            \"event_count\": event_count\n        })\n    \n    user_sessions = pd.DataFrame(result)\n    \n    # Ensure correct data types\n    user_sessions[\"user_id\"] = user_sessions[\"user_id\"].astype(\"int64\")\n    user_sessions[\"session_num\"] = user_sessions[\"session_num\"].astype(\"int64\")\n    user_sessions[\"event_count\"] = user_sessions[\"event_count\"].astype(\"int64\")\n    \n    return {\"user_sessions\": user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 743,
+   "usd": 0.004095,
+   "wall_s": 6.380185842514038,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 9766,
+  "tokens_out": 3228,
+  "usd": 0.025906,
+  "wall_s": 27.641281604766846
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

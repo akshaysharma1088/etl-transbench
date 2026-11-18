@@ -1,0 +1,53 @@
+{
+ "config": "B3_self_repair",
+ "rep": 3,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n\n    # Ensure proper dtypes\n    events[\"event_ts\"] = pd.to_datetime(events[\"event_ts\"])\n\n    # Sort by (user_id, channel, event_ts, event_id) to establish order\n    events = events.sort_values(\n        by=[\"user_id\", \"channel\", \"event_ts\", \"event_id\"],\n        na_position=\"last\",\n        kind=\"mergesort\",  # stable sort to preserve tie-breaking determinism\n    ).reset_index(drop=True)\n\n    # Compute previous timestamp within each (user_id, channel) group\n    prev_ts = events.groupby([\"user_id\", \"channel\"])[\"event_ts\"].shift(1)\n    time_diff = events[\"event_ts\"] - prev_ts\n\n    gap_threshold = pd.Timedelta(minutes=25)\n\n    # STRICT gap rule: a new session starts if it's the first event in the\n    # group (no previous event) OR the gap strictly exceeds 25 minutes.\n    # A gap of exactly 25 minutes does NOT start a new session.\n    new_session = time_diff.isna() | (time_diff > gap_threshold)\n\n    # Session numbers are the cumulative count of new_session flags within\n    # each (user_id, channel) group.\n    events[\"session_num\"] = new_session.groupby(\n        [events[\"user_id\"], events[\"channel\"]]\n    ).cumsum()\n\n    # Aggregate to get channel_sessions\n    channel_sessions = events.groupby(\n        [\"user_id\", \"channel\", \"session_num\"],\n        as_index=False\n    ).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    )\n\n    # Ensure sessions are ordered correctly and session_num is strictly\n    # 1-based per (user_id, channel) based on chronological order of start.\n    channel_sessions = channel_sessions.sort_values(\n        by=[\"user_id\", \"channel\", \"session_start\"]\n    ).reset_index(drop=True)\n\n    channel_sessions[\"session_num\"] = channel_sessions.groupby(\n        [\"user_id\", \"channel\"]\n    ).cumcount() + 1\n\n    # Reorder columns to match expected output\n    channel_sessions = channel_sessions[\n        [\"user_id\", \"channel\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]\n    ]\n\n    return {\"channel_sessions\": channel_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 351,
+   "tokens_out": 730,
+   "usd": 0.004001,
+   "wall_s": 5.204728364944458,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1607,
+  "tokens_out": 1409,
+  "usd": 0.025956,
+  "wall_s": 12.403010129928589
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

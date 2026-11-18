@@ -1,0 +1,51 @@
+{
+ "config": "LEGATO",
+ "rep": 0,
+ "task": "t1_dialect_qualify",
+ "category": "T1",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicate Teradata-style QUALIFY filter on window results.\n    Finds the latest high-value transaction per account.\n\n    Steps:\n    1. Filter WHERE amount > 100\n    2. Add size_band CASE column\n    3. Compute ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC)\n       - Teradata sorts NULLs last in DESC order.\n    4. QUALIFY (filter) where ROW_NUMBER() = 1\n    \"\"\"\n    acct_txn = inputs['acct_txn'].copy()\n\n    # Step 1: WHERE amount > 100\n    df = acct_txn[acct_txn['amount'] > 100].copy()\n\n    # Step 2: Add size_band CASE column\n    # CASE WHEN amount >= 1000 THEN 'JUMBO'\n    #      WHEN amount >= 500  THEN 'LARGE'\n    #      ELSE 'STANDARD' END\n    df['size_band'] = 'STANDARD'\n    df.loc[df['amount'] >= 500, 'size_band'] = 'LARGE'\n    df.loc[df['amount'] >= 1000, 'size_band'] = 'JUMBO'\n\n    # Step 3: Sort to establish ORDER BY txn_ts DESC, txn_id DESC\n    # Teradata: NULLs sort last in DESC ordering -> na_position='last'\n    df = df.sort_values(\n        by=['txn_ts', 'txn_id'],\n        ascending=[False, False],\n        na_position='last',\n        kind='mergesort'  # stable sort to preserve original order for ties\n    )\n\n    # Compute ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY ...)\n    df['_rn'] = df.groupby('account_id', dropna=False).cumcount() + 1\n\n    # Step 4: QUALIFY - filter where ROW_NUMBER() = 1\n    result = df[df['_rn'] == 1].copy()\n\n    # Select only the original columns plus size_band (drop the temporary _rn column)\n    output_columns = ['account_id', 'txn_id', 'txn_ts', 'amount', 'channel', 'size_band']\n    result = result[output_columns]\n\n    # Reset index for clean output\n    result = result.reset_index(drop=True)\n\n    return {'latest_high_value_txn': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 369,
+   "tokens_out": 873,
+   "usd": 0.004734,
+   "wall_s": 6.504288911819458
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2359,
+  "tokens_out": 1292,
+  "usd": 0.026457,
+  "wall_s": 10.513492107391357
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

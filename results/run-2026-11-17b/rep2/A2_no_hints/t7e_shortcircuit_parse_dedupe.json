@@ -1,0 +1,47 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t7e_shortcircuit_parse_dedupe",
+ "category": "T7",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import re\nimport pandas as pd\nfrom datetime import datetime\n\nAMOUNT_RE = re.compile(r'^[+-]?\\d+(\\.\\d{1,2})?$')\nDATE_RE = re.compile(r'^\\d{4}-\\d{2}-\\d{2}$')\nVALID_CURRENCIES = {'USD', 'EUR', 'GBP'}\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs['raw_payments']\n\n    rejects = []\n    valid_rows = []\n\n    for _, row in df.iterrows():\n        row_num = row['row_num']\n        payment_id = row['payment_id']\n        account_id = row['account_id']\n        amount_txt = row['amount_txt']\n        currency = row['currency']\n        pay_date_txt = row['pay_date_txt']\n\n        # R1 MISSING_ID\n        if pd.isna(payment_id) or str(payment_id).strip() == '':\n            rejects.append((row_num, 'MISSING_ID'))\n            continue\n        pid_trim = str(payment_id).strip()\n\n        # R2 BAD_AMOUNT\n        if pd.isna(amount_txt):\n            rejects.append((row_num, 'BAD_AMOUNT'))\n            continue\n        amt_trim = str(amount_txt).strip()\n        if not AMOUNT_RE.match(amt_trim):\n            rejects.append((row_num, 'BAD_AMOUNT'))\n            continue\n        amount = float(amt_trim)\n\n        # R3 NON_POSITIVE\n        if amount <= 0:\n            rejects.append((row_num, 'NON_POSITIVE'))\n            continue\n\n        # R4 BAD_CURRENCY\n        if pd.isna(currency):\n            rejects.append((row_num, 'BAD_CURRENCY'))\n            continue\n        cur_trim = str(currency).strip().upper()\n        if cur_trim not in VALID_CURRENCIES:\n            rejects.append((row_num, 'BAD_CURRENCY'))\n            continue\n\n        # R5 BAD_DATE\n        if pd.isna(pay_date_txt):\n            rejects.append((row_num, 'BAD_DATE'))\n            continue\n        date_trim = str(pay_date_txt).strip()\n        if not DATE_RE.match(date_trim):\n            rejects.append((row_num, 'BAD_DATE'))\n            continue\n        try:\n            pay_date = datetime.strptime(date_trim, '%Y-%m-%d').date()\n        except ValueError:\n            rejects.append((row_num, 'BAD_DATE'))\n            continue\n\n        valid_rows.append({\n            'row_num': row_num,\n            'payment_id': pid_trim,\n            'account_id': account_id,\n            'amount': amount,\n            'currency': cur_trim,\n            'pay_date': pay_date\n        })\n\n    # R6 DUPLICATE\n    if valid_rows:\n        valid_df = pd.DataFrame(valid_rows)\n        min_idx = valid_df.groupby('payment_id')['row_num'].idxmin()\n        keep_mask = valid_df.index.isin(min_idx)\n\n        dup_rows = valid_df[~keep_mask]\n        for _, r in dup_rows.iterrows():\n            rejects.append((r['row_num'], 'DUPLICATE'))\n\n        valid_df = valid_df[keep_mask].drop(columns=['row_num']).reset_index(drop=True)\n        valid_df['pay_date'] = pd.to_datetime(valid_df['pay_date'])\n    else:\n        valid_df = pd.DataFrame(columns=['payment_id', 'account_id', 'amount', 'currency', 'pay_date'])\n\n    rejects_df = pd.DataFrame(rejects, columns=['row_num', 'reject_reason'])\n    if not rejects_df.empty:\n        rejects_df = rejects_df.sort_values('row_num').reset_index(drop=True)\n\n    return {\n        'valid_payments': valid_df,\n        'payment_rejects': rejects_df\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1100,
+   "tokens_out": 3296,
+   "usd": 0.05274,
+   "wall_s": 25.29430603981018
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

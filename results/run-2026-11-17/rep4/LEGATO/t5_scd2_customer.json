@@ -1,0 +1,56 @@
+{
+ "config": "LEGATO",
+ "rep": 4,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_null(v):\n    try:\n        return pd.isna(v)\n    except Exception:\n        return v is None\n\n\ndef _attrs_differ(a, b):\n    \"\"\"Null-aware inequality: NaN vs NaN -> not different; NaN vs value -> different.\"\"\"\n    a_null = _is_null(a)\n    b_null = _is_null(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef _get_input(inputs: dict, *candidates):\n    for c in candidates:\n        if c in inputs:\n            return inputs[c]\n    # try case-insensitive match\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    for c in candidates:\n        if c.lower() in lower_map:\n            return inputs[lower_map[c.lower()]]\n    raise KeyError(f\"None of {candidates} found in inputs keys {list(inputs.keys())}\")\n\n\ndef run(inputs: dict) -> dict:\n    dim = _get_input(inputs, \"DIM_CUSTOMER\", \"dim_customer\").copy()\n    stg = _get_input(inputs, \"STG_CUSTOMER\", \"stg_customer\").copy()\n\n    # Ensure dim has expected columns even if empty input\n    for col in [\"customer_id\", \"name\", \"segment\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]:\n        if col not in dim.columns:\n            dim[col] = pd.Series(dtype=\"object\")\n\n    # ---- Step 1: deduplicate staging to latest record per customer_id ----\n    # Tie-break: greater (name, segment) lexicographically wins on equal update_date.\n    if len(stg) > 0:\n        stg_sorted = stg.sort_values(\n            by=[\"update_date\", \"name\", \"segment\"],\n            ascending=[False, False, False],\n            kind=\"mergesort\",\n        )\n        # IMPORTANT: use drop_duplicates (keep first full row) rather than\n        # groupby().first(), which aggregates per-column first NON-NULL\n        # value independently and can mix values from different rows when\n        # nulls are present, corrupting the (name, segment) pairing.\n        stg_dedup = stg_sorted.drop_duplicates(subset=\"customer_id\", keep=\"first\").reset_index(drop=True)\n    else:\n        stg_dedup = stg.copy()\n\n    dim = dim.reset_index(drop=True)\n\n    new_rows = []\n\n    for _, s in stg_dedup.iterrows():\n        cid = s[\"customer_id\"]\n        mask_current = (dim[\"customer_id\"] == cid) & (dim[\"is_current\"] == 1)\n        current_idx = dim.index[mask_current]\n\n        if len(current_idx) == 0:\n            # No current row exists -> insert new version\n            new_rows.append({\n                \"customer_id\": cid,\n                \"name\": s[\"name\"],\n                \"segment\": s[\"segment\"],\n                \"eff_start_date\": s[\"update_date\"],\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n        else:\n            # Take the first current row (legacy assumes a single current row)\n            c = dim.loc[current_idx[0]]\n\n            changed = _attrs_differ(c[\"name\"], s[\"name\"]) or _attrs_differ(c[\"segment\"], s[\"segment\"])\n\n            if changed:\n                # Expire current row(s)\n                dim.loc[current_idx, \"eff_end_date\"] = s[\"update_date\"]\n                dim.loc[current_idx, \"is_current\"] = 0\n\n                # Insert new current version\n                new_rows.append({\n                    \"customer_id\": cid,\n                    \"name\": s[\"name\"],\n                    \"segment\": s[\"segment\"],\n                    \"eff_start_date\": s[\"update_date\"],\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            # else: no change -> do nothing\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=[\"customer_id\", \"name\", \"segment\",\n                                                   \"eff_start_date\", \"eff_end_date\", \"is_current\"])\n        dim = pd.concat([dim, new_df], ignore_index=True)\n\n    dim = dim.reset_index(drop=True)\n\n    return {\"dim_customer_out\": dim}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1017,
+   "tokens_out": 2723,
+   "usd": 0.043896,
+   "wall_s": 23.755216121673584
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5238,
+  "tokens_out": 4750,
+  "usd": 0.086964,
+  "wall_s": 42.37754511833191
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

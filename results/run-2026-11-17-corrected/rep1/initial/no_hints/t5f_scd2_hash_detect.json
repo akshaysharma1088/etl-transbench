@@ -1,0 +1,17 @@
+{
+ "task": "t5f_scd2_hash_detect",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef _sig(val):\n    \"\"\"RTRIM(COALESCE(val, '')) -- legacy semantics: NULL/NaN -> '', trailing\n    spaces stripped, leading spaces and case preserved.\"\"\"\n    if val is None or (isinstance(val, float) and pd.isna(val)):\n        s = ''\n    elif pd.isna(val):\n        s = ''\n    else:\n        s = str(val)\n    return s.rstrip(' ')\n\n\ndef _row_sig(city, tier):\n    return _sig(city) + '|' + _sig(tier)\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_member\"].copy()\n    stg = inputs[\"stg_member\"].copy()\n\n    # Ensure proper dtypes for columns we will touch.\n    if 'eff_end_date' in dim.columns:\n        dim['eff_end_date'] = pd.to_datetime(dim['eff_end_date'])\n    if 'eff_start_date' in dim.columns:\n        dim['eff_start_date'] = pd.to_datetime(dim['eff_start_date'])\n\n    new_rows = []\n\n    for _, s in stg.iterrows():\n        mid = s['member_id']\n        current_mask = (dim['member_id'] == mid) & (dim['is_current'] == 1)\n        current_rows = dim[current_mask]\n\n        if current_rows.empty:\n            new_rows.append({\n                'member_id': mid,\n                'city': s['city'],\n                'tier': s['tier'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n        else:\n            idx = current_rows.index[0]\n            c = dim.loc[idx]\n            if _row_sig(s['city'], s['tier']) != _row_sig(c['city'], c['tier']):\n                dim.loc[idx, 'eff_end_date'] = s['update_date']\n                dim.loc[idx, 'is_current'] = 0\n\n                new_rows.append({\n                    'member_id': mid,\n                    'city': s['city'],\n                    'tier': s['tier'],\n                    'eff_start_date': s['update_date'],\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                })\n            # else: no-op, keep c as-is\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=[\n            'member_id', 'city', 'tier', 'eff_start_date', 'eff_end_date', 'is_current'\n        ])\n        new_df['eff_start_date'] = pd.to_datetime(new_df['eff_start_date'])\n        new_df['eff_end_date'] = pd.to_datetime(new_df['eff_end_date'])\n        new_df['member_id'] = new_df['member_id'].astype('int64')\n        new_df['is_current'] = new_df['is_current'].astype('int64')\n\n        result = pd.concat([dim, new_df], ignore_index=True)\n    else:\n        result = dim.reset_index(drop=True)\n\n    result = result[['member_id', 'city', 'tier', 'eff_start_date', 'eff_end_date', 'is_current']]\n\n    return {\"dim_member_out\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1192,
+   "tokens_out": 2119,
+   "usd": 0.035361,
+   "wall_s": 16.732155561447144,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

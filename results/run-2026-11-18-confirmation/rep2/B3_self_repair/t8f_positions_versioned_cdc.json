@@ -1,0 +1,53 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t8f_positions_versioned_cdc",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": false,
+ "iterations": 1,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_positions\"].copy()\n    events = inputs[\"position_events\"].copy()\n\n    # 1. Distinct by batch_seq (same event delivered more than once -> apply once)\n    events = events.drop_duplicates(subset=[\"batch_seq\"], keep=\"first\")\n\n    # Build target lookup per key (dtype-safe via itertuples)\n    target_state = {}\n    for row in target.itertuples(index=False):\n        key = (row.account_id, row.symbol)\n        target_state[key] = {\n            \"qty\": row.qty,\n            \"price\": row.price,\n            \"row_version\": row.row_version,\n        }\n\n    # 2. Replay guard - vectorized via left merge against target's row_version\n    if len(events):\n        tgt_versions = target[[\"account_id\", \"symbol\", \"row_version\"]].rename(\n            columns={\"row_version\": \"_target_row_version\"}\n        )\n        events = events.merge(tgt_versions, on=[\"account_id\", \"symbol\"], how=\"left\")\n        keep_mask = events[\"_target_row_version\"].isna() | (\n            events[\"row_version\"] > events[\"_target_row_version\"]\n        )\n        events = events[keep_mask].drop(columns=[\"_target_row_version\"])\n\n    # 3. Order by row_version, batch_seq (stable sort; keys are unique so this is deterministic)\n    events = events.sort_values(\n        by=[\"account_id\", \"symbol\", \"row_version\", \"batch_seq\"], kind=\"mergesort\"\n    )\n\n    state = dict(target_state)\n    last_effect = {}  # key -> (removed_bool, row_version)\n\n    for row in events.itertuples(index=False):\n        key = (row.account_id, row.symbol)\n        current = state.get(key)\n        op = row.op\n        qty = row.qty\n        price = row.price\n        version = row.row_version\n\n        removed = False\n\n        if op == \"D\":\n            if current is not None:\n                current = None\n                removed = True\n            # missing row -> no-op, current stays None, removed stays False\n        elif op in (\"I\", \"U\"):\n            is_zero = (not pd.isna(qty)) and (qty == 0)\n            if is_zero:\n                if current is not None:\n                    current = None\n                    removed = True\n                # missing row -> no-op\n            else:\n                if current is not None and op == \"U\" and pd.isna(price):\n                    new_price = current[\"price\"]\n                else:\n                    new_price = None if pd.isna(price) else price\n                current = {\"qty\": qty, \"price\": new_price, \"row_version\": version}\n                removed = False\n        # unknown op -> treated as no-op (not expected per schema)\n\n        state[key] = current\n        last_effect[key] = (removed, version)\n\n    # Build new_positions\n    rows = []\n    for key, val in state.items():\n        if val is not None:\n            qty_val = val[\"qty\"]\n            try:\n                qty_out = int(qty_val)\n            except (ValueError, TypeError):\n                qty_out = qty_val\n            rows.append(\n                {\n                    \"account_id\": key[0],\n                    \"symbol\": key[1],\n                    \"qty\": qty_out,\n                    \"price\": val[\"price\"],\n                    \"row_version\": val[\"row_version\"],\n                }\n            )\n\n    new_positions = pd.DataFrame(\n        rows, columns=[\"account_id\", \"symbol\", \"qty\", \"price\", \"row_version\"]\n    )\n\n    if len(new_positions):\n        new_positions = new_positions.sort_values(\n            by=[\"account_id\", \"symbol\"], kind=\"mergesort\"\n        ).reset_index(drop=True)\n        new_positions[\"account_id\"] = new_positions[\"account_id\"].astype(\"int64\")\n        new_positions[\"qty\"] = new_positions[\"qty\"].astype(\"int64\")\n        new_positions[\"row_version\"] = new_positions[\"row_version\"].astype(\"int64\")\n        new_positions[\"price\"] = new_positions[\"price\"].astype(\"float64\")\n    else:\n        new_positions = pd.DataFrame(\n            {\n                \"account_id\": pd.Series(dtype=\"int64\"),\n                \"symbol\": pd.Series(dtype=\"object\"),\n                \"qty\": pd.Series(dtype=\"int64\"),\n                \"price\": pd.Series(dtype=\"float64\"),\n                \"row_version\": pd.Series(dtype=\"int64\"),\n            }\n        )\n\n    # Build closed_positions: one row per key whose LAST applied event actually\n    # removed an existing row (an event that did nothing does not count).\n    closed_rows = []\n    for key, (removed, version) in last_effect.items():\n        if removed:\n            closed_rows.append(\n                {\n                    \"account_id\": key[0],\n                    \"symbol\": key[1],\n                    \"closed_version\": version,\n                }\n            )\n\n    closed_positions = pd.DataFrame(\n        closed_rows, columns=[\"account_id\", \"symbol\", \"closed_version\"]\n    )\n\n    if len(closed_positions):\n        closed_positions = closed_positions.sort_values(\n            by=[\"account_id\", \"symbol\"], kind=\"mergesort\"\n        ).reset_index(drop=True)\n        closed_positions[\"account_id\"] = closed_positions[\"account_id\"].astype(\"int64\")\n        closed_positions[\"closed_version\"] = closed_positions[\"closed_version\"].astype(\n            \"int64\"\n        )\n    else:\n        closed_positions = pd.DataFrame(\n            {\n                \"account_id\": pd.Series(dtype=\"int64\"),\n                \"symbol\": pd.Series(dtype=\"object\"),\n                \"closed_version\": pd.Series(dtype=\"int64\"),\n            }\n        )\n\n    return {\"new_positions\": new_positions, \"closed_positions\": closed_positions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1246,
+   "tokens_out": 5287,
+   "usd": 0.083043,
+   "wall_s": 48.50513482093811,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6342,
+  "tokens_out": 47295,
+  "usd": 0.728451,
+  "wall_s": 533.7273697853088
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

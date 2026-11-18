@@ -1,0 +1,46 @@
+{
+ "config": "B3_self_repair",
+ "rep": 3,
+ "task": "t7b_multi_reason_collect",
+ "category": "T7",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    df = inputs[\"invoices\"].copy()\n\n    amount = pd.to_numeric(df[\"amount\"], errors=\"coerce\")\n    tax = pd.to_numeric(df[\"tax\"], errors=\"coerce\")\n\n    amount_null = df[\"amount\"].isna()\n    tax_null = df[\"tax\"].isna()\n\n    r1 = amount_null | (amount < 0)\n    r2 = tax_null | (tax < 0)\n    r3 = (~amount_null & ~tax_null) & (tax > amount * 0.5)\n    r4 = df[\"due_date\"].isna()\n\n    ref = df[\"customer_ref\"]\n    ref_is_null = ref.isna()\n    ref_trimmed = ref.astype(str).str.strip()\n    r5 = ref_is_null | ((~ref_is_null) & (ref_trimmed == \"\"))\n\n    rule_flags = [\n        (r1, \"AMT_BAD\"),\n        (r2, \"TAX_BAD\"),\n        (r3, \"TAX_EXCESS\"),\n        (r4, \"DUE_NULL\"),\n        (r5, \"REF_EMPTY\"),\n    ]\n\n    def build_codes(idx):\n        codes = []\n        for flag, code in rule_flags:\n            if bool(flag.iloc[idx]):\n                codes.append(code)\n        return \"|\".join(codes)\n\n    reason_codes = [build_codes(i) for i in range(len(df))]\n    reason_series = pd.Series(reason_codes, index=df.index)\n\n    has_failure = reason_series != \"\"\n\n    clean = df.loc[~has_failure].copy()\n    rejects = df.loc[has_failure].copy()\n    rejects[\"reason_codes\"] = reason_series.loc[has_failure]\n\n    return {\n        \"invoices_clean\": clean.reset_index(drop=True),\n        \"invoices_rejects\": rejects.reset_index(drop=True),\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 667,
+   "tokens_out": 931,
+   "usd": 0.015966,
+   "wall_s": 7.398138999938965
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

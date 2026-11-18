@@ -1,0 +1,16 @@
+{
+ "task": "t7d_quarantine_threshold",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    df = inputs[\"readings\"].copy()\n\n    orig_cols = list(df.columns)\n\n    if df.empty:\n        quarantine_cols = orig_cols + [\"batch_reject_pct\"]\n        return {\n            \"readings_clean\": df.copy(),\n            \"readings_rejects\": df.copy(),\n            \"readings_quarantine\": pd.DataFrame(columns=quarantine_cols),\n        }\n\n    def is_bad(v):\n        if pd.isna(v):\n            return True\n        try:\n            return (v < 0) or (v > 1000)\n        except TypeError:\n            return True\n\n    df[\"_bad\"] = df[\"value\"].apply(is_bad)\n\n    grouped = (\n        df.groupby(\"batch_id\")[\"_bad\"]\n        .agg(bad_count=\"sum\", total_rows=\"count\")\n    )\n    grouped[\"reject_pct\"] = grouped[\"bad_count\"] * 100.0 / grouped[\"total_rows\"]\n    grouped[\"quarantined\"] = (grouped[\"bad_count\"] * 100) > (grouped[\"total_rows\"] * 20)\n\n    df = df.merge(\n        grouped[[\"quarantined\", \"reject_pct\"]],\n        left_on=\"batch_id\",\n        right_index=True,\n        how=\"left\",\n    )\n\n    quarantine_mask = df[\"quarantined\"]\n\n    quarantine_df = df[quarantine_mask].copy()\n    quarantine_df[\"batch_reject_pct\"] = quarantine_df[\"reject_pct\"].round(2)\n    quarantine_df = quarantine_df[orig_cols + [\"batch_reject_pct\"]]\n\n    remaining = df[~quarantine_mask]\n\n    clean_df = remaining[~remaining[\"_bad\"]][orig_cols].reset_index(drop=True)\n    rejects_df = remaining[remaining[\"_bad\"]][orig_cols].reset_index(drop=True)\n    quarantine_df = quarantine_df.reset_index(drop=True)\n\n    return {\n        \"readings_clean\": clean_df,\n        \"readings_rejects\": rejects_df,\n        \"readings_quarantine\": quarantine_df,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 558,
+   "tokens_out": 1948,
+   "usd": 0.030894,
+   "wall_s": 15.05726170539856
+  }
+ ]
+}

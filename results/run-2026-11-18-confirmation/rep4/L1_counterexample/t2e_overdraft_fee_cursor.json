@@ -1,0 +1,48 @@
+{
+ "config": "L1_counterexample",
+ "rep": 4,
+ "task": "t2e_overdraft_fee_cursor",
+ "category": "T2",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    accounts = inputs[\"accounts\"]\n    txns = inputs[\"txns\"]\n\n    # Only consider txns whose account_id exists in accounts.\n    df = txns.merge(accounts, on=\"account_id\", how=\"inner\")\n\n    # Stable sort by account, then txn_ts, then txn_id to reproduce the\n    # cursor's ORDER BY txn_ts, txn_id within each account.\n    df = df.sort_values(\n        by=[\"account_id\", \"txn_ts\", \"txn_id\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    ledger_rows = []\n    fee_rows = []\n\n    FEE_AMOUNT = 35.00\n\n    for acc_id, group in df.groupby(\"account_id\", sort=False):\n        bal = float(group[\"opening_balance\"].iloc[0])\n        last_fee_date = None  # dates are non-decreasing within a group\n\n        for row in group.itertuples(index=False):\n            amount = row.amount\n            txn_id = row.txn_id\n            txn_ts = row.txn_ts\n\n            bal = bal + amount\n\n            if amount < 0 and bal < 0:\n                fee_date = txn_ts.date() if hasattr(txn_ts, \"date\") else pd.Timestamp(txn_ts).date()\n                if fee_date != last_fee_date:\n                    bal = bal - FEE_AMOUNT\n                    fee_rows.append(\n                        {\n                            \"account_id\": acc_id,\n                            \"fee_date\": pd.Timestamp(fee_date),\n                            \"trigger_txn_id\": txn_id,\n                        }\n                    )\n                    last_fee_date = fee_date\n\n            ledger_rows.append({\"txn_id\": txn_id, \"balance_after\": bal})\n\n    txn_ledger = pd.DataFrame(ledger_rows, columns=[\"txn_id\", \"balance_after\"])\n    if len(txn_ledger) > 0:\n        txn_ledger[\"txn_id\"] = txn_ledger[\"txn_id\"].astype(\"int64\")\n        txn_ledger[\"balance_after\"] = txn_ledger[\"balance_after\"].astype(\"float64\")\n    else:\n        txn_ledger = pd.DataFrame(\n            {\n                \"txn_id\": pd.Series(dtype=\"int64\"),\n                \"balance_after\": pd.Series(dtype=\"float64\"),\n            }\n        )\n\n    fees = pd.DataFrame(\n        fee_rows, columns=[\"account_id\", \"fee_date\", \"trigger_txn_id\"]\n    )\n    if len(fees) > 0:\n        fees[\"account_id\"] = fees[\"account_id\"].astype(\"int64\")\n        fees[\"fee_date\"] = pd.to_datetime(fees[\"fee_date\"])\n        fees[\"trigger_txn_id\"] = fees[\"trigger_txn_id\"].astype(\"int64\")\n    else:\n        fees = pd.DataFrame(\n            {\n                \"account_id\": pd.Series(dtype=\"int64\"),\n                \"fee_date\": pd.Series(dtype=\"datetime64[us]\"),\n                \"trigger_txn_id\": pd.Series(dtype=\"int64\"),\n            }\n        )\n\n    return {\"txn_ledger\": txn_ledger, \"fees\": fees}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1002,
+   "tokens_out": 2263,
+   "usd": 0.036951,
+   "wall_s": 19.297929763793945,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

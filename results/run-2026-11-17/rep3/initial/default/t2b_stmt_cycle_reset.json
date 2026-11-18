@@ -1,0 +1,16 @@
+{
+ "task": "t2b_stmt_cycle_reset",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    ledger = inputs[\"LEDGER\"].copy()\n\n    # Preserve original columns, add helper index to maintain stability if needed\n    ledger = ledger.reset_index(drop=True)\n\n    # Sort per cursor ORDER BY account_id, entry_date, row_seq\n    sorted_ledger = ledger.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        kind=\"mergesort\"  # stable sort\n    ).reset_index(drop=True)\n\n    prev_acct = None\n    bal = 0.0\n    cyc = 1\n\n    cycle_nos = []\n    cycle_bals = []\n\n    for row in sorted_ledger.itertuples(index=False):\n        acct = row.account_id\n        entry_type = row.entry_type\n        amount = row.amount\n\n        if acct != prev_acct:\n            bal = 0.0\n            cyc = 1\n            prev_acct = acct\n\n        if entry_type == \"STMT\":\n            bal = 0.0\n            cyc = cyc + 1\n\n        amt = amount if pd.notna(amount) else 0.0\n        bal = bal + amt\n\n        cycle_nos.append(cyc)\n        cycle_bals.append(bal)\n\n    result = sorted_ledger.copy()\n    result[\"cycle_no\"] = cycle_nos\n    result[\"cycle_balance\"] = cycle_bals\n\n    output_cols = [\n        \"account_id\",\n        \"row_seq\",\n        \"entry_date\",\n        \"entry_type\",\n        \"amount\",\n        \"cycle_no\",\n        \"cycle_balance\",\n    ]\n    result = result[output_cols]\n\n    return {\"cycle_balances\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 750,
+   "tokens_out": 838,
+   "usd": 0.01482,
+   "wall_s": 7.089852571487427
+  }
+ ]
+}

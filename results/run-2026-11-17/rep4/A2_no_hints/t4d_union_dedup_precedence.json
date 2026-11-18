@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 4,
+ "task": "t4d_union_dedup_precedence",
+ "category": "T4",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy multi-step batch job: merge two feeds with SOURCE PRECEDENCE.\n    \n    Step 1: Combine CRM feed (src_rank=1) and web feed (src_rank=2) via UNION ALL.\n    Step 2: Deduplicate by customer_id, keeping the row with:\n            - Lowest src_rank (CRM beats web, even if older)\n            - Highest updated_at (recency within same source)\n            - Lowest email (deterministic tie-breaker)\n    \n    Output: golden table with (customer_id, email, updated_at).\n    \"\"\"\n    crm_feed = inputs['crm_feed'].copy()\n    web_feed = inputs['web_feed'].copy()\n    \n    # Step 1: Create STG_COMBINED via UNION ALL\n    crm_feed['src_rank'] = 1\n    web_feed['src_rank'] = 2\n    \n    stg_combined = pd.concat([crm_feed, web_feed], ignore_index=True)\n    \n    # Step 2: Apply deduplication logic\n    # ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY src_rank ASC, updated_at DESC, email ASC)\n    # Keep only rn = 1\n    \n    stg_combined['rn'] = stg_combined.groupby('customer_id', sort=False).cumcount() + 1\n    \n    # Sort within each partition by (src_rank ASC, updated_at DESC, email ASC)\n    # Then assign row numbers\n    stg_combined = stg_combined.sort_values(\n        by=['customer_id', 'src_rank', 'updated_at', 'email'],\n        ascending=[True, True, False, True],\n        kind='stable'\n    )\n    stg_combined['rn'] = stg_combined.groupby('customer_id', sort=False).cumcount() + 1\n    \n    # Filter to keep only rn = 1\n    golden = stg_combined[stg_combined['rn'] == 1].copy()\n    \n    # Select only the required columns (drop src_rank and rn)\n    golden = golden[['customer_id', 'email', 'updated_at']].reset_index(drop=True)\n    \n    return {'golden': golden}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 417,
+   "tokens_out": 604,
+   "usd": 0.003437,
+   "wall_s": 5.310615301132202
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

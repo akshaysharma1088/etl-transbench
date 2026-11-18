@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 0,
+ "task": "t2c_locf_carry_forward",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 4,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"rate_feed\"].copy()\n\n    # Preserve cursor ordering: account_id, obs_date, obs_seq\n    df = df.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        kind=\"mergesort\"  # stable sort to mimic deterministic cursor order\n    ).reset_index(drop=True)\n\n    # Forward-fill rate within each account, never crossing account boundaries\n    grp = df.groupby(\"account_id\", sort=False)[\"rate\"]\n    filled = grp.ffill()\n\n    was_carried = (df[\"rate\"].isna() & filled.notna()).astype(int)\n\n    out = pd.DataFrame({\n        \"account_id\": df[\"account_id\"],\n        \"obs_seq\": df[\"obs_seq\"],\n        \"obs_date\": df[\"obs_date\"],\n        \"rate_filled\": filled,\n        \"was_carried\": was_carried,\n    })\n\n    return {\"rate_filled\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 774,
+   "tokens_out": 795,
+   "usd": 0.014247,
+   "wall_s": 8.222192525863647
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4363,
+  "tokens_out": 7447,
+  "usd": 0.124794,
+  "wall_s": 86.07668876647949
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

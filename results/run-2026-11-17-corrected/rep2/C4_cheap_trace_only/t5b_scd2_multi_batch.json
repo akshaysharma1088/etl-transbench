@@ -1,0 +1,48 @@
+{
+ "config": "C4_cheap_trace_only",
+ "rep": 2,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom pandas import DataFrame\nfrom typing import Optional\n\ndef run(inputs: dict[str, DataFrame]) -> dict[str, DataFrame]:\n    dim = inputs[\"dim_product\"].copy()\n    stg = inputs[\"stg_product\"].copy()\n    \n    # Ensure proper types\n    dim[\"product_id\"] = dim[\"product_id\"].astype(\"int64\")\n    dim[\"is_current\"] = dim[\"is_current\"].astype(\"int64\")\n    stg[\"product_id\"] = stg[\"product_id\"].astype(\"int64\")\n    \n    # Sort staged records by product_id and update_date (order of processing)\n    stg = stg.sort_values([\"product_id\", \"update_date\"], ignore_index=False).reset_index(drop=True)\n    \n    # Process each staged record in order\n    for idx, staged_row in stg.iterrows():\n        product_id = staged_row[\"product_id\"]\n        staged_category = staged_row[\"category\"]\n        staged_price_band = staged_row[\"price_band\"]\n        staged_update_date = staged_row[\"update_date\"]\n        \n        # Find current row for this product\n        current_rows = dim[(dim[\"product_id\"] == product_id) & (dim[\"is_current\"] == 1)]\n        \n        if len(current_rows) == 0:\n            # Product not in dimension: insert new current version\n            new_row = {\n                \"product_id\": product_id,\n                \"category\": staged_category,\n                \"price_band\": staged_price_band,\n                \"eff_start_date\": staged_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1\n            }\n            dim = pd.concat([dim, DataFrame([new_row])], ignore_index=True)\n        else:\n            # Current row exists\n            current_row = current_rows.iloc[0]\n            current_idx = current_rows.index[0]\n            \n            current_category = current_row[\"category\"]\n            current_price_band = current_row[\"price_band\"]\n            \n            # Check if tracked attributes changed (category, price_band)\n            # NULL vs NULL is not a change; NULL vs non-NULL is a change\n            category_changed = (\n                (pd.isna(current_category) and not pd.isna(staged_category)) or\n                (not pd.isna(current_category) and pd.isna(staged_category)) or\n                (not pd.isna(current_category) and not pd.isna(staged_category) and current_category != staged_category)\n            )\n            \n            price_band_changed = (\n                (pd.isna(current_price_band) and not pd.isna(staged_price_band)) or\n                (not pd.isna(current_price_band) and pd.isna(staged_price_band)) or\n                (not pd.isna(current_price_band) and not pd.isna(staged_price_band) and current_price_band != staged_price_band)\n            )\n            \n            if category_changed or price_band_changed:\n                # Close current row (expire it)\n                dim.at[current_idx, \"eff_end_date\"] = staged_update_date\n                dim.at[current_idx, \"is_current\"] = 0\n                \n                # Insert new current version\n                new_row = {\n                    \"product_id\": product_id,\n                    \"category\": staged_category,\n                    \"price_band\": staged_price_band,\n                    \"eff_start_date\": staged_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1\n                }\n                dim = pd.concat([dim, DataFrame([new_row])], ignore_index=True)\n            # else: no change, no-op\n    \n    # Reset index for clean output\n    dim = dim.reset_index(drop=True)\n    \n    return {\"dim_product_out\": dim}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 674,
+   "tokens_out": 1002,
+   "usd": 0.005684,
+   "wall_s": 7.882315635681152,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

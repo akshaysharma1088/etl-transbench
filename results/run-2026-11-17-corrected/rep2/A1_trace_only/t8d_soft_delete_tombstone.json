@@ -1,0 +1,48 @@
+{
+ "config": "A1_trace_only",
+ "rep": 2,
+ "task": "t8d_soft_delete_tombstone",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import timedelta\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n\n    if len(watermark) > 0:\n        high_ts = watermark[\"high_ts\"].iloc[0]\n    else:\n        high_ts = pd.NaT\n\n    # Filter events strictly after watermark\n    if pd.isna(high_ts):\n        events = cdc.copy()\n    else:\n        events = cdc[cdc[\"event_ts\"] > high_ts].copy()\n\n    # Sort events per user by (event_ts, event_seq)\n    events = events.sort_values(by=[\"user_id\", \"event_ts\", \"event_seq\"],\n                                 kind=\"mergesort\")\n\n    # Build initial state dict from target_snapshot\n    state = {}\n    for _, row in target.iterrows():\n        state[row[\"user_id\"]] = {\n            \"email\": row[\"email\"],\n            \"status\": row[\"status\"],\n            \"status_ts\": row[\"status_ts\"],\n        }\n\n    seven_days = timedelta(days=7)\n\n    for _, ev in events.iterrows():\n        uid = ev[\"user_id\"]\n        op = ev[\"op\"]\n        ts = ev[\"event_ts\"]\n        email = ev[\"email\"]\n\n        cur = state.get(uid)\n\n        if op == \"D\":\n            if cur is not None:\n                preserved_email = cur[\"email\"]\n            else:\n                preserved_email = email\n            state[uid] = {\n                \"email\": preserved_email,\n                \"status\": \"DELETED\",\n                \"status_ts\": ts,\n            }\n        elif op == \"U\":\n            if cur is None or cur[\"status\"] == \"ACTIVE\":\n                state[uid] = {\n                    \"email\": email,\n                    \"status\": \"ACTIVE\",\n                    \"status_ts\": ts,\n                }\n            else:\n                # cur status == 'DELETED'\n                if ts > cur[\"status_ts\"] + seven_days:\n                    state[uid] = {\n                        \"email\": email,\n                        \"status\": \"ACTIVE\",\n                        \"status_ts\": ts,\n                    }\n                # else discard, no change\n        # unknown ops ignored\n\n    rows = []\n    for uid, s in state.items():\n        rows.append({\n            \"user_id\": uid,\n            \"email\": s[\"email\"],\n            \"status\": s[\"status\"],\n            \"status_ts\": s[\"status_ts\"],\n        })\n\n    result = pd.DataFrame(rows, columns=[\"user_id\", \"email\", \"status\", \"status_ts\"])\n\n    if len(result) > 0:\n        result[\"user_id\"] = result[\"user_id\"].astype(\"int64\")\n        result[\"email\"] = result[\"email\"].astype(str)\n        result[\"status\"] = result[\"status\"].astype(str)\n        result[\"status_ts\"] = pd.to_datetime(result[\"status_ts\"])\n\n    return {\"new_snapshot\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 875,
+   "tokens_out": 1669,
+   "usd": 0.02766,
+   "wall_s": 14.878259420394897,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

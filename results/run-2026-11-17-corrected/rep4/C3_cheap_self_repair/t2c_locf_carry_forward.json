@@ -1,0 +1,48 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 4,
+ "task": "t2c_locf_carry_forward",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom pandas.api.types import is_datetime64_any_dtype\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces SP_RATE_CARRY_FWD: Last Observation Carried Forward (LOCF) \n    rate fill with account boundary enforcement.\n    \n    - Groups by account_id strictly (carry never crosses)\n    - Within each account: sorts by obs_date, then obs_seq\n    - Carries last non-null rate forward\n    - Tracks was_carried: 1 if filled from last_rate, 0 if original or leading null\n    \"\"\"\n    \n    rate_feed = inputs[\"rate_feed\"].copy()\n    \n    # Sort to match cursor order: account_id, obs_date, obs_seq\n    rate_feed = rate_feed.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Initialize output columns\n    rate_feed[\"rate_filled\"] = rate_feed[\"rate\"].astype(\"float64\")\n    rate_feed[\"was_carried\"] = 0\n    \n    # Process each account separately\n    for account_id in rate_feed[\"account_id\"].unique():\n        acct_mask = rate_feed[\"account_id\"] == account_id\n        acct_indices = rate_feed.index[acct_mask].tolist()\n        \n        last_rate = None\n        \n        for idx in acct_indices:\n            current_rate = rate_feed.loc[idx, \"rate\"]\n            \n            # If current rate is not null, use it and mark as not carried\n            if pd.notna(current_rate):\n                last_rate = current_rate\n                rate_feed.loc[idx, \"rate_filled\"] = current_rate\n                rate_feed.loc[idx, \"was_carried\"] = 0\n            else:\n                # Rate is null: carry forward if we have a last_rate\n                if pd.notna(last_rate):\n                    rate_feed.loc[idx, \"rate_filled\"] = last_rate\n                    rate_feed.loc[idx, \"was_carried\"] = 1\n                else:\n                    # Leading null: stay null, not carried\n                    rate_feed.loc[idx, \"rate_filled\"] = None\n                    rate_feed.loc[idx, \"was_carried\"] = 0\n    \n    # Build output DataFrame with correct column order and types\n    rate_filled = pd.DataFrame({\n        \"account_id\": rate_feed[\"account_id\"].astype(\"int64\"),\n        \"obs_seq\": rate_feed[\"obs_seq\"].astype(\"int64\"),\n        \"obs_date\": rate_feed[\"obs_date\"],\n        \"rate_filled\": rate_feed[\"rate_filled\"].astype(\"float64\"),\n        \"was_carried\": rate_feed[\"was_carried\"].astype(\"int64\")\n    })\n    \n    return {\"rate_filled\": rate_filled}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 574,
+   "tokens_out": 745,
+   "usd": 0.004299,
+   "wall_s": 6.7061169147491455,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

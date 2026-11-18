@@ -1,0 +1,48 @@
+{
+ "config": "B1_single_pass",
+ "rep": 2,
+ "task": "t6_sessionize_events",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, event_ts, event_id to establish the order\n    events = events.sort_values(by=[\"user_id\", \"event_ts\", \"event_id\"]).reset_index(drop=True)\n    \n    # For each user, calculate the time gap from the previous event\n    events['prev_event_ts'] = events.groupby('user_id')['event_ts'].shift(1)\n    \n    # Calculate the time difference in minutes\n    events['time_gap_minutes'] = (events['event_ts'] - events['prev_event_ts']).dt.total_seconds() / 60\n    \n    # A new session starts if:\n    # 1. It's the first event for a user (prev_event_ts is null, so time_gap_minutes is null)\n    # 2. The gap is STRICTLY GREATER than 30 minutes\n    events['new_sess'] = ((events['time_gap_minutes'].isna()) | (events['time_gap_minutes'] > 30)).astype(int)\n    \n    # Cumulative sum within each user to assign session numbers (1-based)\n    events['session_num'] = events.groupby('user_id')['new_sess'].cumsum()\n    \n    # Group by user_id and session_num to aggregate session information\n    user_sessions = events.groupby(['user_id', 'session_num']).agg(\n        session_start=('event_ts', 'min'),\n        session_end=('event_ts', 'max'),\n        event_count=('event_id', 'count')\n    ).reset_index()\n    \n    return {'user_sessions': user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 472,
+   "tokens_out": 454,
+   "usd": 0.002742,
+   "wall_s": 3.841925859451294,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

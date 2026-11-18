@@ -1,0 +1,57 @@
+{
+ "config": "LEGATO",
+ "rep": 1,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _segments_differ(a, b):\n    a_na = pd.isna(a)\n    b_na = pd.isna(b)\n    if a_na and b_na:\n        return False\n    if a_na != b_na:\n        return True\n    return a != b\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    # Try exact match first\n    if name in inputs:\n        return inputs[name]\n    # Try case-insensitive match\n    lname = name.lower()\n    for k, v in inputs.items():\n        if k.lower() == lname:\n            return v\n    raise KeyError(f\"Could not find input matching '{name}' among {list(inputs.keys())}\")\n\n\ndef run(inputs: dict) -> dict:\n    dim = _get_input(inputs, \"DIM_CUSTOMER\").copy()\n    stg = _get_input(inputs, \"STG_CUSTOMER\").copy()\n    fact = _get_input(inputs, \"FACT_TXN\").copy()\n\n    # Ensure proper dtypes for dates\n    for col in [\"eff_start_date\", \"eff_end_date\"]:\n        if col in dim.columns:\n            dim[col] = pd.to_datetime(dim[col], errors=\"coerce\")\n    if \"update_date\" in stg.columns:\n        stg[\"update_date\"] = pd.to_datetime(stg[\"update_date\"], errors=\"coerce\")\n    if \"txn_date\" in fact.columns:\n        fact[\"txn_date\"] = pd.to_datetime(fact[\"txn_date\"], errors=\"coerce\")\n\n    # Determine current rows per customer_id (assume at most one current row per customer)\n    current_rows = dim[dim[\"is_current\"] == 1].copy()\n    current_map = {}\n    for idx, row in current_rows.iterrows():\n        current_map[row[\"customer_id\"]] = (idx, row[\"segment\"])\n\n    # Determine max surrogate key before load\n    if len(dim) > 0:\n        max_sk = dim[\"customer_sk\"].max()\n    else:\n        max_sk = 0\n\n    # Sort staged records by customer_id for deterministic row_number assignment\n    stg_sorted = stg.sort_values(by=\"customer_id\", kind=\"mergesort\").reset_index(drop=True)\n\n    creates = []  # list of (customer_id, segment, update_date, prior_idx_or_none)\n    for _, srow in stg_sorted.iterrows():\n        cid = srow[\"customer_id\"]\n        seg = srow[\"segment\"]\n        upd = srow[\"update_date\"]\n\n        if cid in current_map:\n            prior_idx, prior_seg = current_map[cid]\n            if _segments_differ(prior_seg, seg):\n                creates.append((cid, seg, upd, prior_idx))\n        else:\n            creates.append((cid, seg, upd, None))\n\n    # Assign surrogate keys in order of customer_id (already sorted)\n    new_rows = []\n    sk_counter = max_sk\n    for cid, seg, upd, prior_idx in creates:\n        sk_counter += 1\n        new_sk = sk_counter\n\n        # Expire prior current row if exists\n        if prior_idx is not None:\n            dim.at[prior_idx, \"eff_end_date\"] = upd\n            dim.at[prior_idx, \"is_current\"] = 0\n\n        new_rows.append({\n            \"customer_sk\": new_sk,\n            \"customer_id\": cid,\n            \"segment\": seg,\n            \"eff_start_date\": upd,\n            \"eff_end_date\": pd.NaT,\n            \"is_current\": 1\n        })\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows)\n        dim = pd.concat([dim, new_df], ignore_index=True)\n\n    # Ensure proper dtypes\n    dim[\"customer_sk\"] = dim[\"customer_sk\"].astype(int)\n    dim[\"customer_id\"] = dim[\"customer_id\"].astype(int)\n    dim[\"is_current\"] = dim[\"is_current\"].astype(int)\n\n    dim_customer_out = dim.reset_index(drop=True)\n\n    # ---- STEP 2: Key the facts against the updated dimension ----\n\n    dim_for_join = dim_customer_out[[\"customer_sk\", \"customer_id\", \"eff_start_date\", \"eff_end_date\"]].copy()\n\n    merged = fact.merge(dim_for_join, on=\"customer_id\", how=\"left\", suffixes=(\"\", \"_dim\"))\n\n    def covers(row):\n        if pd.isna(row[\"customer_sk\"]):\n            return False\n        start = row[\"eff_start_date\"]\n        end = row[\"eff_end_date\"]\n        txn_date = row[\"txn_date\"]\n        if pd.isna(start):\n            return False\n        if txn_date < start:\n            return False\n        if pd.isna(end):\n            return True\n        return txn_date < end\n\n    if len(merged) > 0:\n        mask = merged.apply(covers, axis=1)\n        matched = merged[mask].copy()\n    else:\n        matched = merged.copy()\n        matched[\"customer_sk\"] = np.nan\n\n    # For each txn_id, there should be at most one matching version; take first if multiple\n    if len(matched) > 0:\n        matched_dedup = matched.sort_values(by=[\"txn_id\", \"customer_sk\"]).drop_duplicates(subset=[\"txn_id\"], keep=\"first\")\n    else:\n        matched_dedup = matched\n\n    fact_result = fact.merge(\n        matched_dedup[[\"txn_id\", \"customer_sk\"]],\n        on=\"txn_id\",\n        how=\"left\"\n    )\n\n    fact_result[\"customer_sk\"] = fact_result[\"customer_sk\"].fillna(-1).astype(int)\n\n    fact_txn_keyed = fact_result[[\"txn_id\", \"customer_sk\", \"amount\"]].copy()\n\n    return {\n        \"dim_customer_out\": dim_customer_out,\n        \"fact_txn_keyed\": fact_txn_keyed\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1162,
+   "tokens_out": 4000,
+   "usd": 0.063486,
+   "wall_s": 39.495598554611206
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5056,
+  "tokens_out": 4786,
+  "usd": 0.086958,
+  "wall_s": 37.089452028274536
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

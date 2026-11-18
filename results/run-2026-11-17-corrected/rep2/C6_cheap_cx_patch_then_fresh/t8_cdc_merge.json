@@ -1,0 +1,48 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 2,
+ "task": "t8_cdc_merge",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom typing import Optional\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n    \n    # Extract the watermark high_ts value\n    high_ts = watermark.loc[0, \"high_ts\"]\n    \n    # Filter events: keep only those with event_ts > high_ts\n    filtered_events = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n    \n    # If no events to process, return the target snapshot as-is\n    if filtered_events.empty:\n        return {\"new_snapshot\": target_snapshot}\n    \n    # Sort events by (event_ts, event_seq) to identify the latest event per product_id\n    # event_seq acts as a tie-breaker for deterministic ordering\n    filtered_events = filtered_events.sort_values(\n        by=[\"product_id\", \"event_ts\", \"event_seq\"],\n        ascending=[True, True, True]\n    )\n    \n    # Keep only the latest event per product_id (last row after sorting)\n    latest_events = filtered_events.drop_duplicates(\n        subset=[\"product_id\"],\n        keep=\"last\"\n    )\n    \n    # Separate deletes and upserts\n    delete_events = latest_events[latest_events[\"op\"] == \"D\"]\n    upsert_events = latest_events[latest_events[\"op\"].isin([\"I\", \"U\"])]\n    \n    # Remove deleted products from the snapshot\n    if not delete_events.empty:\n        deleted_product_ids = set(delete_events[\"product_id\"])\n        target_snapshot = target_snapshot[~target_snapshot[\"product_id\"].isin(deleted_product_ids)]\n    \n    # Upsert records (update or insert)\n    if not upsert_events.empty:\n        for _, event in upsert_events.iterrows():\n            product_id = event[\"product_id\"]\n            name = event[\"name\"]\n            price = event[\"price\"]\n            event_ts = event[\"event_ts\"]\n            \n            # Check if product exists in snapshot\n            mask = target_snapshot[\"product_id\"] == product_id\n            if mask.any():\n                # Update existing record\n                target_snapshot.loc[mask, \"name\"] = name\n                target_snapshot.loc[mask, \"price\"] = price\n                target_snapshot.loc[mask, \"last_event_ts\"] = event_ts\n            else:\n                # Insert new record\n                new_row = pd.DataFrame({\n                    \"product_id\": [product_id],\n                    \"name\": [name],\n                    \"price\": [price],\n                    \"last_event_ts\": [event_ts]\n                })\n                target_snapshot = pd.concat(\n                    [target_snapshot, new_row],\n                    ignore_index=True\n                )\n    \n    # Ensure correct dtypes\n    target_snapshot = target_snapshot.astype({\n        \"product_id\": \"int64\",\n        \"name\": \"object\",\n        \"price\": \"float64\",\n        \"last_event_ts\": \"datetime64[us]\"\n    })\n    \n    return {\"new_snapshot\": target_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 581,
+   "tokens_out": 827,
+   "usd": 0.004716,
+   "wall_s": 6.811355113983154,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

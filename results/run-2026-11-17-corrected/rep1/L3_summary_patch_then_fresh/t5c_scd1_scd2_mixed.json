@@ -1,0 +1,53 @@
+{
+ "config": "L3_summary_patch_then_fresh",
+ "rep": 1,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_null(x):\n    return pd.isna(x)\n\n\ndef _diff(a, b):\n    a_null = _is_null(a)\n    b_null = _is_null(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_acct\"].copy()\n    stg = inputs[\"stg_acct\"].copy()\n\n    # Step 1: dedup STG_ACCT -> latest per acct_id by update_date,\n    # ties broken by greater (email, tier) lexicographic pair.\n    if len(stg) == 0:\n        stg_dedup = stg.copy()\n    else:\n        stg_sorted = stg.sort_values(\n            by=[\"update_date\", \"email\", \"tier\"],\n            ascending=[False, False, False],\n            kind=\"mergesort\",\n        )\n        stg_dedup = stg_sorted.drop_duplicates(subset=[\"acct_id\"], keep=\"first\")\n        stg_dedup = stg_dedup.sort_values(\"acct_id\", kind=\"mergesort\").reset_index(drop=True)\n\n    # Work on dim_acct rows as mutable dict records.\n    dim_rows = dim.to_dict(\"records\")\n    new_rows = []\n\n    for _, s in stg_dedup.iterrows():\n        acct_id = s[\"acct_id\"]\n\n        # find current row for this acct_id\n        cur_idx = None\n        for i, r in enumerate(dim_rows):\n            if r[\"acct_id\"] == acct_id and r[\"is_current\"] == 1:\n                cur_idx = i\n                break\n\n        if cur_idx is None:\n            new_rows.append(\n                {\n                    \"acct_id\": acct_id,\n                    \"email\": s[\"email\"],\n                    \"tier\": s[\"tier\"],\n                    \"eff_start_date\": s[\"update_date\"],\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            )\n        else:\n            c = dim_rows[cur_idx]\n            tier_changed = _diff(c[\"tier\"], s[\"tier\"])\n            email_changed = _diff(c[\"email\"], s[\"email\"])\n\n            if tier_changed:\n                # expire old current row\n                dim_rows[cur_idx][\"eff_end_date\"] = s[\"update_date\"]\n                dim_rows[cur_idx][\"is_current\"] = 0\n\n                new_rows.append(\n                    {\n                        \"acct_id\": acct_id,\n                        \"email\": s[\"email\"],\n                        \"tier\": s[\"tier\"],\n                        \"eff_start_date\": s[\"update_date\"],\n                        \"eff_end_date\": pd.NaT,\n                        \"is_current\": 1,\n                    }\n                )\n\n            if email_changed:\n                # retro-overwrite email across all history + current rows\n                # for this acct_id, including any just-inserted new row.\n                for r in dim_rows:\n                    if r[\"acct_id\"] == acct_id:\n                        r[\"email\"] = s[\"email\"]\n                for r in new_rows:\n                    if r[\"acct_id\"] == acct_id:\n                        r[\"email\"] = s[\"email\"]\n\n    all_rows = dim_rows + new_rows\n\n    out = pd.DataFrame(\n        all_rows,\n        columns=[\"acct_id\", \"email\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"],\n    )\n\n    if len(out) > 0:\n        out[\"acct_id\"] = out[\"acct_id\"].astype(\"int64\")\n        out[\"is_current\"] = out[\"is_current\"].astype(\"int64\")\n        out[\"eff_start_date\"] = pd.to_datetime(out[\"eff_start_date\"])\n        out[\"eff_end_date\"] = pd.to_datetime(out[\"eff_end_date\"])\n    else:\n        out = out.astype(\n            {\n                \"acct_id\": \"int64\",\n                \"email\": \"object\",\n                \"tier\": \"object\",\n                \"eff_start_date\": \"datetime64[ns]\",\n                \"eff_end_date\": \"datetime64[ns]\",\n                \"is_current\": \"int64\",\n            }\n        )\n\n    return {\"dim_acct_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1120,
+   "tokens_out": 3930,
+   "usd": 0.06231,
+   "wall_s": 32.79316425323486,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3166,
+  "tokens_out": 2407,
+  "usd": 0.045603,
+  "wall_s": 20.919072151184082
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

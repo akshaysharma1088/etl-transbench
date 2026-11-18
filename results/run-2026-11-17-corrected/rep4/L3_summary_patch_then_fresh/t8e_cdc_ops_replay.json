@@ -1,0 +1,53 @@
+{
+ "config": "L3_summary_patch_then_fresh",
+ "rep": 4,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 1,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_state\"].copy()\n    events = inputs[\"cdc_events\"].copy()\n\n    # --- Consolidate target_state to a single deterministic row per key ---\n    # The per-key watermark (last_seq) must be unambiguous. If target_state\n    # ever has more than one row for an order_id, the canonical row is the\n    # one with the highest last_seq (the most recently applied write),\n    # with deterministic tie-break via a stable sort on the original order.\n    if len(target) > 0:\n        target = target.sort_values([\"order_id\", \"last_seq\"], kind=\"mergesort\")\n        target = target.drop_duplicates(subset=[\"order_id\"], keep=\"last\")\n\n    # 1. Deduplicate events delivered more than once (same seq) -> apply once.\n    events = events.drop_duplicates(subset=[\"seq\"], keep=\"first\")\n\n    # Build current state (mutable) and remember original last_seq for the\n    # replay guard (the guard is evaluated against the *original*\n    # target_state, not the evolving in-batch state).\n    state = {}\n    orig_last_seq = {}\n    for _, row in target.iterrows():\n        oid = int(row[\"order_id\"])\n        state[oid] = {\n            \"status\": row[\"status\"],\n            \"amount\": row[\"amount\"],\n            \"last_seq\": int(row[\"last_seq\"]),\n        }\n        orig_last_seq[oid] = int(row[\"last_seq\"])\n\n    # Orders that ever had a row (from target_state or created in this batch).\n    has_had_row = set(state.keys())\n\n    last_event_op = {}\n    last_event_seq = {}\n\n    # 2/3. Process remaining events strictly in seq order, per order.\n    events_sorted = events.sort_values([\"order_id\", \"seq\"], kind=\"mergesort\")\n\n    for _, ev in events_sorted.iterrows():\n        oid = int(ev[\"order_id\"])\n        seq = int(ev[\"seq\"])\n        op = ev[\"op\"]\n        status = ev[\"status\"]\n        amount = ev[\"amount\"]\n\n        # Replay guard: only applies if the order had a row in the\n        # ORIGINAL target_state, compared against that original last_seq.\n        if oid in orig_last_seq and seq <= orig_last_seq[oid]:\n            continue\n\n        if op in (\"I\", \"U\"):\n            if oid in state:\n                state[oid][\"status\"] = status\n                if op == \"U\" and pd.isna(amount):\n                    # 'U' with NULL amount leaves existing amount unchanged.\n                    pass\n                else:\n                    state[oid][\"amount\"] = amount\n                state[oid][\"last_seq\"] = seq\n            else:\n                state[oid] = {\n                    \"status\": status,\n                    \"amount\": amount,\n                    \"last_seq\": seq,\n                }\n            has_had_row.add(oid)\n        elif op == \"D\":\n            if oid in state:\n                del state[oid]\n            # A 'D' on a missing order does nothing to the state, but it is\n            # still the \"last applied event\" for tombstone purposes below.\n\n        last_event_op[oid] = op\n        last_event_seq[oid] = seq\n\n    # Build new_state output.\n    if state:\n        new_rows = [\n            {\n                \"order_id\": oid,\n                \"status\": s[\"status\"],\n                \"amount\": s[\"amount\"],\n                \"last_seq\": s[\"last_seq\"],\n            }\n            for oid, s in state.items()\n        ]\n        new_state = pd.DataFrame(new_rows)\n    else:\n        new_state = pd.DataFrame(columns=[\"order_id\", \"status\", \"amount\", \"last_seq\"])\n\n    new_state = new_state.reindex(columns=[\"order_id\", \"status\", \"amount\", \"last_seq\"])\n    new_state[\"order_id\"] = new_state[\"order_id\"].astype(\"int64\")\n    new_state[\"last_seq\"] = new_state[\"last_seq\"].astype(\"int64\")\n    new_state[\"amount\"] = new_state[\"amount\"].astype(\"float64\")\n    new_state[\"status\"] = new_state[\"status\"].astype(object)\n\n    # Build tombstones output.\n    tomb_rows = []\n    for oid, op in last_event_op.items():\n        if op == \"D\" and oid in has_had_row:\n            tomb_rows.append({\"order_id\": oid, \"deleted_seq\": last_event_seq[oid]})\n\n    if tomb_rows:\n        tombstones = pd.DataFrame(tomb_rows)\n    else:\n        tombstones = pd.DataFrame(columns=[\"order_id\", \"deleted_seq\"])\n\n    tombstones = tombstones.reindex(columns=[\"order_id\", \"deleted_seq\"])\n    tombstones[\"order_id\"] = tombstones[\"order_id\"].astype(\"int64\")\n    tombstones[\"deleted_seq\"] = tombstones[\"deleted_seq\"].astype(\"int64\")\n\n    return {\"new_state\": new_state, \"tombstones\": tombstones}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1266,
+   "tokens_out": 7100,
+   "usd": 0.110298,
+   "wall_s": 69.11491966247559,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6280,
+  "tokens_out": 41684,
+  "usd": 0.6441,
+  "wall_s": 491.36150002479553
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

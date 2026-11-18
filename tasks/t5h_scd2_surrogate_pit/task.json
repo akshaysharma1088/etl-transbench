@@ -1,0 +1,9 @@
+{
+  "id": "t5h_scd2_surrogate_pit",
+  "category": "T5",
+  "tier": 3,
+  "description": "SCD Type 2 with surrogate-key assignment, then a point-in-time fact lookup against the updated dimension",
+  "legacy_artifact": "legacy_artifact.txt",
+  "target": "pandas (PySpark in full benchmark)",
+  "set": "extension"
+}

@@ -1,0 +1,28 @@
+-- Legacy stored procedure SP_ALLOCATE_PAYMENTS (abstracted, vendor-neutral).
+-- Inputs:
+--   invoices (invoice_id INT, customer_id INT, due_date DATE, amount DECIMAL(12,2))
+--   payments (payment_id INT, customer_id INT, paid_ts TIMESTAMP, amount DECIMAL(12,2))
+--        -- invoice_id and payment_id are unique; all amounts are > 0.
+-- Outputs:
+--   invoice_status  (invoice_id, open_amount, status)
+--   allocations     (payment_id, invoice_id, applied_amount)
+--   customer_credit (customer_id, unapplied_amount)
+--
+-- PROCEDURE BODY (pseudocode preserved), per customer:
+--   CURSOR over the customer's payments ORDER BY paid_ts, payment_id;
+--   FOR EACH payment p:
+--     left := p.amount;
+--     FOR EACH invoice i of the customer with open_amount > 0
+--         ORDER BY due_date, invoice_id:                 -- oldest first
+--       pay := LEAST(left, i.open_amount);
+--       i.open_amount -= pay;  left -= pay;
+--       INSERT INTO allocations (p.payment_id, i.invoice_id, pay);
+--       EXIT WHEN left = 0;
+--     credit(customer) += left;        -- nothing left to pay: money stays unapplied
+--   Unapplied credit is NOT used for anything later in this run.
+--
+-- invoice_status has one row per invoice: open_amount after all payments and
+--   status = 'PAID' when open_amount = 0, 'OPEN' when nothing was applied to it,
+--   'PARTIAL' otherwise.
+-- customer_credit has one row per customer whose unapplied_amount > 0.
+-- Payments from a customer with no invoices go entirely to customer_credit.

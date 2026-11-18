@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t7b_multi_reason_collect",
+ "category": "T7",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"invoices\"].copy()\n\n    def eval_row(row):\n        codes = []\n\n        amount = row.get(\"amount\")\n        tax = row.get(\"tax\")\n        due_date = row.get(\"due_date\")\n        customer_ref = row.get(\"customer_ref\")\n\n        amount_is_null = pd.isna(amount)\n        tax_is_null = pd.isna(tax)\n\n        # R1\n        if amount_is_null or (not amount_is_null and amount < 0):\n            codes.append(\"AMT_BAD\")\n\n        # R2\n        if tax_is_null or (not tax_is_null and tax < 0):\n            codes.append(\"TAX_BAD\")\n\n        # R3 - NULL-safe, skip if either is null\n        if not amount_is_null and not tax_is_null:\n            if tax > amount * 0.5:\n                codes.append(\"TAX_EXCESS\")\n\n        # R4\n        if pd.isna(due_date):\n            codes.append(\"DUE_NULL\")\n\n        # R5\n        if pd.isna(customer_ref) or str(customer_ref).strip() == \"\":\n            codes.append(\"REF_EMPTY\")\n\n        return \"|\".join(codes)\n\n    reason_codes = df.apply(eval_row, axis=1)\n\n    is_reject = reason_codes != \"\"\n\n    invoices_clean = df.loc[~is_reject].copy()\n\n    invoices_rejects = df.loc[is_reject].copy()\n    invoices_rejects[\"reason_codes\"] = reason_codes.loc[is_reject]\n\n    return {\n        \"invoices_clean\": invoices_clean,\n        \"invoices_rejects\": invoices_rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 667,
+   "tokens_out": 900,
+   "usd": 0.015501,
+   "wall_s": 7.586560964584351
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

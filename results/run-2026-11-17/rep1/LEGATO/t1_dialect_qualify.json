@@ -1,0 +1,46 @@
+{
+ "config": "LEGATO",
+ "rep": 1,
+ "task": "t1_dialect_qualify",
+ "category": "T1",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicates Teradata-style QUALIFY filtering on window function results.\n    Selects the latest high-value transaction per account.\n    \"\"\"\n    acct_txn = inputs['acct_txn'].copy()\n    \n    # WHERE amount > 100\n    filtered = acct_txn[acct_txn['amount'] > 100].copy()\n    \n    # Add size_band column via CASE expression\n    def classify_size_band(amount):\n        if pd.isna(amount):\n            return None\n        if amount >= 1000:\n            return 'JUMBO'\n        elif amount >= 500:\n            return 'LARGE'\n        else:\n            return 'STANDARD'\n    \n    filtered['size_band'] = filtered['amount'].apply(classify_size_band)\n    \n    # Compute ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC)\n    # In Teradata, NULLs sort first in DESC ordering by default\n    # We need to handle NULLs explicitly in the sort\n    filtered['_rn'] = filtered.groupby('account_id', dropna=False).apply(\n        lambda group: pd.Series(\n            range(1, len(group) + 1),\n            index=group.index,\n            dtype='int64'\n        ),\n        include_groups=False\n    ).droplevel(0)\n    \n    # Reorder by sorting within each partition\n    # For DESC ordering with NULL handling: NULLs first, then descending values\n    def sort_group(group):\n        # Create sort keys: NULLs get lowest priority (sort first in ascending, last in desc)\n        # For DESC: we want NULLs first, then largest values first\n        # Use na_position='first' for each sort level\n        group_sorted = group.sort_values(\n            by=['txn_ts', 'txn_id'],\n            ascending=[False, False],\n            na_position='first'\n        )\n        return group_sorted\n    \n    # Recompute row numbers with proper sorting\n    filtered = filtered.drop('_rn', axis=1)\n    filtered['_rn'] = filtered.groupby('account_id', dropna=False, group_keys=False).apply(\n        lambda group: pd.Series(\n            range(1, len(group) + 1),\n            index=group.sort_values(\n                by=['txn_ts', 'txn_id'],\n                ascending=[False, False],\n                na_position='first'\n            ).index,\n            dtype='int64'\n        )\n    )\n    \n    # QUALIFY ROW_NUMBER() = 1 (keep only the first row per partition)\n    result = filtered[filtered['_rn'] == 1].copy()\n    \n    # Drop the temporary column\n    result = result.drop('_rn', axis=1)\n    \n    # SELECT clause: only specified columns\n    result = result[['account_id', 'txn_id', 'txn_ts', 'amount', 'channel', 'size_band']]\n    \n    # Reset index for clean output\n    result = result.reset_index(drop=True)\n    \n    return {'latest_high_value_txn': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 369,
+   "tokens_out": 845,
+   "usd": 0.004594,
+   "wall_s": 6.293233394622803
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

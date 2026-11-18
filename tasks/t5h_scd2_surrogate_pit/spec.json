@@ -1,0 +1,44 @@
+{
+  "task_id": "t5h_scd2_surrogate_pit",
+  "relations": [
+    {
+      "name": "dim_customer_out",
+      "key_columns": [
+        "customer_sk"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "segment",
+          "kind": "string"
+        },
+        {
+          "name": "eff_start_date",
+          "kind": "timestamp"
+        },
+        {
+          "name": "eff_end_date",
+          "kind": "timestamp"
+        },
+        {
+          "name": "is_current",
+          "kind": "int"
+        }
+      ]
+    },
+    {
+      "name": "fact_txn_keyed",
+      "key_columns": [
+        "txn_id"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "amount",
+          "kind": "float",
+          "abs_tol": 1e-09
+        }
+      ]
+    }
+  ]
+}

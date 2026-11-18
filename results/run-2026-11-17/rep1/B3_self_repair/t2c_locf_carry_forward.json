@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 1,
+ "task": "t2c_locf_carry_forward",
+ "category": "T2",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, \"pandas.DataFrame\"]) -> dict[str, \"pandas.DataFrame\"]:\n    df = inputs[\"RATE_FEED\"].copy()\n\n    # Legacy cursor order: ORDER BY account_id, obs_date, obs_seq\n    df = df.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        kind=\"mergesort\",  # stable sort to mimic deterministic cursor traversal\n    ).reset_index(drop=True)\n\n    # Carry-forward last non-null rate, but never across account boundaries.\n    # groupby().ffill() naturally resets at each group (account_id) boundary,\n    # exactly matching the cursor's prev_acct reset logic.\n    filled_rate = df.groupby(\"account_id\")[\"rate\"].ffill()\n\n    # was_carried = 1 only when the original rate was NULL AND a prior\n    # (same-account) rate was available to carry forward.\n    was_carried = (df[\"rate\"].isna() & filled_rate.notna()).astype(\"int64\")\n\n    result = pd.DataFrame(\n        {\n            \"account_id\": df[\"account_id\"],\n            \"obs_seq\": df[\"obs_seq\"],\n            \"obs_date\": df[\"obs_date\"],\n            \"rate_filled\": filled_rate,\n            \"was_carried\": was_carried,\n        }\n    ).reset_index(drop=True)\n\n    return {\"rate_filled\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 774,
+   "tokens_out": 1017,
+   "usd": 0.017577,
+   "wall_s": 10.096062183380127
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4155,
+  "tokens_out": 7425,
+  "usd": 0.12384,
+  "wall_s": 81.22815680503845
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

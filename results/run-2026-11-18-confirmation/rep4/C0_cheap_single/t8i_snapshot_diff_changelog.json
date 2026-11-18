@@ -1,0 +1,48 @@
+{
+ "config": "C0_cheap_single",
+ "rep": 4,
+ "task": "t8i_snapshot_diff_changelog",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    snap_prev = inputs[\"snap_prev\"].copy()\n    snap_curr = inputs[\"snap_curr\"].copy()\n    \n    # Ensure string columns are object type for proper null handling\n    for df in [snap_prev, snap_curr]:\n        df['region'] = df['region'].astype('object')\n        df['sku'] = df['sku'].astype('object')\n        df['label'] = df['label'].astype('object')\n    \n    # Set keys for merging\n    snap_prev = snap_prev.set_index(['region', 'sku'])\n    snap_curr = snap_curr.set_index(['region', 'sku'])\n    \n    # Outer merge to find all keys\n    merged = snap_prev.join(snap_curr, how='outer', lsuffix='_prev', rsuffix='_curr')\n    \n    rows = []\n    \n    for (region, sku), row in merged.iterrows():\n        price_prev = row['price_prev']\n        price_curr = row['price_curr']\n        stock_prev = row['stock_prev']\n        stock_curr = row['stock_curr']\n        label_prev = row['label_prev']\n        label_curr = row['label_curr']\n        \n        # Check if key exists in previous and current\n        in_prev = pd.notna(price_prev) or pd.notna(stock_prev) or pd.notna(label_prev) or True\n        in_curr = pd.notna(price_curr) or pd.notna(stock_curr) or pd.notna(label_curr) or True\n        \n        # More reliable check: if all data columns are NaN, the row didn't exist\n        in_prev = not (pd.isna(price_prev) and pd.isna(stock_prev) and pd.isna(label_prev))\n        in_curr = not (pd.isna(price_curr) and pd.isna(stock_curr) and pd.isna(label_curr))\n        \n        if in_prev and not in_curr:\n            # Delete\n            rows.append({\n                'region': region,\n                'sku': sku,\n                'change_type': 'D',\n                'changed_cols': None\n            })\n        elif not in_prev and in_curr:\n            # Insert\n            rows.append({\n                'region': region,\n                'sku': sku,\n                'change_type': 'I',\n                'changed_cols': None\n            })\n        elif in_prev and in_curr:\n            # Both exist - check for differences\n            changed_cols_list = []\n            \n            # Compare price (NULL-safe, by value)\n            if not _null_safe_equal(price_prev, price_curr):\n                changed_cols_list.append('price')\n            \n            # Compare stock (NULL-safe, by value)\n            if not _null_safe_equal(stock_prev, stock_curr):\n                changed_cols_list.append('stock')\n            \n            # Compare label (NULL-safe, trailing spaces ignored)\n            if not _label_equal(label_prev, label_curr):\n                changed_cols_list.append('label')\n            \n            if changed_cols_list:\n                rows.append({\n                    'region': region,\n                    'sku': sku,\n                    'change_type': 'U',\n                    'changed_cols': ','.join(changed_cols_list)\n                })\n    \n    change_log = pd.DataFrame(rows)\n    \n    if len(change_log) == 0:\n        change_log = pd.DataFrame(columns=['region', 'sku', 'change_type', 'changed_cols'])\n    \n    return {'change_log': change_log}\n\n\ndef _null_safe_equal(a, b):\n    \"\"\"\n    NULL-safe equality: NULL == NULL is True, NULL != value is True (not equal),\n    and regular equality applies otherwise.\n    \"\"\"\n    # Both NaN (NULL)\n    if pd.isna(a) and pd.isna(b):\n        return True\n    # One is NaN (NULL) and the other is not\n    if pd.isna(a) or pd.isna(b):\n        return False\n    # Both are non-null values\n    return a == b\n\n\ndef _label_equal(a, b):\n    \"\"\"\n    Label comparison: trailing spaces are ignored (RTRIM).\n    NULL vs NULL = True\n    NULL vs non-null = False\n    Leading spaces and case are significant.\n    All spaces equals empty string.\n    \"\"\"\n    # Both NaN (NULL)\n    if pd.isna(a) and pd.isna(b):\n        return True\n    # One is NaN (NULL) and the other is not\n    if pd.isna(a) or pd.isna(b):\n        return False\n    # Both are strings - strip trailing spaces\n    a_stripped = str(a).rstrip()\n    b_stripped = str(b).rstrip()\n    return a_stripped == b_stripped\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 661,
+   "tokens_out": 1265,
+   "usd": 0.006986,
+   "wall_s": 7.56940770149231,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

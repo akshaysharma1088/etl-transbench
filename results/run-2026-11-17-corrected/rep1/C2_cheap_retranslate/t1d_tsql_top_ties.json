@@ -1,0 +1,48 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 1,
+ "task": "t1d_tsql_top_ties",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    df = inputs[\"branch_scores\"].copy()\n    \n    # WHERE active = 1\n    df = df[df[\"active\"] == 1].copy()\n    \n    # Sort by score DESC for ranking\n    df = df.sort_values(\"score\", ascending=False, na_position=\"last\").reset_index(drop=True)\n    \n    # Assign rank based on score (RANK() OVER ORDER BY score DESC)\n    # RANK gives same rank to ties, next rank skips\n    df[\"rank\"] = df[\"score\"].rank(method=\"min\", ascending=False).astype(\"Int64\")\n    \n    # TOP (5) WITH TIES: keep all rows where rank <= 5\n    df = df[df[\"rank\"] <= 5].copy()\n    \n    # Build manager_norm: ISNULL(manager, 'UNASSIGNED')\n    df[\"manager_norm\"] = df[\"manager\"].fillna(\"UNASSIGNED\")\n    \n    # Build branch_label: branch_code + '-' + region_code\n    # In T-SQL, NULL + anything = NULL (string concat propagates NULL)\n    def concat_with_null(row):\n        bc = row[\"branch_code\"]\n        rc = row[\"region_code\"]\n        # If either is NULL/NA, result is NULL\n        if pd.isna(bc) or pd.isna(rc):\n            return np.nan\n        return str(bc) + \"-\" + str(rc)\n    \n    df[\"branch_label\"] = df.apply(concat_with_null, axis=1)\n    \n    # Select and order output columns\n    result = df[[\"branch_id\", \"manager_norm\", \"branch_label\", \"score\"]].copy()\n    \n    return {\"top_branches\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 424,
+   "tokens_out": 462,
+   "usd": 0.002734,
+   "wall_s": 4.233221530914307,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

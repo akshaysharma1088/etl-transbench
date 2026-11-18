@@ -166,9 +166,21 @@ def _compare_multiset(ref, cand, spec, cols, rep) -> bool:
         return False
     r = _round_for_hash(ref, spec, cols).sort_values(cols, na_position="last").reset_index(drop=True)
     c = _round_for_hash(cand, spec, cols).sort_values(cols, na_position="last").reset_index(drop=True)
-    eq = r.equals(c)
-    if not eq:
+    # Compare by value, not by storage type: 3 and 3.0 are the same number.
+    # (DataFrame.equals is dtype-strict and would call an integer column and a
+    # float column different even when every value matches.)
+    for col in cols:
+        if (pd.api.types.is_numeric_dtype(r[col]) and pd.api.types.is_numeric_dtype(c[col])
+                and not pd.api.types.is_bool_dtype(r[col]) and not pd.api.types.is_bool_dtype(c[col])):
+            r[col] = r[col].astype("float64")
+            c[col] = c[col].astype("float64")
+    try:
         neq = (r != c) & ~(r.isna() & c.isna())
+    except TypeError:  # columns of types that cannot be compared at all
+        rep.detail = "multiset content mismatch"
+        return False
+    eq = not bool(neq.to_numpy().any())
+    if not eq:
         rep.column_mismatch_counts = {k: int(v) for k, v in neq.sum().items() if v > 0}
         rep.detail = "multiset content mismatch"
     return eq
@@ -194,6 +206,14 @@ def _compare_ordered(ref, cand, spec, cols, rep, sample) -> bool:
 
 def _compare_keyed(ref, cand, spec, cols, rep, sample) -> bool:
     keys = spec.key_columns
+    # A date key may come back as date objects or ISO strings. Give it the
+    # reference's datetime type, as a "timestamp" column rule would, so key
+    # matching and the lookups below agree on what is the same key.
+    for k in keys:
+        if (pd.api.types.is_datetime64_any_dtype(ref[k])
+                and not pd.api.types.is_datetime64_any_dtype(cand[k])):
+            cand = cand.copy()
+            cand[k] = pd.to_datetime(cand[k], errors="coerce")
     rk = ref.set_index(keys, drop=False)
     ck = cand.set_index(keys, drop=False)
     if rk.index.has_duplicates or ck.index.has_duplicates:

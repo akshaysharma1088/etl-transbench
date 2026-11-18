@@ -1,0 +1,41 @@
+{
+  "task_id": "t7f_running_limit_validation",
+  "relations": [
+    {
+      "name": "accepted_transfers",
+      "key_columns": [
+        "row_num"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "account_id",
+          "kind": "int"
+        },
+        {
+          "name": "amount",
+          "kind": "float",
+          "abs_tol": 1e-06
+        },
+        {
+          "name": "running_total",
+          "kind": "float",
+          "abs_tol": 1e-06
+        }
+      ]
+    },
+    {
+      "name": "transfer_rejects",
+      "key_columns": [
+        "row_num"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "reason",
+          "kind": "string"
+        }
+      ]
+    }
+  ]
+}

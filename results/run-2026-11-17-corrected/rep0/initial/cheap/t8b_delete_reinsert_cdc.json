@@ -1,0 +1,17 @@
+{
+ "task": "t8b_delete_reinsert_cdc",
+ "group": "cheap",
+ "tier": "cheap",
+ "code": "import pandas as pd\nfrom typing import Dict\n\ndef run(inputs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n    \n    # Extract the high watermark timestamp\n    high_ts = watermark[\"high_ts\"].iloc[0]\n    \n    # Filter events up to and including the watermark\n    events_to_apply = cdc_events[cdc_events[\"event_ts\"] <= high_ts].copy()\n    \n    # Sort events by item_id, then by event_ts, then by event_seq for deterministic ordering\n    events_to_apply = events_to_apply.sort_values(\n        by=[\"item_id\", \"event_ts\", \"event_seq\"],\n        ascending=[True, True, True]\n    ).reset_index(drop=True)\n    \n    # Initialize result as a dict keyed by item_id\n    # Each entry: {item_id: (qty_on_hand, last_event_ts)}\n    result_dict = {}\n    \n    # Load current snapshot into the dict\n    for _, row in target_snapshot.iterrows():\n        item_id = row[\"item_id\"]\n        result_dict[item_id] = {\n            \"qty_on_hand\": row[\"qty_on_hand\"],\n            \"last_event_ts\": row[\"last_event_ts\"]\n        }\n    \n    # Apply events sequentially\n    for _, event in events_to_apply.iterrows():\n        item_id = event[\"item_id\"]\n        op = event[\"op\"]\n        qty = event[\"qty\"]\n        event_ts = event[\"event_ts\"]\n        \n        if op == \"R\":  # Receipt: add to quantity\n            if item_id not in result_dict:\n                # Item doesn't exist; start from 0\n                result_dict[item_id] = {\"qty_on_hand\": 0, \"last_event_ts\": None}\n            result_dict[item_id][\"qty_on_hand\"] += qty\n            result_dict[item_id][\"last_event_ts\"] = event_ts\n        \n        elif op == \"A\":  # Adjustment: set to absolute value\n            # Adjustment recreates the item if deleted\n            result_dict[item_id] = {\"qty_on_hand\": qty, \"last_event_ts\": event_ts}\n        \n        elif op == \"D\":  # Delist: remove from snapshot\n            if item_id in result_dict:\n                del result_dict[item_id]\n    \n    # Convert result dict back to DataFrame\n    rows = []\n    for item_id, data in result_dict.items():\n        rows.append({\n            \"item_id\": item_id,\n            \"qty_on_hand\": data[\"qty_on_hand\"],\n            \"last_event_ts\": data[\"last_event_ts\"]\n        })\n    \n    if rows:\n        new_snapshot = pd.DataFrame(rows)\n    else:\n        new_snapshot = pd.DataFrame(\n            columns=[\"item_id\", \"qty_on_hand\", \"last_event_ts\"]\n        )\n    \n    # Ensure correct dtypes\n    new_snapshot[\"item_id\"] = new_snapshot[\"item_id\"].astype(\"int64\")\n    new_snapshot[\"qty_on_hand\"] = new_snapshot[\"qty_on_hand\"].astype(\"float64\")\n    new_snapshot[\"last_event_ts\"] = pd.to_datetime(\n        new_snapshot[\"last_event_ts\"], utc=False\n    ).astype(\"datetime64[us]\")\n    \n    return {\"new_snapshot\": new_snapshot}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 635,
+   "tokens_out": 914,
+   "usd": 0.005205,
+   "wall_s": 7.332535028457642,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

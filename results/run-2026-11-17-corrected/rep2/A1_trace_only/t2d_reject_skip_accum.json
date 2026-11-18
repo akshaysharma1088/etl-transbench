@@ -1,0 +1,48 @@
+{
+ "config": "A1_trace_only",
+ "rep": 2,
+ "task": "t2d_reject_skip_accum",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    postings = inputs[\"postings\"].copy()\n\n    # Sort per cursor ORDER BY account_id, post_date, post_seq\n    postings = postings.sort_values(\n        by=[\"account_id\", \"post_date\", \"post_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # Determine validity of each row per TRY/CATCH condition\n    qty = postings[\"qty\"]\n    price = postings[\"unit_price\"]\n\n    valid = (\n        qty.notna() & (qty > 0) &\n        price.notna() & (price >= 0)\n    )\n\n    postings[\"_valid\"] = valid\n    postings[\"_value\"] = qty * price\n\n    posted_rows = []\n    reject_rows = []\n\n    for acct, group in postings.groupby(\"account_id\", sort=False):\n        tot = 0.0\n        rej = 0\n        for _, r in group.iterrows():\n            if r[\"_valid\"]:\n                v = r[\"_value\"]\n                tot = tot + v\n                posted_rows.append({\n                    \"account_id\": r[\"account_id\"],\n                    \"post_seq\": r[\"post_seq\"],\n                    \"post_date\": r[\"post_date\"],\n                    \"post_value\": v,\n                    \"running_total\": tot\n                })\n            else:\n                rej += 1\n        reject_rows.append({\n            \"account_id\": acct,\n            \"reject_count\": rej\n        })\n\n    posted_totals = pd.DataFrame(\n        posted_rows,\n        columns=[\"account_id\", \"post_seq\", \"post_date\", \"post_value\", \"running_total\"]\n    )\n    reject_counts = pd.DataFrame(\n        reject_rows,\n        columns=[\"account_id\", \"reject_count\"]\n    )\n\n    # Type coercion to match expected schema\n    if not posted_totals.empty:\n        posted_totals[\"account_id\"] = posted_totals[\"account_id\"].astype(\"int64\")\n        posted_totals[\"post_seq\"] = posted_totals[\"post_seq\"].astype(\"int64\")\n        posted_totals[\"post_date\"] = pd.to_datetime(posted_totals[\"post_date\"])\n        posted_totals[\"post_value\"] = posted_totals[\"post_value\"].astype(\"float64\")\n        posted_totals[\"running_total\"] = posted_totals[\"running_total\"].astype(\"float64\")\n    else:\n        posted_totals = pd.DataFrame({\n            \"account_id\": pd.Series(dtype=\"int64\"),\n            \"post_seq\": pd.Series(dtype=\"int64\"),\n            \"post_date\": pd.Series(dtype=\"datetime64[us]\"),\n            \"post_value\": pd.Series(dtype=\"float64\"),\n            \"running_total\": pd.Series(dtype=\"float64\"),\n        })\n\n    if not reject_counts.empty:\n        reject_counts[\"account_id\"] = reject_counts[\"account_id\"].astype(\"int64\")\n        reject_counts[\"reject_count\"] = reject_counts[\"reject_count\"].astype(\"int64\")\n    else:\n        reject_counts = pd.DataFrame({\n            \"account_id\": pd.Series(dtype=\"int64\"),\n            \"reject_count\": pd.Series(dtype=\"int64\"),\n        })\n\n    return {\n        \"posted_totals\": posted_totals,\n        \"reject_counts\": reject_counts\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1054,
+   "tokens_out": 1486,
+   "usd": 0.025452,
+   "wall_s": 12.78428864479065,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

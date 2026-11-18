@@ -1,0 +1,51 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t1b_oracle_decode_nvl",
+ "category": "T1",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\nfrom datetime import datetime\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces Oracle legacy query with NULL-matching DECODE and null-safe aggregation.\n    \n    Key semantics:\n    - DECODE matches NULL = NULL (unlike SQL CASE)\n    - NVL coalesces NULL to 0 for amount\n    - TRUNC(ts, 'MM') truncates to month start\n    - GROUP BY includes the DECODE result\n    - COUNT(*) counts all rows in the group, regardless of NULLs in any column\n    \"\"\"\n    regional_txn = inputs['regional_txn'].copy()\n    \n    # Filter to POSTED status\n    df = regional_txn[regional_txn['status'] == 'POSTED'].copy()\n    \n    # Apply TRUNC(txn_ts, 'MM') - truncate to first day of month\n    if df.empty:\n        df['txn_month'] = pd.NaT\n    else:\n        df['txn_ts'] = pd.to_datetime(df['txn_ts'])\n        df['txn_month'] = df['txn_ts'].dt.to_period('M').dt.to_timestamp()\n    \n    # Apply DECODE(region, NULL, 'MISSING', 'XX', 'UNKNOWN', region)\n    # Oracle DECODE: matches NULL = NULL\n    def decode_region(region):\n        if pd.isna(region):\n            return 'MISSING'\n        elif region == 'XX':\n            return 'UNKNOWN'\n        else:\n            return region\n    \n    df['region_norm'] = df['region'].apply(decode_region)\n    \n    # Apply NVL(amount, 0) - replace NULL with 0\n    df['amount_coalesced'] = df['amount'].fillna(0)\n    \n    # Group by txn_month and region_norm\n    # Use size() for COUNT(*) semantics - counts all rows regardless of NULLs\n    grouped_sum = df.groupby(['txn_month', 'region_norm'], as_index=False)['amount_coalesced'].sum()\n    grouped_count = df.groupby(['txn_month', 'region_norm'], as_index=False).size()\n    \n    grouped = grouped_sum.merge(grouped_count, on=['txn_month', 'region_norm'], how='inner')\n    \n    # Rename columns to match output\n    grouped.rename(columns={\n        'amount_coalesced': 'total_amount',\n        'size': 'txn_count'\n    }, inplace=True)\n    \n    # Ensure correct column order and types\n    result = grouped[['txn_month', 'region_norm', 'total_amount', 'txn_count']].copy()\n    \n    return {'monthly_region_rollup': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 390,
+   "tokens_out": 655,
+   "usd": 0.003665,
+   "wall_s": 5.807566165924072
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2072,
+  "tokens_out": 1089,
+  "usd": 0.022551,
+  "wall_s": 8.599425077438354
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

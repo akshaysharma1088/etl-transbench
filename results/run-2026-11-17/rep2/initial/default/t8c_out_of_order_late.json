@@ -1,0 +1,16 @@
+{
+ "task": "t8c_out_of_order_late",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n\n    # ------------------------------------------------------------------\n    # Attach each device's current watermark (applied_event_ts) to every\n    # candidate CDC event for that device.\n    # ------------------------------------------------------------------\n    cdc = cdc_events.merge(\n        target_snapshot[[\"device_id\", \"applied_event_ts\"]],\n        on=\"device_id\",\n        how=\"left\",\n        suffixes=(\"\", \"_wm\"),\n    )\n\n    # A device with no row in target_snapshot has no watermark -> any\n    # event applies.  Otherwise the event only applies if its event_ts is\n    # STRICTLY greater than the device's current applied_event_ts\n    # (equal event_ts => replay => discard; smaller => late => discard).\n    is_new_device = cdc[\"applied_event_ts\"].isna()\n    passes_watermark = is_new_device | (cdc[\"event_ts\"] > cdc[\"applied_event_ts\"])\n\n    surviving = cdc[passes_watermark].copy()\n\n    # ------------------------------------------------------------------\n    # Among surviving events per device, the one with the greatest\n    # (event_ts, event_seq) wins.  Sort descending on both and take the\n    # first row per device (stable sort for determinism).\n    # ------------------------------------------------------------------\n    if not surviving.empty:\n        surviving = surviving.sort_values(\n            by=[\"device_id\", \"event_ts\", \"event_seq\"],\n            ascending=[True, False, False],\n            kind=\"mergesort\",\n        )\n        winners = surviving.drop_duplicates(subset=\"device_id\", keep=\"first\")\n    else:\n        winners = surviving\n\n    winners = winners[[\"device_id\", \"reading\", \"event_ts\"]].rename(\n        columns={\"event_ts\": \"applied_event_ts\"}\n    )\n\n    # ------------------------------------------------------------------\n    # Build the new snapshot:\n    #   - Devices with a surviving winning event get reading +\n    #     applied_event_ts updated from that event.\n    #   - Devices with no surviving event carry forward unchanged.\n    #   - Devices present only in cdc_events (not in target_snapshot)\n    #     are added using their winning event.\n    # ------------------------------------------------------------------\n    out = target_snapshot.set_index(\"device_id\", drop=False)\n    w = winners.set_index(\"device_id\")\n\n    common = out.index.intersection(w.index)\n    if len(common) > 0:\n        out.loc[common, \"reading\"] = w.loc[common, \"reading\"]\n        out.loc[common, \"applied_event_ts\"] = w.loc[common, \"applied_event_ts\"]\n\n    new_idx = w.index.difference(out.index)\n    if len(new_idx) > 0:\n        new_rows = w.loc[new_idx].copy()\n        new_rows[\"device_id\"] = new_rows.index\n        out = pd.concat([out, new_rows], axis=0)\n\n    out = out.reset_index(drop=True)[[\"device_id\", \"reading\", \"applied_event_ts\"]]\n\n    return {\"new_snapshot\": out}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 749,
+   "tokens_out": 3828,
+   "usd": 0.059667,
+   "wall_s": 89.51978731155396
+  }
+ ]
+}

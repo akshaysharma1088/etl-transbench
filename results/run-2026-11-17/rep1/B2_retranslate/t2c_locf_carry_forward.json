@@ -1,0 +1,66 @@
+{
+ "config": "B2_retranslate",
+ "rep": 1,
+ "task": "t2c_locf_carry_forward",
+ "category": "T2",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    df = inputs[\"RATE_FEED\"].copy()\n\n    # Preserve stable ordering exactly as legacy cursor: ORDER BY account_id, obs_date, obs_seq\n    df = df.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        kind=\"mergesort\"  # stable sort to preserve any tie order deterministically\n    ).reset_index(drop=True)\n\n    # Forward-fill rate within each account_id group (carry never crosses accounts)\n    grouped = df.groupby(\"account_id\", sort=False)[\"rate\"]\n    rate_filled = grouped.ffill()\n\n    # was_carried = 1 if original rate was NULL but a carried-forward value exists\n    was_carried = ((df[\"rate\"].isna()) & (rate_filled.notna())).astype(\"int64\")\n\n    out = pd.DataFrame({\n        \"account_id\": df[\"account_id\"],\n        \"obs_seq\": df[\"obs_seq\"],\n        \"obs_date\": df[\"obs_date\"],\n        \"rate_filled\": rate_filled,\n        \"was_carried\": was_carried,\n    })\n\n    return {\"rate_filled\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 774,
+   "tokens_out": 1017,
+   "usd": 0.017577,
+   "wall_s": 10.096062183380127
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3096,
+  "tokens_out": 3401,
+  "usd": 0.060302999999999995,
+  "wall_s": 35.21890377998352
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

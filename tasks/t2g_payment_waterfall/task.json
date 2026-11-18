@@ -1,0 +1,9 @@
+{
+  "id": "t2g_payment_waterfall",
+  "category": "T2",
+  "tier": 3,
+  "description": "Payment allocation waterfall: each payment pays the customer's oldest open invoices first, with partial allocations and unapplied credit",
+  "legacy_artifact": "legacy_artifact.sql",
+  "target": "pandas (PySpark in full benchmark)",
+  "set": "confirmation"
+}

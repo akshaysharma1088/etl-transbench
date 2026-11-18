@@ -1,0 +1,47 @@
+{
+ "config": "A1_trace_only",
+ "rep": 3,
+ "task": "t7e_shortcircuit_parse_dedupe",
+ "category": "T7",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import re\nimport pandas as pd\nfrom datetime import datetime\n\n\n_AMOUNT_RE = re.compile(r'^[+-]?\\d+(\\.\\d{1,2})?$')\n_DATE_RE = re.compile(r'^\\d{4}-\\d{2}-\\d{2}$')\n\n_VALID_CURRENCIES = {'USD', 'EUR', 'GBP'}\n\n\ndef _is_missing(val):\n    return val is None or (isinstance(val, float) and pd.isna(val)) or pd.isna(val)\n\n\ndef _trim(val):\n    return val.strip()\n\n\ndef run(inputs: dict) -> dict:\n    raw = inputs['raw_payments']\n\n    valid_rows = []\n    reject_rows = []\n\n    # Keep track of rows that passed R1-R5, to apply R6 afterwards.\n    passed_rows = []\n\n    for _, row in raw.iterrows():\n        row_num = row['row_num']\n        payment_id = row['payment_id']\n        account_id = row['account_id']\n        amount_txt = row['amount_txt']\n        currency = row['currency']\n        pay_date_txt = row['pay_date_txt']\n\n        # R1 MISSING_ID\n        if _is_missing(payment_id):\n            reject_rows.append((row_num, 'MISSING_ID'))\n            continue\n        pid_str = str(payment_id)\n        trimmed_id = _trim(pid_str)\n        if trimmed_id == '':\n            reject_rows.append((row_num, 'MISSING_ID'))\n            continue\n\n        # R2 BAD_AMOUNT\n        if _is_missing(amount_txt):\n            reject_rows.append((row_num, 'BAD_AMOUNT'))\n            continue\n        amt_str = str(amount_txt)\n        trimmed_amt = _trim(amt_str)\n        if not _AMOUNT_RE.match(trimmed_amt):\n            reject_rows.append((row_num, 'BAD_AMOUNT'))\n            continue\n        parsed_amount = float(trimmed_amt)\n\n        # R3 NON_POSITIVE\n        if parsed_amount <= 0:\n            reject_rows.append((row_num, 'NON_POSITIVE'))\n            continue\n\n        # R4 BAD_CURRENCY\n        if _is_missing(currency):\n            reject_rows.append((row_num, 'BAD_CURRENCY'))\n            continue\n        cur_str = str(currency)\n        trimmed_cur = _trim(cur_str).upper()\n        if trimmed_cur not in _VALID_CURRENCIES:\n            reject_rows.append((row_num, 'BAD_CURRENCY'))\n            continue\n\n        # R5 BAD_DATE\n        if _is_missing(pay_date_txt):\n            reject_rows.append((row_num, 'BAD_DATE'))\n            continue\n        date_str = str(pay_date_txt)\n        trimmed_date = _trim(date_str)\n        if not _DATE_RE.match(trimmed_date):\n            reject_rows.append((row_num, 'BAD_DATE'))\n            continue\n        try:\n            parsed_date = datetime.strptime(trimmed_date, '%Y-%m-%d').date()\n        except ValueError:\n            reject_rows.append((row_num, 'BAD_DATE'))\n            continue\n\n        # Passed R1-R5; defer R6 (duplicate) decision.\n        passed_rows.append({\n            'row_num': row_num,\n            'payment_id': trimmed_id,\n            'account_id': account_id,\n            'amount': parsed_amount,\n            'currency': trimmed_cur,\n            'pay_date': parsed_date,\n        })\n\n    # R6 DUPLICATE: group by trimmed payment_id, keep lowest row_num.\n    if passed_rows:\n        passed_df = pd.DataFrame(passed_rows)\n        passed_df = passed_df.sort_values('row_num')\n        min_row_per_id = passed_df.groupby('payment_id')['row_num'].transform('min')\n        is_valid = passed_df['row_num'] == min_row_per_id\n\n        valid_df_rows = passed_df[is_valid]\n        dup_df_rows = passed_df[~is_valid]\n\n        for _, r in valid_df_rows.iterrows():\n            valid_rows.append({\n                'payment_id': r['payment_id'],\n                'account_id': r['account_id'],\n                'amount': r['amount'],\n                'currency': r['currency'],\n                'pay_date': r['pay_date'],\n            })\n\n        for _, r in dup_df_rows.iterrows():\n            reject_rows.append((r['row_num'], 'DUPLICATE'))\n\n    valid_payments = pd.DataFrame(\n        valid_rows,\n        columns=['payment_id', 'account_id', 'amount', 'currency', 'pay_date']\n    )\n\n    payment_rejects = pd.DataFrame(\n        reject_rows,\n        columns=['row_num', 'reject_reason']\n    )\n    if not payment_rejects.empty:\n        payment_rejects = payment_rejects.sort_values('row_num').reset_index(drop=True)\n\n    return {\n        'valid_payments': valid_payments,\n        'payment_rejects': payment_rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1100,
+   "tokens_out": 2270,
+   "usd": 0.03735,
+   "wall_s": 18.266003131866455
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

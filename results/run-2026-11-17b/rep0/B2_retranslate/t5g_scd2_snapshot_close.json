@@ -1,0 +1,67 @@
+{
+ "config": "B2_retranslate",
+ "rep": 0,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _null_safe_eq(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return True\n    if a_null or b_null:\n        return False\n    return a == b\n\n\ndef run(inputs: dict) -> dict:\n    dim_store = inputs[\"DIM_STORE\"].copy()\n    stg = inputs[\"STG_STORE_FULL\"].copy()\n    batch_control = inputs[\"BATCH_CONTROL\"].copy()\n\n    # exactly one row expected\n    b = batch_control[\"batch_date\"].iloc[0]\n\n    # distinct store_id, region, format from the snapshot (dedupe exact duplicates)\n    S = stg[[\"store_id\", \"region\", \"format\"]].drop_duplicates()\n\n    # map store_id -> (region, format, index) for current rows\n    current_mask = dim_store[\"is_current\"] == 1\n    current_rows = dim_store[current_mask]\n\n    current_map = {}\n    for idx, row in current_rows.iterrows():\n        current_map[row[\"store_id\"]] = (row[\"region\"], row[\"format\"], idx)\n\n    new_rows = []\n    close_indices = set()\n    processed_store_ids = set()\n\n    for _, s in S.iterrows():\n        sid = s[\"store_id\"]\n        s_region = s[\"region\"]\n        s_format = s[\"format\"]\n        processed_store_ids.add(sid)\n\n        if sid in current_map:\n            c_region, c_format, c_idx = current_map[sid]\n            differs = (not _null_safe_eq(c_region, s_region)) or (\n                not _null_safe_eq(c_format, s_format)\n            )\n            if differs:\n                close_indices.add(c_idx)\n                new_rows.append(\n                    {\n                        \"store_id\": sid,\n                        \"region\": s_region,\n                        \"format\": s_format,\n                        \"eff_start_date\": b,\n                        \"eff_end_date\": pd.NaT,\n                        \"is_current\": 1,\n                    }\n                )\n            # else: attributes match -> no-op, no new version\n        else:\n            # brand-new store OR reopened store: always gets a new version\n            new_rows.append(\n                {\n                    \"store_id\": sid,\n                    \"region\": s_region,\n                    \"format\": s_format,\n                    \"eff_start_date\": b,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            )\n\n    # Close current rows for store_ids not present in the snapshot (store closed)\n    for sid, (region, fmt, idx) in current_map.items():\n        if sid not in processed_store_ids:\n            close_indices.add(idx)\n\n    if close_indices:\n        idx_list = list(close_indices)\n        dim_store.loc[idx_list, \"eff_end_date\"] = b\n        dim_store.loc[idx_list, \"is_current\"] = 0\n\n    if new_rows:\n        new_df = pd.DataFrame(\n            new_rows,\n            columns=[\n                \"store_id\",\n                \"region\",\n                \"format\",\n                \"eff_start_date\",\n                \"eff_end_date\",\n                \"is_current\",\n            ],\n        )\n        dim_store_out = pd.concat([dim_store, new_df], ignore_index=True)\n    else:\n        dim_store_out = dim_store.reset_index(drop=True)\n\n    return {\"dim_store_out\": dim_store_out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1094,
+   "tokens_out": 2998,
+   "usd": 0.048252,
+   "wall_s": 24.479207515716553
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4376,
+  "tokens_out": 12316,
+  "usd": 0.197868,
+  "wall_s": 109.51322722434998
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

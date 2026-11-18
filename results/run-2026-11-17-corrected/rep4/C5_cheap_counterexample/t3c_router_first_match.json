@@ -1,0 +1,53 @@
+{
+ "config": "C5_cheap_counterexample",
+ "rep": 4,
+ "task": "t3c_router_first_match",
+ "category": "T3",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Router with ordered first-match rules.\n    Rules are evaluated in order; a row goes to the FIRST matching port only.\n    Unmatched rows go to the default port.\n    \"\"\"\n    claims = inputs[\"claims\"].copy()\n    \n    # Initialize output lists\n    claims_fast_track = []\n    claims_high_value = []\n    claims_manual_review = []\n    \n    # Track which rows have been matched using a boolean Series\n    matched = pd.Series([False] * len(claims), index=claims.index)\n    \n    # Rule 1: amount <= 500 and photos_attached == 1 \u2192 fast_track\n    mask1 = (claims[\"amount\"] <= 500) & (claims[\"photos_attached\"] == 1)\n    claims_fast_track.append(claims[mask1 & ~matched])\n    matched = matched | mask1\n    \n    # Rule 2: amount > 10000 \u2192 high_value\n    mask2 = (claims[\"amount\"] > 10000)\n    claims_high_value.append(claims[mask2 & ~matched])\n    matched = matched | mask2\n    \n    # Rule 3: photos_attached == 0 or amount > 500 \u2192 manual_review\n    mask3 = ((claims[\"photos_attached\"] == 0) | (claims[\"amount\"] > 500))\n    claims_manual_review.append(claims[mask3 & ~matched])\n    matched = matched | mask3\n    \n    # Concatenate results, handling empty dataframes\n    result_fast_track = pd.concat(claims_fast_track, ignore_index=True) if claims_fast_track else pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    result_high_value = pd.concat(claims_high_value, ignore_index=True) if claims_high_value else pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    result_manual_review = pd.concat(claims_manual_review, ignore_index=True) if claims_manual_review else pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    \n    # Ensure correct data types and column order\n    if not result_fast_track.empty:\n        result_fast_track = result_fast_track[[\"claim_id\", \"amount\", \"photos_attached\"]]\n    else:\n        result_fast_track = pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    \n    if not result_high_value.empty:\n        result_high_value = result_high_value[[\"claim_id\", \"amount\", \"photos_attached\"]]\n    else:\n        result_high_value = pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    \n    if not result_manual_review.empty:\n        result_manual_review = result_manual_review[[\"claim_id\", \"amount\", \"photos_attached\"]]\n    else:\n        result_manual_review = pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    \n    return {\n        \"claims_fast_track\": result_fast_track,\n        \"claims_high_value\": result_high_value,\n        \"claims_manual_review\": result_manual_review\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 593,
+   "tokens_out": 921,
+   "usd": 0.005198,
+   "wall_s": 7.099088668823242,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1755,
+  "tokens_out": 1039,
+  "usd": 0.00695,
+  "wall_s": 6.881920099258423
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

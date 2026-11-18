@@ -1,0 +1,48 @@
+{
+ "config": "L2_cx_patch_then_fresh",
+ "rep": 0,
+ "task": "t8b_delete_reinsert_cdc",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"]\n    events = inputs[\"cdc_events\"]\n    watermark = inputs[\"watermark\"]\n\n    # Determine watermark high_ts\n    if len(watermark) > 0 and pd.notna(watermark[\"high_ts\"].iloc[0]):\n        high_ts = watermark[\"high_ts\"].iloc[0]\n    else:\n        high_ts = pd.Timestamp.min\n\n    # Only events strictly after the watermark are new and need to be applied\n    new_events = events[events[\"event_ts\"] > high_ts].copy()\n\n    # Apply events sequentially per item in (event_ts, event_seq) order\n    new_events = new_events.sort_values(\n        by=[\"event_ts\", \"event_seq\"], kind=\"mergesort\"\n    )\n\n    # Build initial state from target_snapshot\n    state = {}\n    for _, row in target.iterrows():\n        state[row[\"item_id\"]] = {\n            \"qty_on_hand\": float(row[\"qty_on_hand\"]),\n            \"last_event_ts\": row[\"last_event_ts\"],\n        }\n\n    for _, row in new_events.iterrows():\n        item_id = row[\"item_id\"]\n        op = row[\"op\"]\n        qty = row[\"qty\"]\n        ts = row[\"event_ts\"]\n\n        if op == \"R\":\n            # Receipt: accumulate qty; if item doesn't exist, (re)create starting from 0\n            if item_id in state:\n                state[item_id][\"qty_on_hand\"] = state[item_id][\"qty_on_hand\"] + qty\n            else:\n                state[item_id] = {\"qty_on_hand\": 0.0 + qty, \"last_event_ts\": ts}\n            state[item_id][\"last_event_ts\"] = ts\n        elif op == \"A\":\n            # Adjustment: absolute reset; (re)creates item if delisted/absent\n            state[item_id] = {\"qty_on_hand\": qty, \"last_event_ts\": ts}\n        elif op == \"D\":\n            # Delete: remove item from snapshot entirely\n            if item_id in state:\n                del state[item_id]\n        else:\n            # Unknown op codes are ignored (no-op) to be safe\n            continue\n\n    if state:\n        result = pd.DataFrame(\n            [\n                {\n                    \"item_id\": k,\n                    \"qty_on_hand\": v[\"qty_on_hand\"],\n                    \"last_event_ts\": v[\"last_event_ts\"],\n                }\n                for k, v in state.items()\n            ]\n        )\n    else:\n        result = pd.DataFrame(columns=[\"item_id\", \"qty_on_hand\", \"last_event_ts\"])\n\n    result[\"item_id\"] = result[\"item_id\"].astype(\"int64\")\n    result[\"qty_on_hand\"] = result[\"qty_on_hand\"].astype(\"float64\")\n    result[\"last_event_ts\"] = pd.to_datetime(result[\"last_event_ts\"]).astype(\n        \"datetime64[us]\"\n    )\n\n    return {\"new_snapshot\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 892,
+   "tokens_out": 2615,
+   "usd": 0.041901,
+   "wall_s": 21.90245294570923,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

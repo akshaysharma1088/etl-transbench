@@ -1,0 +1,17 @@
+{
+ "task": "t8d_soft_delete_tombstone",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\nfrom datetime import timedelta\n\ndef run(inputs: dict) -> dict:\n    target_snapshot = inputs[\"target_snapshot\"]\n    cdc_events = inputs[\"cdc_events\"]\n    watermark = inputs[\"watermark\"]\n\n    # Determine watermark high_ts\n    if len(watermark) == 0:\n        high_ts = pd.NaT\n    else:\n        high_ts = watermark[\"high_ts\"].iloc[0]\n\n    # Filter events strictly after watermark\n    if pd.isna(high_ts):\n        events = cdc_events.copy()\n    else:\n        events = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n\n    # Sort globally by (event_ts, event_seq) to apply sequentially\n    events = events.sort_values(by=[\"event_ts\", \"event_seq\"], kind=\"mergesort\")\n\n    # Build initial state from target_snapshot\n    state = {}\n    for _, row in target_snapshot.iterrows():\n        state[row[\"user_id\"]] = {\n            \"email\": row[\"email\"],\n            \"status\": row[\"status\"],\n            \"status_ts\": row[\"status_ts\"],\n        }\n\n    seven_days = timedelta(days=7)\n\n    for _, ev in events.iterrows():\n        uid = ev[\"user_id\"]\n        op = ev[\"op\"]\n        ts = ev[\"event_ts\"]\n        ev_email = ev[\"email\"]\n\n        if op == \"U\":\n            if uid not in state or state[uid][\"status\"] == \"ACTIVE\":\n                state[uid] = {\n                    \"email\": ev_email,\n                    \"status\": \"ACTIVE\",\n                    \"status_ts\": ts,\n                }\n            elif state[uid][\"status\"] == \"DELETED\":\n                delta = ts - state[uid][\"status_ts\"]\n                if delta > seven_days:\n                    state[uid] = {\n                        \"email\": ev_email,\n                        \"status\": \"ACTIVE\",\n                        \"status_ts\": ts,\n                    }\n                # else: discard (sticky deletion window)\n            else:\n                # unexpected status, treat as upsert\n                state[uid] = {\n                    \"email\": ev_email,\n                    \"status\": \"ACTIVE\",\n                    \"status_ts\": ts,\n                }\n        elif op == \"D\":\n            if uid in state:\n                preserved_email = state[uid][\"email\"]\n            else:\n                preserved_email = ev_email\n            state[uid] = {\n                \"email\": preserved_email,\n                \"status\": \"DELETED\",\n                \"status_ts\": ts,\n            }\n\n    if state:\n        out_rows = []\n        for uid, info in state.items():\n            out_rows.append({\n                \"user_id\": uid,\n                \"email\": info[\"email\"],\n                \"status\": info[\"status\"],\n                \"status_ts\": info[\"status_ts\"],\n            })\n        new_snapshot = pd.DataFrame(out_rows, columns=[\"user_id\", \"email\", \"status\", \"status_ts\"])\n    else:\n        new_snapshot = pd.DataFrame(columns=[\"user_id\", \"email\", \"status\", \"status_ts\"])\n\n    new_snapshot[\"user_id\"] = new_snapshot[\"user_id\"].astype(\"int64\")\n    new_snapshot[\"status_ts\"] = pd.to_datetime(new_snapshot[\"status_ts\"])\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 824,
+   "tokens_out": 2226,
+   "usd": 0.035862,
+   "wall_s": 19.253580808639526,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

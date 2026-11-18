@@ -1,0 +1,66 @@
+{
+ "config": "B2_retranslate",
+ "rep": 1,
+ "task": "t4c_stale_snapshot",
+ "category": "T4",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    score_feed = inputs['score_feed']\n    score_snapshot = inputs['score_snapshot']\n\n    # Step 1: STG_CURR = GROUP BY account_id, AVG(score)\n    # SQL AVG ignores NULLs; pandas mean() with skipna=True (default) matches this.\n    stg_curr = (\n        score_feed\n        .groupby('account_id', as_index=False, dropna=False)['score']\n        .mean()\n        .rename(columns={'score': 'avg_score'})\n    )\n\n    # Step 2: DELTA computed against the PRE-UPDATE snapshot (score_snapshot as passed in)\n    merged = stg_curr.merge(\n        score_snapshot,\n        on='account_id',\n        how='left',\n        suffixes=('', '_prev'),\n    )\n\n    # COALESCE(p.avg_score, 0)\n    merged['avg_score_prev'] = merged['avg_score_prev'].fillna(0)\n\n    merged['score_delta'] = merged['avg_score'] - merged['avg_score_prev']\n\n    delta = merged[['account_id', 'score_delta']].copy()\n\n    # Step 3: SCORE_SNAPSHOT is replaced wholesale with STG_CURR (post-update state)\n    new_snapshot = stg_curr[['account_id', 'avg_score']].copy()\n\n    return {\n        'delta': delta,\n        'score_snapshot': new_snapshot,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 421,
+   "tokens_out": 676,
+   "usd": 0.003801,
+   "wall_s": 4.434579372406006
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2596,
+  "tokens_out": 3945,
+  "usd": 0.066963,
+  "wall_s": 35.43133473396301
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

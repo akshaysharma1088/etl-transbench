@@ -1,0 +1,48 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 2,
+ "task": "t3d_dedup_null_group",
+ "category": "T3",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy ETL: sort \u2192 dedup(keep LAST) \u2192 aggregate with NULL group preservation\n    \"\"\"\n    # Source\n    df = inputs[\"meter_reads\"].copy()\n    \n    # Sort by meter_id ASC, read_ts ASC, read_seq ASC\n    df = df.sort_values(\n        by=[\"meter_id\", \"read_ts\", \"read_seq\"],\n        ascending=[True, True, True],\n        na_position=\"last\"\n    )\n    \n    # Dedup: keep LAST row per meter_id\n    # After sorting, groupby + tail(1) gives us the last row per key\n    df = df.groupby(\"meter_id\", dropna=False).tail(1)\n    \n    # Aggregate: group by zone (treating NULL as a real group), sum kwh, count rows\n    df = df.groupby(\"zone\", dropna=False, as_index=False).agg({\n        \"kwh\": \"sum\",\n        \"meter_id\": \"count\"\n    })\n    \n    # Rename columns to match output schema\n    df = df.rename(columns={\"kwh\": \"total_kwh\", \"meter_id\": \"meter_count\"})\n    \n    # Ensure column order\n    df = df[[\"zone\", \"total_kwh\", \"meter_count\"]]\n    \n    return {\"zone_totals\": df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 537,
+   "tokens_out": 372,
+   "usd": 0.002397,
+   "wall_s": 3.7338058948516846,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

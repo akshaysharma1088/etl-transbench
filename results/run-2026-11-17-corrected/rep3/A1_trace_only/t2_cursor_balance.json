@@ -1,0 +1,48 @@
+{
+ "config": "A1_trace_only",
+ "rep": 3,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"transactions\"].copy()\n\n    df = df.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    filled_amount = df[\"amount\"].fillna(0.0)\n\n    running_balance = (\n        filled_amount.groupby(df[\"account_id\"], sort=False).cumsum()\n    )\n\n    overdraft_flag = (running_balance < 0).astype(\"int64\")\n\n    result = pd.DataFrame({\n        \"account_id\": df[\"account_id\"],\n        \"txn_seq\": df[\"txn_seq\"],\n        \"txn_date\": df[\"txn_date\"],\n        \"amount\": df[\"amount\"],\n        \"running_balance\": running_balance,\n        \"overdraft_flag\": overdraft_flag,\n    })\n\n    return {\"acct_balance_flags\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 787,
+   "tokens_out": 412,
+   "usd": 0.008541,
+   "wall_s": 4.045820236206055,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

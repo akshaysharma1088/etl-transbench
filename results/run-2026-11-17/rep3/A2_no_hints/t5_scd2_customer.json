@@ -1,0 +1,66 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, \"pandas.DataFrame\"]) -> dict[str, \"pandas.DataFrame\"]:\n    dim = inputs[\"DIM_CUSTOMER\"].copy()\n    stg = inputs[\"STG_CUSTOMER\"].copy()\n\n    # Ensure the dim frame has the expected columns even if empty.\n    cols = [\"customer_id\", \"name\", \"segment\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    for c in cols:\n        if c not in dim.columns:\n            dim[c] = pd.Series(dtype=\"object\")\n    dim = dim[cols].copy()\n\n    # --- Step 1: Deduplicate STG_CUSTOMER to latest record per customer_id ---\n    # Sort by update_date DESC, then by (name, segment) DESC (lexicographic),\n    # tie-break keeps the \"greater\" pair first, then drop duplicates keeping first.\n    if len(stg) > 0:\n        stg_sorted = stg.sort_values(\n            by=[\"customer_id\", \"update_date\", \"name\", \"segment\"],\n            ascending=[True, False, False, False],\n            kind=\"mergesort\",\n        )\n        stg_dedup = stg_sorted.drop_duplicates(subset=[\"customer_id\"], keep=\"first\").copy()\n    else:\n        stg_dedup = stg.copy()\n\n    # Reset index for stable iteration\n    stg_dedup = stg_dedup.reset_index(drop=True)\n\n    # Work on a list of dicts for dim rows to allow easy mutation/append,\n    # preserving original dtype behavior as much as possible.\n    dim_records = dim.to_dict(\"records\")\n\n    def is_null(v):\n        return pd.isna(v)\n\n    def values_equal(a, b):\n        a_null = is_null(a)\n        b_null = is_null(b)\n        if a_null and b_null:\n            return True\n        if a_null != b_null:\n            return False\n        return a == b\n\n    # Build an index: customer_id -> list of indices in dim_records where is_current == 1\n    # (should be at most one per customer_id, but handle gracefully)\n    def find_current_index(customer_id):\n        for idx, rec in enumerate(dim_records):\n            if rec[\"customer_id\"] == customer_id and rec.get(\"is_current\") == 1:\n                return idx\n        return None\n\n    for _, s in stg_dedup.iterrows():\n        cust_id = s[\"customer_id\"]\n        s_name = s[\"name\"]\n        s_segment = s[\"segment\"]\n        s_update_date = s[\"update_date\"]\n\n        cur_idx = find_current_index(cust_id)\n\n        if cur_idx is None:\n            # No current row exists -> insert new row\n            dim_records.append({\n                \"customer_id\": cust_id,\n                \"name\": s_name,\n                \"segment\": s_segment,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": None,\n                \"is_current\": 1,\n            })\n        else:\n            c = dim_records[cur_idx]\n            name_changed = not values_equal(c[\"name\"], s_name)\n            segment_changed = not values_equal(c[\"segment\"], s_segment)\n\n            if name_changed or segment_changed:\n                # Expire current row\n                dim_records[cur_idx][\"eff_end_date\"] = s_update_date\n                dim_records[cur_idx][\"is_current\"] = 0\n\n                # Insert new current row\n                dim_records.append({\n                    \"customer_id\": cust_id,\n                    \"name\": s_name,\n                    \"segment\": s_segment,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": None,\n                    \"is_current\": 1,\n                })\n            # else: no change, do nothing\n\n    result = pd.DataFrame(dim_records, columns=cols)\n\n    return {\"dim_customer_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 962,
+   "tokens_out": 3252,
+   "usd": 0.051666,
+   "wall_s": 29.85469675064087
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 7605,
+  "tokens_out": 10942,
+  "usd": 0.186945,
+  "wall_s": 96.24993538856506
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

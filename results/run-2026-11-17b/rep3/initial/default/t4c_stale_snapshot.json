@@ -1,0 +1,16 @@
+{
+ "task": "t4c_stale_snapshot",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces the legacy multi-step batch job with step-order semantics.\n    \n    Step 1: Create STG_CURR by aggregating score_feed\n    Step 2: Create DELTA by joining STG_CURR against OLD SCORE_SNAPSHOT\n    Step 3: Update SCORE_SNAPSHOT with new data\n    \n    Critical: DELTA is computed BEFORE the snapshot is updated.\n    \"\"\"\n    \n    # Extract inputs\n    score_feed = inputs.get('score_feed', pd.DataFrame()).copy()\n    score_snapshot = inputs.get('score_snapshot', pd.DataFrame()).copy()\n    \n    # Step 1: CREATE STG_CURR\n    # SELECT account_id, AVG(score) AS avg_score FROM score_feed GROUP BY account_id\n    if len(score_feed) > 0:\n        stg_curr = score_feed.groupby('account_id', as_index=False)['score'].mean()\n        stg_curr.columns = ['account_id', 'avg_score']\n    else:\n        stg_curr = pd.DataFrame(columns=['account_id', 'avg_score'])\n    \n    # Step 2: CREATE DELTA\n    # LEFT JOIN STG_CURR against the OLD snapshot (before update)\n    # SELECT c.account_id, c.avg_score - COALESCE(p.avg_score, 0) AS score_delta\n    delta = stg_curr.merge(\n        score_snapshot[['account_id', 'avg_score']].rename(columns={'avg_score': 'old_avg_score'}),\n        on='account_id',\n        how='left'\n    )\n    # COALESCE(p.avg_score, 0) - fill NaN with 0\n    delta['old_avg_score'] = delta['old_avg_score'].fillna(0)\n    delta['score_delta'] = delta['avg_score'] - delta['old_avg_score']\n    delta = delta[['account_id', 'score_delta']]\n    \n    # Step 3: DELETE FROM SCORE_SNAPSHOT; INSERT INTO SCORE_SNAPSHOT\n    # Replace snapshot with new data from STG_CURR\n    new_score_snapshot = stg_curr[['account_id', 'avg_score']].copy()\n    \n    return {\n        'delta': delta,\n        'score_snapshot': new_score_snapshot\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 421,
+   "tokens_out": 622,
+   "usd": 0.003531,
+   "wall_s": 3.9926059246063232
+  }
+ ]
+}

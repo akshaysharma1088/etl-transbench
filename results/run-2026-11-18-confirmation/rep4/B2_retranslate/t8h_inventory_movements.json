@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 4,
+ "task": "t8h_inventory_movements",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    stock_balance = inputs[\"stock_balance\"]\n    applied_movements = inputs[\"applied_movements\"]\n    movements = inputs[\"movements\"]\n\n    # Build balance dict keyed by (sku, warehouse)\n    balances = {}\n    for _, row in stock_balance.iterrows():\n        key = (row[\"sku\"], row[\"warehouse\"])\n        balances[key] = int(row[\"on_hand\"])\n\n    # Set of already-applied movement ids\n    applied_set = set(applied_movements[\"movement_id\"].tolist())\n\n    # Track keys that had at least one movement applied in this run\n    touched_keys = set()\n\n    # Track newly applied movement ids (this run)\n    newly_applied = set()\n\n    rejects = []\n\n    # Sort movements by movement_ts, then line_no\n    mv = movements.sort_values(by=[\"movement_ts\", \"line_no\"], kind=\"mergesort\")\n\n    for _, row in mv.iterrows():\n        movement_id = row[\"movement_id\"]\n        line_no = row[\"line_no\"]\n        sku = row[\"sku\"]\n        warehouse = row[\"warehouse\"]\n        qty = int(row[\"qty\"])\n\n        # Skip if already applied (from input or earlier in this run)\n        if movement_id in applied_set:\n            continue\n\n        key = (sku, warehouse)\n        current = balances.get(key, 0)\n\n        if current + qty < 0:\n            rejects.append({\"line_no\": line_no, \"reason\": \"INSUFFICIENT_STOCK\"})\n            continue\n        else:\n            new_val = current + qty\n            balances[key] = new_val\n            applied_set.add(movement_id)\n            newly_applied.add(movement_id)\n            touched_keys.add(key)\n\n    # Build new_balance: all original keys plus touched keys\n    all_keys = set(balances.keys())\n    new_balance_rows = []\n    for key in all_keys:\n        sku, warehouse = key\n        new_balance_rows.append({\n            \"sku\": sku,\n            \"warehouse\": warehouse,\n            \"on_hand\": balances[key],\n        })\n\n    new_balance = pd.DataFrame(new_balance_rows, columns=[\"sku\", \"warehouse\", \"on_hand\"])\n\n    # applied_out: union of original applied_movements and newly applied movement_ids\n    applied_out_set = set(applied_movements[\"movement_id\"].tolist()) | newly_applied\n    applied_out = pd.DataFrame({\"movement_id\": sorted(applied_out_set)})\n\n    # movement_rejects\n    movement_rejects = pd.DataFrame(rejects, columns=[\"line_no\", \"reason\"])\n\n    return {\n        \"new_balance\": new_balance,\n        \"applied_out\": applied_out,\n        \"movement_rejects\": movement_rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1127,
+   "tokens_out": 1236,
+   "usd": 0.021921,
+   "wall_s": 10.298387289047241,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

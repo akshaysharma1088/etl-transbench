@@ -1,0 +1,48 @@
+{
+ "config": "B1_single_pass",
+ "rep": 3,
+ "task": "t5d_asof_reconstruction",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    hist = inputs[\"dim_emp_hist\"]\n    queries = inputs[\"asof_queries\"]\n\n    # Merge on emp_id (cartesian within same emp_id)\n    merged = queries.merge(hist, on=\"emp_id\", how=\"inner\", suffixes=(\"\", \"_h\"))\n\n    # Apply half-open interval condition\n    cond_start = merged[\"as_of_date\"] >= merged[\"eff_start_date\"]\n    cond_end = merged[\"eff_end_date\"].isna() | (merged[\"as_of_date\"] < merged[\"eff_end_date\"])\n\n    result = merged[cond_start & cond_end]\n\n    result = result[[\"query_id\", \"emp_id\", \"dept\", \"grade\"]].reset_index(drop=True)\n\n    return {\"asof_result\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 879,
+   "tokens_out": 411,
+   "usd": 0.008802,
+   "wall_s": 5.260408163070679,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

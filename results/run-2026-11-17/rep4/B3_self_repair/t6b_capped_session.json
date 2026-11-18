@@ -1,0 +1,46 @@
+{
+ "config": "B3_self_repair",
+ "rep": 4,
+ "task": "t6b_capped_session",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"events\"].copy()\n\n    # --- Type coercion -----------------------------------------------------\n    # event_ts must be a proper datetime for arithmetic/comparison semantics\n    df[\"event_ts\"] = pd.to_datetime(df[\"event_ts\"], errors=\"coerce\")\n\n    # --- Ordering ------------------------------------------------------------\n    # Order by user_id, then event_ts, then event_id (tie-breaker),\n    # using a stable sort so duplicate keys keep deterministic relative order.\n    df = df.sort_values(\n        by=[\"user_id\", \"event_ts\", \"event_id\"],\n        kind=\"mergesort\",\n        na_position=\"last\",\n    ).reset_index(drop=True)\n\n    gap_threshold = pd.Timedelta(minutes=20)\n    cap_threshold = pd.Timedelta(hours=4)\n\n    results = []\n\n    # Group by user_id, preserving the sorted order within each group.\n    for user_id, group in df.groupby(\"user_id\", sort=False):\n        session_num = 0\n        session_start = None\n        session_end = None\n        prev_ts = None\n        count = 0\n\n        for _, row in group.iterrows():\n            ts = row[\"event_ts\"]\n\n            if session_start is None:\n                # First event for this user -> starts first session\n                session_num += 1\n                session_start = ts\n                session_end = ts\n                count = 1\n            else:\n                new_session = False\n\n                # Condition (a): inactivity gap strictly > 20 minutes\n                if pd.isna(ts) or pd.isna(prev_ts):\n                    # Treat NaT gaps conservatively as not matching the\n                    # existing session's known boundaries -> breaks session\n                    new_session = True\n                else:\n                    gap = ts - prev_ts\n                    if gap > gap_threshold:\n                        new_session = True\n\n                # Condition (b): hard cap from the *current* session start\n                if not new_session:\n                    if pd.isna(ts) or pd.isna(session_start):\n                        new_session = True\n                    else:\n                        elapsed = ts - session_start\n                        if elapsed > cap_threshold:\n                            new_session = True\n\n                if new_session:\n                    # Close out the previous session\n                    results.append(\n                        {\n                            \"user_id\": user_id,\n                            \"session_num\": session_num,\n                            \"session_start\": session_start,\n                            \"session_end\": session_end,\n                            \"event_count\": count,\n                        }\n                    )\n                    # Start a new session anchored at this event\n                    session_num += 1\n                    session_start = ts\n                    session_end = ts\n                    count = 1\n                else:\n                    session_end = ts\n                    count += 1\n\n            prev_ts = ts\n\n        # Append the final open session for this user\n        if session_start is not None:\n            results.append(\n                {\n                    \"user_id\": user_id,\n                    \"session_num\": session_num,\n                    \"session_start\": session_start,\n                    \"session_end\": session_end,\n                    \"event_count\": count,\n                }\n            )\n\n    out = pd.DataFrame(\n        results,\n        columns=[\n            \"user_id\",\n            \"session_num\",\n            \"session_start\",\n            \"session_end\",\n            \"event_count\",\n        ],\n    )\n\n    return {\"user_sessions\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 528,
+   "tokens_out": 2164,
+   "usd": 0.034044,
+   "wall_s": 18.46118140220642
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

@@ -1,0 +1,17 @@
+{
+ "task": "t6d_channel_interleave",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Per-(user, channel) independent sessionization over interleaved streams.\n    \n    Sessions are defined by a 25-minute STRICT gap rule applied WITHIN each\n    (user_id, channel) stream separately. Events are ordered by (event_ts, event_id)\n    within each (user_id, channel) group.\n    \n    Output: channel_sessions with columns:\n      - user_id: int64\n      - channel: str\n      - session_num: int64 (1-based per user+channel)\n      - session_start: datetime64[us]\n      - session_end: datetime64[us]\n      - event_count: int64\n    \"\"\"\n    \n    events = inputs[\"events\"].copy()\n    \n    # Sort by (user_id, channel, event_ts, event_id)\n    events = events.sort_values(\n        by=[\"user_id\", \"channel\", \"event_ts\", \"event_id\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Group by (user_id, channel) and apply sessionization\n    def sessionize_group(group):\n        \"\"\"\n        Within a (user_id, channel) group, assign session numbers based on\n        25-minute gaps (1500 seconds).\n        \"\"\"\n        # Initialize session assignment\n        group = group.reset_index(drop=True)\n        session_nums = [1]  # First event is in session 1\n        \n        gap_threshold = pd.Timedelta(minutes=25)\n        \n        for i in range(1, len(group)):\n            prev_ts = group.loc[i - 1, \"event_ts\"]\n            curr_ts = group.loc[i, \"event_ts\"]\n            \n            # Check if gap exceeds threshold (strict gap rule)\n            if pd.isna(prev_ts) or pd.isna(curr_ts):\n                # Handle nulls: treat as no gap (same session)\n                session_nums.append(session_nums[-1])\n            elif curr_ts - prev_ts > gap_threshold:\n                # New session\n                session_nums.append(session_nums[-1] + 1)\n            else:\n                # Same session\n                session_nums.append(session_nums[-1])\n        \n        group[\"session_num\"] = session_nums\n        return group\n    \n    events = events.groupby([\"user_id\", \"channel\"], group_keys=False).apply(\n        sessionize_group\n    ).reset_index(drop=True)\n    \n    # Aggregate to create channel_sessions\n    channel_sessions = events.groupby(\n        [\"user_id\", \"channel\", \"session_num\"],\n        as_index=False\n    ).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    )\n    \n    # Ensure columns are in the correct order\n    channel_sessions = channel_sessions[\n        [\"user_id\", \"channel\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]\n    ]\n    \n    return {\"channel_sessions\": channel_sessions}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 351,
+   "tokens_out": 809,
+   "usd": 0.004396,
+   "wall_s": 5.680577993392944,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

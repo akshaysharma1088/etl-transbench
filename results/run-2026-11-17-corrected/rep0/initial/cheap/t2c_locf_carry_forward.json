@@ -1,0 +1,17 @@
+{
+ "task": "t2c_locf_carry_forward",
+ "group": "cheap",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy SP_RATE_CARRY_FWD cursor logic with LOCF (Last Observation Carried Forward)\n    that respects account boundaries.\n    \n    Key semantics:\n    - Sort by account_id, obs_date, obs_seq\n    - Within each account, carry forward last non-null rate\n    - Carry NEVER crosses account boundaries\n    - Leading nulls in an account stay null with carried=0\n    - If rate is not null: carried=0, otherwise carried=1 if last_rate exists else 0\n    \"\"\"\n    \n    rate_feed = inputs[\"rate_feed\"].copy()\n    \n    # Sort by account_id, obs_date, obs_seq to match cursor ordering\n    rate_feed = rate_feed.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Initialize output columns\n    rate_filled = rate_feed.copy()\n    rate_filled[\"rate_filled\"] = np.nan\n    rate_filled[\"was_carried\"] = 0\n    \n    # Group by account_id and process each account separately\n    for account_id, group_indices in rate_feed.groupby(\"account_id\", sort=False).groups.items():\n        # Process rows in this account in order\n        last_rate = None\n        \n        for idx in group_indices:\n            row_rate = rate_feed.loc[idx, \"rate\"]\n            \n            # Determine filled rate and carried flag\n            if pd.notna(row_rate):\n                # Rate is not null\n                filled_rate = row_rate\n                was_carried = 0\n                last_rate = row_rate\n            else:\n                # Rate is null\n                if last_rate is not None:\n                    filled_rate = last_rate\n                    was_carried = 1\n                else:\n                    filled_rate = np.nan\n                    was_carried = 0\n            \n            # Update output row\n            rate_filled.loc[idx, \"rate_filled\"] = filled_rate\n            rate_filled.loc[idx, \"was_carried\"] = was_carried\n    \n    # Ensure was_carried is int type (SMALLINT equivalent)\n    rate_filled[\"was_carried\"] = rate_filled[\"was_carried\"].astype(\"int64\")\n    \n    # Select only the output columns in the specified order\n    result = rate_filled[[\"account_id\", \"obs_seq\", \"obs_date\", \"rate_filled\", \"was_carried\"]]\n    \n    return {\"rate_filled\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 574,
+   "tokens_out": 670,
+   "usd": 0.003924,
+   "wall_s": 6.069341659545898,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

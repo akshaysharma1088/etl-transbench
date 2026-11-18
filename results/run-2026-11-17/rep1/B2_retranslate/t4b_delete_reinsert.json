@@ -1,0 +1,66 @@
+{
+ "config": "B2_retranslate",
+ "rep": 1,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    inbound = inputs[\"inbound\"]\n    target_snapshot = inputs[\"target_snapshot\"]\n\n    # Step 1: build STG_NEW\n    filtered = inbound[inbound[\"qty\"] > 0]\n\n    stg_new = (\n        filtered.groupby([\"product_id\", \"batch_date\"], as_index=False, dropna=False)\n        .agg(\n            total_qty=(\"qty\", \"sum\"),\n            max_unit_cost=(\"unit_cost\", \"max\"),\n        )\n    )\n\n    # Ensure column order matches target\n    stg_new = stg_new[[\"product_id\", \"batch_date\", \"total_qty\", \"max_unit_cost\"]]\n\n    # Step 2: delete from target_snapshot where batch_date in distinct batch_dates of stg_new\n    arriving_dates = set(stg_new[\"batch_date\"].dropna().unique())\n\n    if arriving_dates:\n        survivors = target_snapshot[~target_snapshot[\"batch_date\"].isin(arriving_dates)]\n    else:\n        survivors = target_snapshot.copy()\n\n    # Step 3: insert stg_new rows\n    result = pd.concat([survivors, stg_new], ignore_index=True)\n\n    return {\"target_snapshot\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 678,
+   "usd": 0.003788,
+   "wall_s": 4.595280647277832
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2624,
+  "tokens_out": 4183,
+  "usd": 0.07061699999999999,
+  "wall_s": 36.18068742752075
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

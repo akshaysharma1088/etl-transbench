@@ -1,0 +1,48 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 4,
+ "task": "t7_reject_validation",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    payments = inputs[\"payments\"].copy()\n    \n    # Initialize columns for tracking\n    payments[\"reason_code\"] = None\n    payments[\"rejected\"] = False\n    \n    # R1: amount IS NULL -> reason_code 'AMT_NULL'\n    mask_r1 = payments[\"amount\"].isna()\n    payments.loc[mask_r1, \"reason_code\"] = \"AMT_NULL\"\n    payments.loc[mask_r1, \"rejected\"] = True\n    \n    # R2: amount <= 0 -> reason_code 'AMT_NONPOS' (only if not already rejected)\n    mask_r2 = (~payments[\"rejected\"]) & (payments[\"amount\"] <= 0)\n    payments.loc[mask_r2, \"reason_code\"] = \"AMT_NONPOS\"\n    payments.loc[mask_r2, \"rejected\"] = True\n    \n    # R3: currency NOT IN ('USD','EUR','GBP') -> reason_code 'CCY_INVALID'\n    # (only if not already rejected)\n    mask_r3 = (~payments[\"rejected\"]) & (~payments[\"currency\"].isin([\"USD\", \"EUR\", \"GBP\"]))\n    payments.loc[mask_r3, \"reason_code\"] = \"CCY_INVALID\"\n    payments.loc[mask_r3, \"rejected\"] = True\n    \n    # R4: country IS NULL -> reason_code 'CTRY_NULL'\n    # (only if not already rejected)\n    mask_r4 = (~payments[\"rejected\"]) & (payments[\"country\"].isna())\n    payments.loc[mask_r4, \"reason_code\"] = \"CTRY_NULL\"\n    payments.loc[mask_r4, \"rejected\"] = True\n    \n    # Split into clean and reject\n    payments_clean_df = payments[~payments[\"rejected\"]].copy()\n    payments_rejects_df = payments[payments[\"rejected\"]].copy()\n    \n    # For clean records: round amount to 2 decimals\n    if len(payments_clean_df) > 0:\n        payments_clean_df[\"amount\"] = payments_clean_df[\"amount\"].round(2)\n    \n    # Remove tracking columns\n    payments_clean_df = payments_clean_df[[\"payment_id\", \"amount\", \"currency\", \"country\"]]\n    payments_rejects_df = payments_rejects_df[[\"payment_id\", \"amount\", \"currency\", \"country\", \"reason_code\"]]\n    \n    return {\n        \"payments_clean\": payments_clean_df,\n        \"payments_rejects\": payments_rejects_df\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 415,
+   "tokens_out": 674,
+   "usd": 0.003785,
+   "wall_s": 3.7147254943847656,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

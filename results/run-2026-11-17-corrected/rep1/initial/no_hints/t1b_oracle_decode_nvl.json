@@ -1,0 +1,17 @@
+{
+ "task": "t1b_oracle_decode_nvl",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    regional_txn = inputs[\"regional_txn\"]\n    \n    # Filter for status = 'POSTED'\n    df = regional_txn[regional_txn[\"status\"] == \"POSTED\"].copy()\n    \n    # Create txn_month by truncating to month start\n    # TRUNC(txn_ts, 'MM') in Oracle truncates timestamp to first day of month\n    df[\"txn_month\"] = df[\"txn_ts\"].dt.to_period(\"M\").dt.to_timestamp()\n    \n    # Create region_norm using DECODE logic\n    # DECODE(region, NULL, 'MISSING', 'XX', 'UNKNOWN', region)\n    # This matches NULL to 'MISSING', 'XX' to 'UNKNOWN', otherwise returns region\n    def decode_region(region):\n        if pd.isna(region):\n            return \"MISSING\"\n        elif region == \"XX\":\n            return \"UNKNOWN\"\n        else:\n            return region\n    \n    df[\"region_norm\"] = df[\"region\"].apply(decode_region)\n    \n    # Create total_amount using NVL logic\n    # NVL(amount, 0) - replace NULL amounts with 0\n    df[\"amount_normalized\"] = df[\"amount\"].fillna(0)\n    \n    # Group by txn_month and region_norm, then aggregate\n    grouped = df.groupby([\"txn_month\", \"region_norm\"], as_index=False).agg(\n        total_amount=(\"amount_normalized\", \"sum\"),\n        txn_count=(\"txn_id\", \"count\")\n    )\n    \n    # Rename for output\n    result = grouped.rename(columns={\n        \"txn_month\": \"txn_month\",\n        \"region_norm\": \"region_norm\",\n        \"total_amount\": \"total_amount\",\n        \"txn_count\": \"txn_count\"\n    })\n    \n    return {\"monthly_region_rollup\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 449,
+   "tokens_out": 518,
+   "usd": 0.003039,
+   "wall_s": 4.496082305908203,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

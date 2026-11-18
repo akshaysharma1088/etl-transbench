@@ -1,0 +1,56 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    events = inputs['events'].copy()\n\n    # Ensure proper dtypes\n    events['event_ts'] = pd.to_datetime(events['event_ts'])\n    events = events.sort_values(['user_id', 'channel', 'event_ts', 'event_id'],\n                                 kind='mergesort').reset_index(drop=True)\n\n    records = []\n\n    for (user_id, channel), grp in events.groupby(['user_id', 'channel'], sort=False):\n        grp = grp.sort_values(['event_ts', 'event_id'], kind='mergesort').reset_index(drop=True)\n\n        session_num = 0\n        session_start = None\n        session_end = None\n        event_count = 0\n        prev_ts = None\n\n        for _, row in grp.iterrows():\n            ts = row['event_ts']\n\n            if prev_ts is None:\n                session_num += 1\n                session_start = ts\n                session_end = ts\n                event_count = 1\n            else:\n                gap = (ts - prev_ts).total_seconds() / 60.0\n                if gap > 25:\n                    # close previous session\n                    records.append({\n                        'user_id': user_id,\n                        'channel': channel,\n                        'session_num': session_num,\n                        'session_start': session_start,\n                        'session_end': session_end,\n                        'event_count': event_count\n                    })\n                    session_num += 1\n                    session_start = ts\n                    session_end = ts\n                    event_count = 1\n                else:\n                    session_end = ts\n                    event_count += 1\n\n            prev_ts = ts\n\n        if prev_ts is not None:\n            records.append({\n                'user_id': user_id,\n                'channel': channel,\n                'session_num': session_num,\n                'session_start': session_start,\n                'session_end': session_end,\n                'event_count': event_count\n            })\n\n    result = pd.DataFrame(records, columns=[\n        'user_id', 'channel', 'session_num', 'session_start', 'session_end', 'event_count'\n    ])\n\n    return {'channel_sessions': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 299,
+   "tokens_out": 621,
+   "usd": 0.003404,
+   "wall_s": 4.213189363479614
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2905,
+  "tokens_out": 4760,
+  "usd": 0.080115,
+  "wall_s": 53.251450300216675
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

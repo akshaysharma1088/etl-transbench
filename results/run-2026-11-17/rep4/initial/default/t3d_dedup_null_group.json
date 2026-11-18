@@ -1,0 +1,16 @@
+{
+ "task": "t3d_dedup_null_group",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    # Extract input relation\n    df = inputs[\"meter_reads\"].copy()\n    \n    # Step 1: Sort by meter_id ASC, read_ts ASC, read_seq ASC\n    df = df.sort_values(by=[\"meter_id\", \"read_ts\", \"read_seq\"], ascending=[True, True, True])\n    \n    # Step 2: Dedup - keep LAST row per meter_id\n    # This means for each meter_id, we keep the last occurrence after sorting\n    df = df.drop_duplicates(subset=[\"meter_id\"], keep=\"last\")\n    \n    # Step 3: Aggregate by zone\n    # Group by zone (including NULL zones as a separate group)\n    # Compute SUM(kwh) and COUNT(*)\n    agg_dict = {\n        \"kwh\": \"sum\",\n        \"meter_id\": \"count\"\n    }\n    \n    df_agg = df.groupby(\"zone\", as_index=False, dropna=False).agg({\n        \"kwh\": \"sum\",\n        \"meter_id\": \"count\"\n    })\n    \n    # Rename columns to match output schema\n    df_agg = df_agg.rename(columns={\n        \"kwh\": \"total_kwh\",\n        \"meter_id\": \"meter_count\"\n    })\n    \n    # Reorder columns to match expected output: zone, total_kwh, meter_count\n    df_agg = df_agg[[\"zone\", \"total_kwh\", \"meter_count\"]]\n    \n    return {\"zone_totals\": df_agg}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 477,
+   "tokens_out": 424,
+   "usd": 0.002597,
+   "wall_s": 3.137129306793213
+  }
+ ]
+}

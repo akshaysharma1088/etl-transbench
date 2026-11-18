@@ -1,0 +1,48 @@
+{
+ "config": "L3_summary_patch_then_fresh",
+ "rep": 1,
+ "task": "t3_dataflow_orders",
+ "category": "T3",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    # Step 1: Filter orders with status == 'SHIPPED'\n    orders = inputs[\"orders\"]\n    filtered = orders[orders[\"status\"] == \"SHIPPED\"].copy()\n    \n    # Step 2: Lookup customers to get region\n    customers = inputs[\"customers\"]\n    # Perform left join on customer_id\n    enriched = filtered.merge(\n        customers[[\"customer_id\", \"region\"]],\n        on=\"customer_id\",\n        how=\"left\"\n    )\n    # Fill missing regions with \"UNKNOWN\"\n    enriched[\"region\"] = enriched[\"region\"].fillna(\"UNKNOWN\")\n    \n    # Step 3: Reformat - compute net_amount\n    # NULL discount treated as 0 by legacy reformat component\n    enriched[\"discount\"] = enriched[\"discount\"].fillna(0)\n    enriched[\"net_amount\"] = enriched[\"qty\"] * enriched[\"unit_price\"] * (1 - enriched[\"discount\"])\n    \n    # Step 4: Select output columns in specified order\n    output_columns = [\"order_id\", \"customer_id\", \"region\", \"qty\", \"unit_price\", \"net_amount\"]\n    result = enriched[output_columns].copy()\n    \n    return {\"shipped_orders_enriched\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 525,
+   "tokens_out": 343,
+   "usd": 0.00224,
+   "wall_s": 2.3499605655670166,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

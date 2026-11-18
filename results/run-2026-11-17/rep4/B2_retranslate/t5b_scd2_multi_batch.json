@@ -1,0 +1,66 @@
+{
+ "config": "B2_retranslate",
+ "rep": 4,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_null(v):\n    return v is None or (isinstance(v, float) and pd.isna(v)) or pd.isna(v)\n\n\ndef _differs(a, b):\n    an = _is_null(a)\n    bn = _is_null(b)\n    if an and bn:\n        return False\n    if an != bn:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_PRODUCT\"].copy()\n    stg = inputs[\"STG_PRODUCT\"].copy()\n\n    # Preserve original dtypes for reconstruction\n    cols = [\"product_id\", \"category\", \"price_band\", \"eff_start_date\",\n            \"eff_end_date\", \"is_current\"]\n\n    rows = dim.to_dict(\"records\")\n\n    # Map product_id -> index of current row (is_current == 1)\n    current_idx = {}\n    for i, r in enumerate(rows):\n        if r.get(\"is_current\") == 1 or r.get(\"is_current\") == 1.0:\n            current_idx[r[\"product_id\"]] = i\n\n    # Sort staged records by product_id, update_date ascending (stable)\n    stg_sorted = stg.sort_values(\n        by=[\"product_id\", \"update_date\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    for s in stg_sorted.itertuples(index=False):\n        pid = s.product_id\n        s_category = s.category\n        s_price_band = s.price_band\n        s_update_date = s.update_date\n\n        if pid not in current_idx:\n            new_row = {\n                \"product_id\": pid,\n                \"category\": s_category,\n                \"price_band\": s_price_band,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": None,\n                \"is_current\": 1,\n            }\n            rows.append(new_row)\n            current_idx[pid] = len(rows) - 1\n        else:\n            c = rows[current_idx[pid]]\n            changed = (\n                _differs(c.get(\"category\"), s_category)\n                or _differs(c.get(\"price_band\"), s_price_band)\n            )\n            if changed:\n                c[\"eff_end_date\"] = s_update_date\n                c[\"is_current\"] = 0\n\n                new_row = {\n                    \"product_id\": pid,\n                    \"category\": s_category,\n                    \"price_band\": s_price_band,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": None,\n                    \"is_current\": 1,\n                }\n                rows.append(new_row)\n                current_idx[pid] = len(rows) - 1\n            # else: no-op, unchanged record, no new version\n\n    out = pd.DataFrame(rows, columns=cols)\n\n    # Try to align dtypes with the original DIM_PRODUCT where possible\n    for col in cols:\n        if col in dim.columns:\n            try:\n                out[col] = out[col].astype(dim[col].dtype)\n            except (TypeError, ValueError):\n                pass\n\n    return {\"dim_product_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 833,
+   "tokens_out": 2530,
+   "usd": 0.040449,
+   "wall_s": 22.489020824432373
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3332,
+  "tokens_out": 10717,
+  "usd": 0.17075100000000001,
+  "wall_s": 97.36471033096313
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

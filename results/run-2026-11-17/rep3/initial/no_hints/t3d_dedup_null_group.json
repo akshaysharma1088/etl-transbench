@@ -1,0 +1,16 @@
+{
+ "task": "t3d_dedup_null_group",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces the legacy ETL pipeline:\n    1. Sort by meter_id ASC, read_ts ASC, read_seq ASC\n    2. Dedup keeping LAST row per meter_id\n    3. Aggregate by zone (including NULL as a group)\n    4. Output zone totals\n    \"\"\"\n    \n    # src: read the input meter_reads\n    df = inputs['meter_reads'].copy()\n    \n    # srt: sort by meter_id, read_ts, read_seq (all ascending)\n    # Handle NaNs/NULLs by placing them at the end for ASC sort\n    sort_cols = ['meter_id', 'read_ts', 'read_seq']\n    \n    # For proper NULL handling in sort, we need to handle each column\n    # pandas sorts NaN to the end by default for numeric/datetime, \n    # and NaN handling for objects depends on implementation\n    df = df.sort_values(\n        by=sort_cols,\n        na_position='last',\n        ignore_index=False\n    )\n    \n    # ddp: dedup - keep LAST row per meter_id\n    # This means for each unique meter_id value, keep only the last occurrence\n    # in the sorted stream\n    df = df.drop_duplicates(\n        subset=['meter_id'],\n        keep='last',\n        ignore_index=False\n    )\n    \n    # agg: aggregate by zone\n    # Group by zone (NULL zone is treated as a real group)\n    # Compute SUM(kwh) and COUNT(*)\n    agg_result = df.groupby(\n        by=['zone'],\n        dropna=False  # Preserve NULL zone as a group\n    ).agg({\n        'kwh': 'sum',\n    }).reset_index()\n    \n    # Add the meter count\n    meter_count = df.groupby(\n        by=['zone'],\n        dropna=False\n    ).size().reset_index(name='meter_count')\n    \n    # Merge aggregation results\n    result = agg_result.merge(\n        meter_count,\n        on=['zone'],\n        how='left'\n    )\n    \n    # Rename columns to match output schema\n    result = result.rename(columns={'kwh': 'total_kwh'})\n    \n    # Ensure column order matches output specification\n    result = result[['zone', 'total_kwh', 'meter_count']]\n    \n    # Reset index to clean output\n    result = result.reset_index(drop=True)\n    \n    return {'zone_totals': result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 477,
+   "tokens_out": 669,
+   "usd": 0.003822,
+   "wall_s": 5.246892929077148
+  }
+ ]
+}

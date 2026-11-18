@@ -1,0 +1,46 @@
+{
+ "config": "B1_single_pass",
+ "rep": 0,
+ "task": "t3d_dedup_null_group",
+ "category": "T3",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces the legacy ETL pipeline:\n    1. Sort by meter_id ASC, read_ts ASC, read_seq ASC\n    2. Dedup keeping LAST row per meter_id\n    3. Aggregate by zone (including NULL as a real group), summing kwh and counting meters\n    4. Output zone_totals with columns: zone, total_kwh, meter_count\n    \"\"\"\n    \n    # Read input\n    meter_reads = inputs[\"meter_reads\"].copy()\n    \n    # Step 1: Sort\n    meter_reads = meter_reads.sort_values(\n        by=[\"meter_id\", \"read_ts\", \"read_seq\"],\n        ascending=[True, True, True],\n        na_position=\"last\"\n    )\n    \n    # Step 2: Dedup - keep LAST row per meter_id\n    # Reset index to get clean indexing, then drop_duplicates with keep='last'\n    meter_reads = meter_reads.reset_index(drop=True)\n    deduped = meter_reads.drop_duplicates(subset=[\"meter_id\"], keep=\"last\")\n    \n    # Step 3: Aggregate by zone (treating NULL zone as a real group)\n    # Group by zone (NULL values are kept as separate group by default in pandas)\n    agg_result = deduped.groupby(\"zone\", dropna=False).agg(\n        total_kwh=(\"kwh\", \"sum\"),\n        meter_count=(\"*\", \"size\")\n    ).reset_index()\n    \n    # Rename the \"*\" aggregation result\n    agg_result = agg_result.rename(columns={\"*\": \"meter_count\"})\n    \n    # Ensure correct column order and types\n    zone_totals = agg_result[[\"zone\", \"total_kwh\", \"meter_count\"]].copy()\n    \n    return {\"zone_totals\": zone_totals}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 477,
+   "tokens_out": 957,
+   "usd": 0.005262,
+   "wall_s": 5.95686936378479
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

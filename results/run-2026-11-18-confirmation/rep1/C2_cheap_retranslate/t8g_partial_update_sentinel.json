@@ -1,0 +1,68 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 1,
+ "task": "t8g_partial_update_sentinel",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "cheap",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    customer_profile = inputs[\"customer_profile\"].copy()\n    profile_changes = inputs[\"profile_changes\"].copy()\n    \n    # Ensure proper types\n    customer_profile[\"customer_id\"] = customer_profile[\"customer_id\"].astype(\"int64\")\n    customer_profile[\"updated_seq\"] = customer_profile[\"updated_seq\"].astype(\"int64\")\n    profile_changes[\"change_seq\"] = profile_changes[\"change_seq\"].astype(\"int64\")\n    profile_changes[\"customer_id\"] = profile_changes[\"customer_id\"].astype(\"int64\")\n    \n    # Convert NaN to None for string columns to handle nulls properly\n    for col in [\"email\", \"phone\", \"tier\"]:\n        if col in customer_profile.columns:\n            customer_profile[col] = customer_profile[col].where(pd.notna(customer_profile[col]), None)\n        if col in profile_changes.columns:\n            profile_changes[col] = profile_changes[col].where(pd.notna(profile_changes[col]), None)\n    \n    # Build result dictionary: customer_id -> (email, phone, tier, updated_seq)\n    result = {}\n    \n    # Initialize from customer_profile\n    for _, row in customer_profile.iterrows():\n        cid = row[\"customer_id\"]\n        result[cid] = {\n            \"email\": row[\"email\"],\n            \"phone\": row[\"phone\"],\n            \"tier\": row[\"tier\"],\n            \"updated_seq\": row[\"updated_seq\"]\n        }\n    \n    # Apply changes in order of change_seq\n    profile_changes_sorted = profile_changes.sort_values(\"change_seq\").reset_index(drop=True)\n    \n    for _, change_row in profile_changes_sorted.iterrows():\n        cid = change_row[\"customer_id\"]\n        change_seq = change_row[\"change_seq\"]\n        \n        # Check if customer exists and if we should skip this change\n        if cid in result:\n            if change_seq <= result[cid][\"updated_seq\"]:\n                # Skip: change_seq is not greater than updated_seq\n                continue\n            \n            # Customer exists; apply the change\n            old_email = result[cid][\"email\"]\n            old_phone = result[cid][\"phone\"]\n            old_tier = result[cid][\"tier\"]\n            \n            new_email = old_email\n            new_phone = old_phone\n            new_tier = old_tier\n            \n            # Apply field rules\n            if change_row[\"email\"] is not None:\n                if change_row[\"email\"] == \"<<NULL>>\":\n                    new_email = None\n                else:\n                    new_email = change_row[\"email\"].lower().strip()\n            \n            if change_row[\"phone\"] is not None:\n                if change_row[\"phone\"] == \"<<NULL>>\":\n                    new_phone = None\n                else:\n                    new_phone = change_row[\"phone\"]\n            \n            if change_row[\"tier\"] is not None:\n                if change_row[\"tier\"] == \"<<NULL>>\":\n                    new_tier = None\n                else:\n                    new_tier = change_row[\"tier\"]\n            \n            # Check if row is identical (no-op check with NULL-safe comparison)\n            is_identical = (\n                (old_email == new_email or (old_email is None and new_email is None)) and\n                (old_phone == new_phone or (old_phone is None and new_phone is None)) and\n                (old_tier == new_tier or (old_tier is None and new_tier is None))\n            )\n            \n            if not is_identical:\n                result[cid][\"email\"] = new_email\n                result[cid][\"phone\"] = new_phone\n                result[cid][\"tier\"] = new_tier\n                result[cid][\"updated_seq\"] = change_seq\n            # If identical (no-op), do not update updated_seq\n        else:\n            # Customer does not exist; create new row\n            new_email = None\n            new_phone = None\n            new_tier = None\n            \n            # Apply field rules\n            if change_row[\"email\"] is not None and change_row[\"email\"] != \"<<NULL>>\":\n                new_email = change_row[\"email\"].lower().strip()\n            \n            if change_row[\"phone\"] is not None and change_row[\"phone\"] != \"<<NULL>>\":\n                new_phone = change_row[\"phone\"]\n            \n            if change_row[\"tier\"] is not None and change_row[\"tier\"] != \"<<NULL>>\":\n                new_tier = change_row[\"tier\"]\n            \n            result[cid] = {\n                \"email\": new_email,\n                \"phone\": new_phone,\n                \"tier\": new_tier,\n                \"updated_seq\": change_seq\n            }\n    \n    # Build output DataFrame\n    output_rows = []\n    for cid in sorted(result.keys()):\n        output_rows.append({\n            \"customer_id\": cid,\n            \"email\": result[cid][\"email\"],\n            \"phone\": result[cid][\"phone\"],\n            \"tier\": result[cid][\"tier\"],\n            \"updated_seq\": result[cid][\"updated_seq\"]\n        })\n    \n    new_profile = pd.DataFrame(output_rows)\n    \n    # Ensure proper column order and types\n    new_profile = new_profile[[\"customer_id\", \"email\", \"phone\", \"tier\", \"updated_seq\"]]\n    new_profile[\"customer_id\"] = new_profile[\"customer_id\"].astype(\"int64\")\n    new_profile[\"updated_seq\"] = new_profile[\"updated_seq\"].astype(\"int64\")\n    new_profile[\"email\"] = new_profile[\"email\"].astype(\"object\")\n    new_profile[\"phone\"] = new_profile[\"phone\"].astype(\"object\")\n    new_profile[\"tier\"] = new_profile[\"tier\"].astype(\"object\")\n    \n    return {\"new_profile\": new_profile}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 717,
+   "tokens_out": 1235,
+   "usd": 0.006892,
+   "wall_s": 7.478826999664307,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2868,
+  "tokens_out": 6015,
+  "usd": 0.032943,
+  "wall_s": 33.748528718948364
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

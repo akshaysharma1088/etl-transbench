@@ -1,0 +1,52 @@
+{
+ "config": "A1_trace_only",
+ "rep": 1,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _sig(city, tier):\n    \"\"\"Compute the legacy row signature for (city, tier).\n\n    SIG(city, tier) = RTRIM(COALESCE(city, '')) || '|' || RTRIM(COALESCE(tier, ''))\n    NULL and '' are treated the same; trailing spaces are stripped;\n    leading spaces and case are preserved; delimiter is not escaped.\n    \"\"\"\n    c = '' if pd.isna(city) else str(city)\n    t = '' if pd.isna(tier) else str(tier)\n    return c.rstrip(' ') + '|' + t.rstrip(' ')\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    \"\"\"Look up an input DataFrame by name, tolerant of case differences.\"\"\"\n    if name in inputs:\n        return inputs[name]\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    key = lower_map.get(name.lower())\n    if key is not None:\n        return inputs[key]\n    raise KeyError(name)\n\n\ndef run(inputs: dict) -> dict:\n    dim = _get_input(inputs, 'DIM_MEMBER').copy()\n    stg = _get_input(inputs, 'STG_MEMBER').copy()\n\n    new_rows = []\n\n    for _, s in stg.iterrows():\n        mid = s['member_id']\n\n        # Find the current row for this member_id (at most one expected).\n        mask = (dim['member_id'] == mid) & (dim['is_current'] == 1)\n        idx = dim.index[mask]\n\n        if len(idx) == 0:\n            # No current row -> insert new version exactly as staged.\n            new_rows.append({\n                'member_id': mid,\n                'city': s['city'],\n                'tier': s['tier'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n        else:\n            i = idx[0]\n            c_city = dim.at[i, 'city']\n            c_tier = dim.at[i, 'tier']\n\n            if _sig(s['city'], s['tier']) != _sig(c_city, c_tier):\n                # Change detected: close the prior current row.\n                dim.at[i, 'eff_end_date'] = s['update_date']\n                dim.at[i, 'is_current'] = 0\n\n                # Insert the new current version exactly as staged.\n                new_rows.append({\n                    'member_id': mid,\n                    'city': s['city'],\n                    'tier': s['tier'],\n                    'eff_start_date': s['update_date'],\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                })\n            # else: signatures match -> no-op, prior row untouched.\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=dim.columns)\n        out = pd.concat([dim, new_df], ignore_index=True)\n    else:\n        out = dim\n\n    return {'dim_member_out': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1114,
+   "tokens_out": 2859,
+   "usd": 0.046227,
+   "wall_s": 25.765127897262573
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2347,
+  "tokens_out": 1122,
+  "usd": 0.023871,
+  "wall_s": 8.644178628921509
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

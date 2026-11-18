@@ -1,0 +1,48 @@
+{
+ "config": "L3_summary_patch_then_fresh",
+ "rep": 3,
+ "task": "t3e_effective_lookup_route",
+ "category": "T3",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _norm(s):\n    if pd.isna(s):\n        return None\n    return str(s).strip().upper()\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy().reset_index(drop=True)\n    price_list = inputs[\"price_list\"].copy()\n\n    orders[\"_row_id\"] = orders.index\n\n    # expression: sku_norm\n    orders[\"sku_norm\"] = orders[\"sku\"].apply(_norm)\n    price_list = price_list.copy()\n    price_list[\"sku_norm_pl\"] = price_list[\"sku\"].apply(_norm)\n\n    # lookup: merge on normalized sku (NaN keys never match, mirroring NULL semantics)\n    merged = orders.merge(\n        price_list,\n        left_on=\"sku_norm\",\n        right_on=\"sku_norm_pl\",\n        how=\"left\",\n        suffixes=(\"\", \"_pl\"),\n    )\n\n    cond = (\n        merged[\"valid_from\"].notna()\n        & merged[\"order_date\"].notna()\n        & (merged[\"valid_from\"] <= merged[\"order_date\"])\n        & merged[\"sku_norm\"].notna()\n    )\n    candidates = merged[cond].copy()\n\n    # tie-break: greatest valid_from, then lowest list_id\n    candidates = candidates.sort_values(\n        by=[\"_row_id\", \"valid_from\", \"list_id\"],\n        ascending=[True, False, True],\n    )\n    best = candidates.drop_duplicates(subset=\"_row_id\", keep=\"first\")\n\n    result = orders.merge(\n        best[[\"_row_id\", \"unit_price\", \"list_id\"]],\n        on=\"_row_id\",\n        how=\"left\",\n    )\n\n    result[\"price_flag\"] = np.where(result[\"unit_price\"].notna(), \"OK\", \"NO_PRICE\")\n    result[\"unit_price\"] = result[\"unit_price\"].fillna(0.0)\n\n    # expression: ext_amount (NULL qty -> NULL ext_amount, handled naturally by NaN propagation)\n    result[\"ext_amount\"] = result[\"qty\"] * result[\"unit_price\"]\n\n    # router: ordered rules, first true wins; NULL predicate is not true\n    def route_row(row):\n        qty = row[\"qty\"]\n        price_flag = row[\"price_flag\"]\n        ext_amount = row[\"ext_amount\"]\n\n        # Rule 1: REVIEW\n        cond1 = (price_flag == \"NO_PRICE\") or pd.isna(qty) or (not pd.isna(qty) and qty >= 100)\n        if cond1:\n            return \"REVIEW\"\n\n        # Rule 2: BULK\n        cond2 = (not pd.isna(ext_amount)) and (ext_amount >= 1000)\n        if cond2:\n            return \"BULK\"\n\n        # Rule 3: SMALL\n        cond3 = (not pd.isna(ext_amount)) and (ext_amount < 50)\n        if cond3:\n            return \"SMALL\"\n\n        return \"STANDARD\"\n\n    result[\"route\"] = result.apply(route_row, axis=1)\n\n    order_enriched = result[[\"order_id\", \"sku_norm\", \"unit_price\", \"route\"]].copy()\n\n    # aggregator: COUNT(*) and SUM(ext_amount) ignoring NULLs, all-NULL group -> 0\n    g = result.groupby([\"route\", \"order_date\"], dropna=False)\n    order_count = g.size().rename(\"order_count\")\n    total_ext = g[\"ext_amount\"].sum(min_count=0).rename(\"total_ext\")\n\n    route_daily = pd.concat([order_count, total_ext], axis=1).reset_index()\n    route_daily = route_daily[[\"route\", \"order_date\", \"order_count\", \"total_ext\"]]\n\n    return {\n        \"order_enriched\": order_enriched,\n        \"route_daily\": route_daily,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1518,
+   "tokens_out": 4347,
+   "usd": 0.069759,
+   "wall_s": 38.21492004394531,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

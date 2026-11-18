@@ -1,0 +1,175 @@
+{
+ "mode": "REAL",
+ "models_requested": {
+  "cheap": "claude-haiku-4-5-20251001",
+  "frontier": "claude-sonnet-5"
+ },
+ "models_resolved": {},
+ "temperature": "API default (1.0)",
+ "max_tokens": 16000,
+ "replies_cut_off_at_max_tokens": {},
+ "prices_usd_per_mtok": {
+  "cheap": {
+   "in": 1.0,
+   "out": 5.0
+  },
+  "frontier": {
+   "in": 3.0,
+   "out": 15.0
+  }
+ },
+ "reps": 5,
+ "configs": [
+  "L1_counterexample",
+  "L2_cx_patch_then_fresh",
+  "L3_summary_patch_then_fresh",
+  "C5_cheap_counterexample",
+  "C6_cheap_cx_patch_then_fresh",
+  "C7_cheap_summary_patch_then_fresh"
+ ],
+ "n_tasks": 40,
+ "tasks": [
+  "t1_dialect_qualify",
+  "t1b_oracle_decode_nvl",
+  "t1c_teradata_intdiv",
+  "t1d_tsql_top_ties",
+  "t2_cursor_balance",
+  "t2b_stmt_cycle_reset",
+  "t2c_locf_carry_forward",
+  "t2d_reject_skip_accum",
+  "t3_dataflow_orders",
+  "t3b_dup_lookup_first",
+  "t3c_router_first_match",
+  "t3d_dedup_null_group",
+  "t3e_effective_lookup_route",
+  "t4_multistep_sales",
+  "t4b_delete_reinsert",
+  "t4c_stale_snapshot",
+  "t4d_union_dedup_precedence",
+  "t5_scd2_customer",
+  "t5b_scd2_multi_batch",
+  "t5c_scd1_scd2_mixed",
+  "t5d_asof_reconstruction",
+  "t5e_scd2_late_arriving",
+  "t5f_scd2_hash_detect",
+  "t5g_scd2_snapshot_close",
+  "t5h_scd2_surrogate_pit",
+  "t6_sessionize_events",
+  "t6b_capped_session",
+  "t6c_midnight_split",
+  "t6d_channel_interleave",
+  "t6e_session_heartbeat_logout",
+  "t7_reject_validation",
+  "t7b_multi_reason_collect",
+  "t7c_crossfield_reference",
+  "t7d_quarantine_threshold",
+  "t7e_shortcircuit_parse_dedupe",
+  "t8_cdc_merge",
+  "t8b_delete_reinsert_cdc",
+  "t8c_out_of_order_late",
+  "t8d_soft_delete_tombstone",
+  "t8e_cdc_ops_replay"
+ ],
+ "python": "3.12.5",
+ "pandas": "3.1.1",
+ "numpy": "2.5.5",
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ],
+ "rep_stride": 1000,
+ "policies": {
+  "L1_counterexample": {
+   "max_iters": 5,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "counterexample",
+   "strategy": "patch",
+   "use_hints": true,
+   "fixed_tier": null
+  },
+  "L2_cx_patch_then_fresh": {
+   "max_iters": 5,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "counterexample",
+   "strategy": "patch_then_fresh",
+   "use_hints": true,
+   "fixed_tier": null
+  },
+  "L3_summary_patch_then_fresh": {
+   "max_iters": 5,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "full",
+   "strategy": "patch_then_fresh",
+   "use_hints": true,
+   "fixed_tier": null
+  },
+  "C5_cheap_counterexample": {
+   "max_iters": 5,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "counterexample",
+   "strategy": "patch",
+   "use_hints": true,
+   "fixed_tier": "cheap"
+  },
+  "C6_cheap_cx_patch_then_fresh": {
+   "max_iters": 5,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "counterexample",
+   "strategy": "patch_then_fresh",
+   "use_hints": true,
+   "fixed_tier": "cheap"
+  },
+  "C7_cheap_summary_patch_then_fresh": {
+   "max_iters": 5,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "full",
+   "strategy": "patch_then_fresh",
+   "use_hints": true,
+   "fixed_tier": "cheap"
+  }
+ },
+ "initial_groups": {
+  "L1_counterexample": "default",
+  "L2_cx_patch_then_fresh": "default",
+  "L3_summary_patch_then_fresh": "default",
+  "C5_cheap_counterexample": "cheap",
+  "C6_cheap_cx_patch_then_fresh": "cheap",
+  "C7_cheap_summary_patch_then_fresh": "cheap"
+ },
+ "prompts": {
+  "translator_system": "You translate legacy ETL artifacts into Python.\nOutput ONLY a Python module inside one ```python code fence. The module must\ndefine run(inputs: dict[str, pandas.DataFrame]) -> dict[str, pandas.DataFrame]\nthat reproduces the legacy semantics exactly, including null handling, type\ncoercion, duplicate keys, and tie-breaking. Do not invent columns. Do not\nread or write files. Use only pandas and the Python standard library.",
+  "repair_system": "You translate legacy ETL artifacts into Python.\nOutput ONLY a Python module inside one ```python code fence. The module must\ndefine run(inputs: dict[str, pandas.DataFrame]) -> dict[str, pandas.DataFrame]\nthat reproduces the legacy semantics exactly, including null handling, type\ncoercion, duplicate keys, and tie-breaking. Do not invent columns. Do not\nread or write files. Use only pandas and the Python standard library.\nYou will receive your previous code plus EXTERNAL verification evidence\n(error traces, schema diffs, mismatched keys, per-column mismatch counts)\nfrom differential execution against the legacy system. Fix the code. Address\nthe evidence specifically; do not weaken or reinterpret the requirements.",
+  "construct_hints": {
+   "T1": "Dialect SQL: QUALIFY filters on window results AFTER they are computed; replicate Teradata-style null sorting and integer division semantics explicitly.",
+   "T2": "Procedural logic: rewrite cursors/loops as set-oriented operations; preserve per-iteration state effects exactly.",
+   "T5": "SCD Type 2: close prior current rows (end_date, is_current=0) before inserting new versions; unchanged records must NOT create versions; compare tracked attributes only.",
+   "T8": "Incremental/CDC: respect the watermark, apply latest-record-wins per key by event time with deterministic tie-breaks, and make the merge idempotent."
+  }
+ }
+}

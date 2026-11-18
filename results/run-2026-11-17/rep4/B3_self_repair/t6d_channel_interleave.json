@@ -1,0 +1,46 @@
+{
+ "config": "B3_self_repair",
+ "rep": 4,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import datetime, timedelta\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize events per (user_id, channel) independently.\n    A 25-minute gap in the (user_id, channel) stream starts a new session.\n    \"\"\"\n    \n    # Assume input DataFrame is named 'events' with columns:\n    # user_id, channel, event_ts, event_id, ...\n    if 'events' not in inputs:\n        return {'channel_sessions': pd.DataFrame()}\n    \n    df = inputs['events'].copy()\n    \n    if df.empty:\n        return {'channel_sessions': pd.DataFrame(columns=[\n            'user_id', 'channel', 'session_num', 'session_start', 'session_end', 'event_count'\n        ])}\n    \n    # Ensure event_ts is datetime\n    if not pd.api.types.is_datetime64_any_dtype(df['event_ts']):\n        df['event_ts'] = pd.to_datetime(df['event_ts'])\n    \n    # Sort by (user_id, channel, event_ts, event_id)\n    df = df.sort_values(by=['user_id', 'channel', 'event_ts', 'event_id']).reset_index(drop=True)\n    \n    # Group by (user_id, channel)\n    sessions = []\n    gap_threshold = timedelta(minutes=25)\n    \n    for (user_id, channel), group in df.groupby(['user_id', 'channel'], sort=False):\n        group = group.reset_index(drop=True)\n        \n        # Initialize session tracking\n        session_num = 0\n        current_session_start = None\n        current_session_end = None\n        current_session_events = []\n        \n        for idx, row in group.iterrows():\n            event_ts = row['event_ts']\n            \n            if current_session_start is None:\n                # Start first session\n                session_num += 1\n                current_session_start = event_ts\n                current_session_end = event_ts\n                current_session_events = [row]\n            else:\n                # Check if event falls within 25-minute gap\n                time_diff = event_ts - current_session_end\n                \n                if time_diff <= gap_threshold:\n                    # Extend current session\n                    current_session_end = event_ts\n                    current_session_events.append(row)\n                else:\n                    # Save current session and start a new one\n                    sessions.append({\n                        'user_id': user_id,\n                        'channel': channel,\n                        'session_num': session_num,\n                        'session_start': current_session_start,\n                        'session_end': current_session_end,\n                        'event_count': len(current_session_events)\n                    })\n                    \n                    session_num += 1\n                    current_session_start = event_ts\n                    current_session_end = event_ts\n                    current_session_events = [row]\n        \n        # Save the last session\n        if current_session_events:\n            sessions.append({\n                'user_id': user_id,\n                'channel': channel,\n                'session_num': session_num,\n                'session_start': current_session_start,\n                'session_end': current_session_end,\n                'event_count': len(current_session_events)\n            })\n    \n    channel_sessions = pd.DataFrame(sessions)\n    \n    if not channel_sessions.empty:\n        # Ensure correct column order and types\n        channel_sessions = channel_sessions[[\n            'user_id', 'channel', 'session_num', 'session_start', 'session_end', 'event_count'\n        ]]\n        channel_sessions['session_num'] = channel_sessions['session_num'].astype('int64')\n        channel_sessions['event_count'] = channel_sessions['event_count'].astype('int64')\n    else:\n        channel_sessions = pd.DataFrame(columns=[\n            'user_id', 'channel', 'session_num', 'session_start', 'session_end', 'event_count'\n        ])\n    \n    return {'channel_sessions': channel_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 299,
+   "tokens_out": 1078,
+   "usd": 0.005689,
+   "wall_s": 6.219825506210327
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

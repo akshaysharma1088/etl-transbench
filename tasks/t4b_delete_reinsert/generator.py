@@ -27,4 +27,4 @@ def corpus(seed: int):
         "unit_cost": rng.uniform(2, 40, n).round(4),
     })
     inbound.loc[rng.random(n) < 0.04, "qty"] = 0.0   # boundary: excluded
-    return {"target_snapshot_prior": prior, "inbound": inbound}
+    return {"target_snapshot": prior, "inbound": inbound}

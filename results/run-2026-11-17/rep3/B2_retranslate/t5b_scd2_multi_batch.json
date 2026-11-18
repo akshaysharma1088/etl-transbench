@@ -1,0 +1,66 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _is_null(v):\n    return v is None or (isinstance(v, float) and np.isnan(v)) or v is pd.NaT or (pd.isna(v) if not isinstance(v, (list, tuple)) else False)\n\n\ndef _attr_changed(cur_val, stg_val):\n    cur_null = pd.isna(cur_val)\n    stg_null = pd.isna(stg_val)\n    if cur_null and stg_null:\n        return False\n    if cur_null != stg_null:\n        return True\n    return cur_val != stg_val\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_PRODUCT\"].copy()\n    stg = inputs[\"STG_PRODUCT\"].copy()\n\n    dim_cols = list(dim.columns)\n\n    # Build mutable list of records (as dicts) preserving original order/index\n    records = dim.to_dict(orient=\"records\")\n\n    # Map product_id -> index in `records` list for the current (is_current==1) row\n    current_index = {}\n    for idx, r in enumerate(records):\n        if r.get(\"is_current\") == 1:\n            pid = r[\"product_id\"]\n            # In case of unexpected duplicates, keep the first encountered as current\n            if pid not in current_index:\n                current_index[pid] = idx\n\n    # Sort staging rows by product_id, update_date ascending (cursor order)\n    stg_sorted = stg.sort_values(by=[\"product_id\", \"update_date\"], kind=\"mergesort\").reset_index(drop=True)\n\n    for _, s in stg_sorted.iterrows():\n        pid = s[\"product_id\"]\n        s_category = s[\"category\"]\n        s_price_band = s[\"price_band\"]\n        s_date = s[\"update_date\"]\n\n        if pid not in current_index:\n            # Insert new current version\n            new_row = {\n                \"product_id\": pid,\n                \"category\": s_category,\n                \"price_band\": s_price_band,\n                \"eff_start_date\": s_date,\n                \"eff_end_date\": None,\n                \"is_current\": 1,\n            }\n            records.append(new_row)\n            current_index[pid] = len(records) - 1\n        else:\n            cidx = current_index[pid]\n            c = records[cidx]\n\n            cat_changed = _attr_changed(c[\"category\"], s_category)\n            pb_changed = _attr_changed(c[\"price_band\"], s_price_band)\n\n            if cat_changed or pb_changed:\n                # Expire current row\n                records[cidx][\"eff_end_date\"] = s_date\n                records[cidx][\"is_current\"] = 0\n\n                # Insert new current version\n                new_row = {\n                    \"product_id\": pid,\n                    \"category\": s_category,\n                    \"price_band\": s_price_band,\n                    \"eff_start_date\": s_date,\n                    \"eff_end_date\": None,\n                    \"is_current\": 1,\n                }\n                records.append(new_row)\n                current_index[pid] = len(records) - 1\n            # else: no-op, unchanged\n\n    out_df = pd.DataFrame(records, columns=dim_cols)\n\n    # Attempt to coerce dtypes to match the original DIM_PRODUCT dtypes where possible\n    for col in dim_cols:\n        try:\n            out_df[col] = out_df[col].astype(dim[col].dtype)\n        except (ValueError, TypeError):\n            pass\n\n    return {\"dim_product_out\": out_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 833,
+   "tokens_out": 2089,
+   "usd": 0.033834,
+   "wall_s": 18.311525344848633
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3332,
+  "tokens_out": 9337,
+  "usd": 0.150051,
+  "wall_s": 82.83690762519836
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

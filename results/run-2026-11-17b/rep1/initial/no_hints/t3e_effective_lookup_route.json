@@ -1,0 +1,16 @@
+{
+ "task": "t3e_effective_lookup_route",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "```python\nimport pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    price_list = inputs[\"price_list\"].copy()\n\n    # ------------------------------------------------------------------\n    # exp: sku_norm = UPPER(TRIM(sku))  (NULL sku -> NULL sku_norm)\n    # ------------------------------------------------------------------\n    orders[\"sku_norm\"] = orders[\"sku\"].str.strip().str.upper()\n\n    # keep track of original row order\n    orders = orders.reset_index(drop=False).rename(columns={\"index\": \"_orig_idx\"})\n\n    # ------------------------------------------------------------------\n    # lkp: effective-dated lookup with tie-break\n    # ------------------------------------------------------------------\n    pl = price_list[[\"list_id\", \"sku\", \"unit_price\", \"valid_from\"]].cop",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1407,
+   "tokens_out": 4000,
+   "usd": 0.064221,
+   "wall_s": 37.77445650100708
+  }
+ ]
+}

@@ -1,0 +1,17 @@
+{
+ "task": "t3d_dedup_null_group",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    # Load source\n    df = inputs[\"meter_reads\"].copy()\n    \n    # Sort by meter_id ASC, read_ts ASC, read_seq ASC\n    df = df.sort_values(\n        by=[\"meter_id\", \"read_ts\", \"read_seq\"],\n        ascending=[True, True, True],\n        na_position=\"last\"\n    )\n    \n    # Dedup: keep LAST row per meter_id (which is the latest after sorting)\n    df = df.drop_duplicates(subset=[\"meter_id\"], keep=\"last\")\n    \n    # Aggregate by zone (NULL zone is treated as a real group)\n    # group_by on zone (which may contain NaN), aggregate kwh with SUM and count rows\n    agg_result = df.groupby(\"zone\", dropna=False).agg(\n        total_kwh=(\"kwh\", \"sum\"),\n        meter_count=(\"meter_id\", \"count\")\n    ).reset_index()\n    \n    # Ensure column order: zone, total_kwh, meter_count\n    agg_result = agg_result[[\"zone\", \"total_kwh\", \"meter_count\"]]\n    \n    return {\"zone_totals\": agg_result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 537,
+   "tokens_out": 336,
+   "usd": 0.002217,
+   "wall_s": 3.3194336891174316,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

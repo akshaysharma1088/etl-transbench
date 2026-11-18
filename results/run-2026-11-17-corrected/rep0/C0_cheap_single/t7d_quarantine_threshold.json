@@ -1,0 +1,48 @@
+{
+ "config": "C0_cheap_single",
+ "rep": 0,
+ "task": "t7d_quarantine_threshold",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    readings = inputs[\"readings\"].copy()\n    \n    # Step 1: Mark rows as bad based on row rules\n    # Row is BAD if: value IS NULL OR value < 0 OR value > 1000\n    readings['is_bad'] = readings['value'].isna() | (readings['value'] < 0) | (readings['value'] > 1000)\n    \n    # Step 2: Group by batch_id and evaluate batch quarantine rule\n    readings_clean = []\n    readings_rejects = []\n    readings_quarantine = []\n    \n    for batch_id, batch_group in readings.groupby('batch_id', sort=False):\n        total_rows = len(batch_group)\n        bad_row_count = batch_group['is_bad'].sum()\n        bad_pct = (bad_row_count * 100.0) / total_rows if total_rows > 0 else 0.0\n        \n        # Strictly over 20% -> quarantine entire batch\n        if bad_pct * total_rows > 20.0 * total_rows / 100.0:\n            # All rows (good and bad) go to quarantine\n            batch_with_reject_pct = batch_group.copy()\n            batch_with_reject_pct['batch_reject_pct'] = round(bad_pct, 2)\n            readings_quarantine.append(batch_with_reject_pct)\n        else:\n            # Split: good rows to clean, bad rows to rejects\n            good_rows = batch_group[~batch_group['is_bad']].copy()\n            bad_rows = batch_group[batch_group['is_bad']].copy()\n            \n            if len(good_rows) > 0:\n                readings_clean.append(good_rows)\n            if len(bad_rows) > 0:\n                readings_rejects.append(bad_rows)\n    \n    # Step 3: Concatenate results\n    df_clean = pd.concat(readings_clean, ignore_index=False) if readings_clean else pd.DataFrame(\n        columns=['batch_id', 'reading_id', 'sensor', 'value', 'is_bad']\n    )\n    df_rejects = pd.concat(readings_rejects, ignore_index=False) if readings_rejects else pd.DataFrame(\n        columns=['batch_id', 'reading_id', 'sensor', 'value', 'is_bad']\n    )\n    df_quarantine = pd.concat(readings_quarantine, ignore_index=False) if readings_quarantine else pd.DataFrame(\n        columns=['batch_id', 'reading_id', 'sensor', 'value', 'is_bad', 'batch_reject_pct']\n    )\n    \n    # Remove internal helper column\n    if 'is_bad' in df_clean.columns:\n        df_clean = df_clean.drop(columns=['is_bad'])\n    if 'is_bad' in df_rejects.columns:\n        df_rejects = df_rejects.drop(columns=['is_bad'])\n    if 'is_bad' in df_quarantine.columns:\n        df_quarantine = df_quarantine.drop(columns=['is_bad'])\n    \n    # Ensure correct column order and types\n    df_clean = df_clean[['batch_id', 'reading_id', 'sensor', 'value']]\n    df_rejects = df_rejects[['batch_id', 'reading_id', 'sensor', 'value']]\n    df_quarantine = df_quarantine[['batch_id', 'reading_id', 'sensor', 'value', 'batch_reject_pct']]\n    \n    # Reset index to have clean integer indices\n    df_clean = df_clean.reset_index(drop=True)\n    df_rejects = df_rejects.reset_index(drop=True)\n    df_quarantine = df_quarantine.reset_index(drop=True)\n    \n    return {\n        'readings_clean': df_clean,\n        'readings_rejects': df_rejects,\n        'readings_quarantine': df_quarantine\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 423,
+   "tokens_out": 1049,
+   "usd": 0.005668,
+   "wall_s": 6.070713996887207,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

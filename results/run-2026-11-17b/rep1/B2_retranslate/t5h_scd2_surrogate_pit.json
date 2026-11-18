@@ -1,0 +1,67 @@
+{
+ "config": "B2_retranslate",
+ "rep": 1,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "syntactic"
+  }
+ ],
+ "final_code": "```python\nimport pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_CUSTOMER'].copy()\n    stg = inputs['STG_CUSTOMER'].copy()\n    fact = inputs['FACT_TXN'].copy()\n\n    # Normalize date columns to datetime for correct comparison semantics\n    for col in ['eff_start_date', 'eff_end_date']:\n        if col in dim.columns:\n            dim[col] = pd.to_datetime(dim[col])\n    if 'update_date' in stg.columns:\n        stg['update_date'] = pd.to_datetime(stg['update_date'])\n    if 'txn_date' in fact.columns:\n        fact['txn_date'] = pd.to_datetime(fact['txn_date'])\n\n    dim = dim.reset_index(drop=True)\n\n    # Map customer_id -> row index of the current (is_current == 1) version\n    current_idx = {}\n    for idx, row in dim[dim['is_current'] == 1].iterrows():\n        current_idx[row['customer_id']] = idx\n\n    def seg_equal(a, b):\n        a_na = pd.isna(a)\n        b_na = pd.isna(b)\n        if a_na and b_na:\n            return True\n        if a_na != b_na:\n            return False\n        return a == b\n\n    # Determine which staged records create a new version\n    creating = []\n    for _, srow in stg.iterrows():\n        cid = srow['customer_id']\n        seg = srow['segment']\n        upd = srow['update_date']\n        if cid in current_idx:\n            cur_idx = current_idx[cid]\n            cur_seg = dim.at[cur_idx, 'segment']\n            if seg_equal(cur_seg, seg):\n                continue  # unchanged -> no-op, no version created\n            creating.append((cid, seg, upd, cur_idx))\n        else:\n            creating.append((cid, seg, upd, None))\n\n    # ROW_NUMBER() OVER (ORDER BY customer_id) applied only to creating records\n    creating_sorted = sorted(creating, key=lambda x: x[0])\n\n    if len(dim) > 0:\n        max_sk = dim['customer_sk'].max()\n        if pd.isna(max_sk):\n            max_sk = 0\n    else:\n        max_sk = 0\n\n    new_rows = []\n    for i, (cid, seg, upd, cur_idx) in enumerate(creating_sorted, start=1):\n        new_sk = max_sk + i\n        if cur_idx is not None:\n            dim.at[cur_idx, 'eff_end_date'] = upd\n            dim.at[cur_idx, 'is_current'] = 0\n        new_rows.append({\n            'customer_sk': new_sk,\n            'customer_id': cid,\n            'segment': seg,\n            'eff_start_date': upd,\n            'eff_end_date': pd.NaT,\n            'is_current': 1\n        })\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows)\n        dim_out = pd.concat([dim, new_df], ignore_index=True)\n    else:\n        dim_",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1162,
+   "tokens_out": 4000,
+   "usd": 0.063486,
+   "wall_s": 39.495598554611206
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4648,
+  "tokens_out": 15840,
+  "usd": 0.251544,
+  "wall_s": 140.93744349479675
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "task": "t6_sessionize_events",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\nfrom datetime import timedelta\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize user events based on 30-minute inactivity gap.\n    A new session starts when gap from previous event > 30 minutes.\n    \"\"\"\n    events = inputs['events'].copy()\n    \n    # Ensure event_ts is datetime\n    events['event_ts'] = pd.to_datetime(events['event_ts'])\n    \n    # Sort by user_id, event_ts, event_id\n    events = events.sort_values(['user_id', 'event_ts', 'event_id']).reset_index(drop=True)\n    \n    # Calculate time gap from previous event (within same user)\n    events['prev_event_ts'] = events.groupby('user_id')['event_ts'].shift(1)\n    events['time_gap'] = events['event_ts'] - events['prev_event_ts']\n    \n    # Determine if this is a new session:\n    # - First event of user (prev_event_ts is NaT) \u2192 new session\n    # - Gap > 30 minutes \u2192 new session\n    events['new_sess'] = (\n        (events['prev_event_ts'].isna()) |\n        (events['time_gap'] > timedelta(minutes=30))\n    ).astype(int)\n    \n    # Cumulative sum within each user to get session_num\n    events['session_num'] = events.groupby('user_id')['new_sess'].cumsum()\n    \n    # Group by user_id and session_num to aggregate\n    user_sessions = events.groupby(['user_id', 'session_num']).agg(\n        session_start=('event_ts', 'min'),\n        session_end=('event_ts', 'max'),\n        event_count=('event_ts', 'size')\n    ).reset_index()\n    \n    return {'user_sessions': user_sessions}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 424,
+   "tokens_out": 496,
+   "usd": 0.002904,
+   "wall_s": 4.495041131973267
+  }
+ ]
+}

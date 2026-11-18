@@ -1,0 +1,46 @@
+{
+ "config": "LEGATO",
+ "rep": 0,
+ "task": "t8d_soft_delete_tombstone",
+ "category": "T8",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import timedelta\n\n\ndef run(inputs: dict) -> dict:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n\n    # Normalize dtypes\n    target_snapshot[\"status_ts\"] = pd.to_datetime(target_snapshot[\"status_ts\"])\n    cdc_events[\"event_ts\"] = pd.to_datetime(cdc_events[\"event_ts\"])\n    watermark[\"high_ts\"] = pd.to_datetime(watermark[\"high_ts\"])\n\n    high_ts = watermark[\"high_ts\"].iloc[0]\n\n    # Build current state from target_snapshot\n    state = {}\n    for row in target_snapshot.itertuples(index=False):\n        state[row.user_id] = {\n            \"email\": row.email,\n            \"status\": row.status,\n            \"status_ts\": row.status_ts,\n        }\n\n    # Filter events strictly after watermark\n    new_events = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n\n    # Deterministic sequential processing per user by (event_ts, event_seq)\n    new_events = new_events.sort_values(\n        by=[\"user_id\", \"event_ts\", \"event_seq\"], kind=\"mergesort\"\n    )\n\n    seven_days = timedelta(days=7)\n\n    for row in new_events.itertuples(index=False):\n        uid = row.user_id\n        op = row.op\n        ts = row.event_ts\n        email = row.email\n\n        cur = state.get(uid)\n\n        if op == \"D\":\n            # Soft delete: status stays DELETED, status_ts updated, email preserved\n            if cur is None:\n                # No prior record; still record a deletion with the event's email\n                # (no prior email to preserve)\n                state[uid] = {\n                    \"email\": email,\n                    \"status\": \"DELETED\",\n                    \"status_ts\": ts,\n                }\n            else:\n                state[uid] = {\n                    \"email\": cur[\"email\"],\n                    \"status\": \"DELETED\",\n                    \"status_ts\": ts,\n                }\n        elif op == \"U\":\n            if cur is None or cur[\"status\"] == \"ACTIVE\":\n                state[uid] = {\n                    \"email\": email,\n                    \"status\": \"ACTIVE\",\n                    \"status_ts\": ts,\n                }\n            else:\n                # cur status == 'DELETED'\n                deletion_ts = cur[\"status_ts\"]\n                if ts > deletion_ts + seven_days:\n                    state[uid] = {\n                        \"email\": email,\n                        \"status\": \"ACTIVE\",\n                        \"status_ts\": ts,\n                    }\n                # else: discard, deletion sticky within 7-day window\n        # unknown ops ignored (none expected per spec)\n\n    if state:\n        records = [\n            {\n                \"user_id\": uid,\n                \"email\": v[\"email\"],\n                \"status\": v[\"status\"],\n                \"status_ts\": v[\"status_ts\"],\n            }\n            for uid, v in state.items()\n        ]\n        new_snapshot = pd.DataFrame(\n            records, columns=[\"user_id\", \"email\", \"status\", \"status_ts\"]\n        )\n    else:\n        new_snapshot = pd.DataFrame(\n            columns=[\"user_id\", \"email\", \"status\", \"status_ts\"]\n        )\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 732,
+   "tokens_out": 2077,
+   "usd": 0.033351,
+   "wall_s": 17.59644865989685
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

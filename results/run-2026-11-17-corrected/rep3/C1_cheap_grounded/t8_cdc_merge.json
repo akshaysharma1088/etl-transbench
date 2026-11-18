@@ -1,0 +1,48 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 3,
+ "task": "t8_cdc_merge",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n    \n    # Extract the watermark high_ts value\n    high_ts = watermark[\"high_ts\"].iloc[0]\n    \n    # Filter CDC events: keep only events with event_ts > high_ts\n    new_events = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n    \n    # If no new events, return the target snapshot unchanged\n    if new_events.empty:\n        return {\"new_snapshot\": target_snapshot}\n    \n    # Per product_id, select the latest event by (event_ts DESC, event_seq DESC)\n    # This ensures deterministic tie-breaking\n    new_events = new_events.sort_values(\n        by=[\"product_id\", \"event_ts\", \"event_seq\"],\n        ascending=[True, False, False]\n    )\n    latest_events = new_events.drop_duplicates(subset=[\"product_id\"], keep=\"first\")\n    \n    # Separate deletes from upserts\n    deletes = latest_events[latest_events[\"op\"] == \"D\"]\n    upserts = latest_events[latest_events[\"op\"].isin([\"I\", \"U\"])]\n    \n    # Build the new snapshot\n    # Start with the current target snapshot\n    new_snapshot = target_snapshot.copy()\n    \n    # Remove products that have delete events\n    if not deletes.empty:\n        delete_product_ids = set(deletes[\"product_id\"].values)\n        new_snapshot = new_snapshot[~new_snapshot[\"product_id\"].isin(delete_product_ids)]\n    \n    # Upsert products (insert new or update existing)\n    if not upserts.empty:\n        # Create the upsert dataframe with the required schema\n        upsert_data = upserts[[\"product_id\", \"name\", \"price\"]].copy()\n        upsert_data[\"last_event_ts\"] = upserts[\"event_ts\"].values\n        \n        # Remove existing products that are being upserted\n        upsert_product_ids = set(upsert_data[\"product_id\"].values)\n        new_snapshot = new_snapshot[~new_snapshot[\"product_id\"].isin(upsert_product_ids)]\n        \n        # Concatenate with upserts and ensure column order matches target schema\n        new_snapshot = pd.concat(\n            [new_snapshot, upsert_data],\n            ignore_index=True,\n            sort=False\n        )\n    \n    # Ensure columns are in the correct order and types\n    new_snapshot = new_snapshot[[\"product_id\", \"name\", \"price\", \"last_event_ts\"]]\n    new_snapshot = new_snapshot.reset_index(drop=True)\n    \n    # Ensure dtypes match the input schema\n    new_snapshot[\"product_id\"] = new_snapshot[\"product_id\"].astype(\"int64\")\n    new_snapshot[\"name\"] = new_snapshot[\"name\"].astype(\"object\")\n    new_snapshot[\"price\"] = new_snapshot[\"price\"].astype(\"float64\")\n    new_snapshot[\"last_event_ts\"] = new_snapshot[\"last_event_ts\"].astype(\"datetime64[us]\")\n    \n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 581,
+   "tokens_out": 862,
+   "usd": 0.004891,
+   "wall_s": 7.047853469848633,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

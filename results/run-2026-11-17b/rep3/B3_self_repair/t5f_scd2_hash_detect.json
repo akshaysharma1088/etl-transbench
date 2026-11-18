@@ -1,0 +1,67 @@
+{
+ "config": "B3_self_repair",
+ "rep": 3,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _sig(val_city, val_tier):\n    \"\"\"Compute row signature exactly as legacy SP:\n    RTRIM(COALESCE(city, '')) || '|' || RTRIM(COALESCE(tier, ''))\n    \"\"\"\n    c = '' if pd.isna(val_city) else str(val_city)\n    t = '' if pd.isna(val_tier) else str(val_tier)\n    return c.rstrip() + '|' + t.rstrip()\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_MEMBER'].copy()\n    stg = inputs['STG_MEMBER'].copy()\n\n    # Ensure expected columns exist even if empty input\n    for col in ['member_id', 'city', 'tier', 'eff_start_date', 'eff_end_date', 'is_current']:\n        if col not in dim.columns:\n            dim[col] = pd.Series(dtype='object')\n\n    # Work with a list of dicts for easy row-level manipulation,\n    # preserving original dim rows and their index for in-place updates.\n    dim = dim.reset_index(drop=True)\n\n    new_rows = []\n\n    for _, s in stg.iterrows():\n        member_id = s['member_id']\n\n        current_mask = (dim['member_id'] == member_id) & (dim['is_current'] == 1)\n        current_idx = dim.index[current_mask]\n\n        if len(current_idx) == 0:\n            # No current row exists -> insert new version\n            new_rows.append({\n                'member_id': member_id,\n                'city': s['city'],\n                'tier': s['tier'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n        else:\n            # Use the first current row found (at most one expected)\n            c_idx = current_idx[0]\n            c_city = dim.at[c_idx, 'city']\n            c_tier = dim.at[c_idx, 'tier']\n\n            sig_s = _sig(s['city'], s['tier'])\n            sig_c = _sig(c_city, c_tier)\n\n            if sig_s != sig_c:\n                # Close prior current row\n                dim.at[c_idx, 'eff_end_date'] = s['update_date']\n                dim.at[c_idx, 'is_current'] = 0\n\n                # Insert new current version with staged values exactly as given\n                new_rows.append({\n                    'member_id': member_id,\n                    'city': s['city'],\n                    'tier': s['tier'],\n                    'eff_start_date': s['update_date'],\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                })\n            # else: no-op, unchanged record does not create a new version\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=['member_id', 'city', 'tier',\n                                                  'eff_start_date', 'eff_end_date',\n                                                  'is_current'])\n        dim = pd.concat([dim, new_df], ignore_index=True)\n\n    # Normalize dtypes to match expected output schema\n    dim['member_id'] = dim['member_id'].astype('Int64')\n    dim['is_current'] = dim['is_current'].astype('Int64')\n\n    dim = dim[['member_id', 'city', 'tier', 'eff_start_date', 'eff_end_date', 'is_current']]\n\n    return {'dim_member_out': dim}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1114,
+   "tokens_out": 2321,
+   "usd": 0.038157,
+   "wall_s": 21.03826117515564
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5592,
+  "tokens_out": 11355,
+  "usd": 0.187101,
+  "wall_s": 114.53118443489075
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

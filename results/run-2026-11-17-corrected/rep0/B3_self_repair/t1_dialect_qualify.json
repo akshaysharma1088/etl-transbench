@@ -1,0 +1,53 @@
+{
+ "config": "B3_self_repair",
+ "rep": 0,
+ "task": "t1_dialect_qualify",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduce Teradata-style QUALIFY filter for latest high-value transaction per account.\n\n    Steps:\n    1. Filter rows where amount > 100 (NULL amount excluded, matching SQL NULL > 100 = unknown)\n    2. Sort to compute ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC)\n       - Teradata treats NULLs as the lowest sort value by default; in a DESC ordering this\n         means NULLs sort last (na_position=\"last\" combined with ascending=False reproduces\n         this correctly).\n       - PARTITION BY account_id must group NULL account_id values together (dropna=False),\n         matching SQL semantics where NULL = NULL for partitioning purposes.\n    3. QUALIFY: keep only rows where ROW_NUMBER = 1\n    4. Compute size_band CASE expression\n    5. Return result with only the specified output columns\n    \"\"\"\n\n    df = inputs[\"acct_txn\"].copy()\n\n    # Step 1: WHERE amount > 100 (NaN amount -> comparison is False/unknown -> excluded)\n    df = df[df[\"amount\"] > 100].copy()\n\n    # Step 2: Sort for window ordering.\n    # ORDER BY txn_ts DESC, txn_id DESC, with Teradata-style NULL sorting:\n    # NULLs are treated as the smallest possible value. In descending order this means\n    # NULLs appear last (since all real values are \"greater\" than NULL and thus come first).\n    df_sorted = df.sort_values(\n        by=[\"account_id\", \"txn_ts\", \"txn_id\"],\n        ascending=[True, False, False],\n        na_position=\"last\",\n    ).reset_index(drop=True)\n\n    # PARTITION BY account_id -- include NULL account_id as its own valid group (dropna=False)\n    df_sorted[\"_row_num\"] = (\n        df_sorted.groupby(\"account_id\", dropna=False).cumcount() + 1\n    )\n\n    # Step 3: QUALIFY ROW_NUMBER() = 1\n    df_qualified = df_sorted[df_sorted[\"_row_num\"] == 1].copy()\n\n    # Step 4: CASE WHEN amount >= 1000 THEN 'JUMBO'\n    #              WHEN amount >= 500  THEN 'LARGE'\n    #              ELSE 'STANDARD' END AS size_band\n    def categorize_amount(amount):\n        if pd.isna(amount):\n            # Should not occur post-filter (amount > 100 excludes NaN), but keep safe.\n            return None\n        if amount >= 1000:\n            return \"JUMBO\"\n        elif amount >= 500:\n            return \"LARGE\"\n        else:\n            return \"STANDARD\"\n\n    df_qualified[\"size_band\"] = df_qualified[\"amount\"].apply(categorize_amount)\n\n    # Step 5: Select final columns in the required order\n    result = df_qualified[\n        [\"account_id\", \"txn_id\", \"txn_ts\", \"amount\", \"channel\", \"size_band\"]\n    ].reset_index(drop=True)\n\n    return {\"latest_high_value_txn\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 432,
+   "tokens_out": 749,
+   "usd": 0.004177,
+   "wall_s": 6.869381666183472,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1791,
+  "tokens_out": 3730,
+  "usd": 0.061323,
+  "wall_s": 37.16996455192566
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

@@ -1,0 +1,17 @@
+{
+ "task": "t7c_crossfield_reference",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    ref_customers = inputs[\"ref_customers\"]\n    ref_skus = inputs[\"ref_skus\"]\n\n    # De-duplicate reference tables by key, keeping first occurrence.\n    ref_customers_dedup = (\n        ref_customers.drop_duplicates(subset=\"customer_id\", keep=\"first\")\n        .set_index(\"customer_id\")\n    )\n    ref_skus_dedup = (\n        ref_skus.drop_duplicates(subset=\"sku\", keep=\"first\")\n        .set_index(\"sku\")\n    )\n\n    reasons = []\n\n    for _, row in orders.iterrows():\n        cust_id = row[\"customer_id\"]\n        sku = row[\"sku\"]\n        ship_country = row[\"ship_country\"]\n\n        # R1: customer unknown\n        if cust_id not in ref_customers_dedup.index:\n            reasons.append(\"CUST_UNKNOWN\")\n            continue\n\n        status = ref_customers_dedup.loc[cust_id, \"status\"]\n\n        # R2: customer not active\n        if status != \"ACTIVE\":\n            reasons.append(\"CUST_INACTIVE\")\n            continue\n\n        # R3: sku unknown\n        if sku not in ref_skus_dedup.index:\n            reasons.append(\"SKU_UNKNOWN\")\n            continue\n\n        disc = ref_skus_dedup.loc[sku, \"discontinued\"]\n\n        # R4: sku discontinued\n        if disc == 1:\n            reasons.append(\"SKU_DISC\")\n            continue\n\n        allowed = ref_skus_dedup.loc[sku, \"allowed_countries\"]\n\n        if pd.isna(allowed):\n            allowed_str = \"\"\n        else:\n            allowed_str = str(allowed)\n        allowed_str = allowed_str.strip()\n\n        # R5: country whitelist check (empty/NULL means allow all)\n        if allowed_str != \"\":\n            members = [m.strip() for m in allowed_str.split(\",\")]\n            if ship_country not in members:\n                reasons.append(\"CTRY_BLOCKED\")\n                continue\n\n        reasons.append(None)\n\n    orders[\"reason_code\"] = reasons\n\n    clean_mask = orders[\"reason_code\"].isna()\n    orders_clean = (\n        orders.loc[clean_mask]\n        .drop(columns=[\"reason_code\"])\n        .reset_index(drop=True)\n    )\n    orders_rejects = orders.loc[~clean_mask].reset_index(drop=True)\n\n    return {\n        \"orders_clean\": orders_clean,\n        \"orders_rejects\": orders_rejects,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 837,
+   "tokens_out": 2537,
+   "usd": 0.040566,
+   "wall_s": 20.57688307762146,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

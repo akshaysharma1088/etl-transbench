@@ -1,0 +1,16 @@
+{
+ "task": "t3c_router_first_match",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Router component that directs claims to different output ports based on ordered rules.\n    \n    Rules are evaluated IN ORDER:\n    1. fast_track: amount <= 500 AND photos_attached == 1\n    2. high_value: amount > 10000\n    3. manual_review: photos_attached == 0 OR amount > 500\n    \n    A row goes to the FIRST matching port only.\n    Unmatched rows go to the default port \"standard\".\n    \"\"\"\n    claims = inputs[\"claims\"].copy()\n    \n    # Initialize output dataframes with the same structure\n    fast_track = pd.DataFrame(columns=claims.columns)\n    high_value = pd.DataFrame(columns=claims.columns)\n    manual_review = pd.DataFrame(columns=claims.columns)\n    standard = pd.DataFrame(columns=claims.columns)\n    \n    # Track which rows have been matched to avoid duplicates\n    matched = pd.Series(False, index=claims.index)\n    \n    # Rule 1: fast_track - amount <= 500 AND photos_attached == 1\n    rule1_mask = (~matched) & (claims[\"amount\"] <= 500) & (claims[\"photos_attached\"] == 1)\n    fast_track = claims[rule1_mask].copy()\n    matched = matched | rule1_mask\n    \n    # Rule 2: high_value - amount > 10000\n    rule2_mask = (~matched) & (claims[\"amount\"] > 10000)\n    high_value = claims[rule2_mask].copy()\n    matched = matched | rule2_mask\n    \n    # Rule 3: manual_review - photos_attached == 0 OR amount > 500\n    rule3_mask = (~matched) & ((claims[\"photos_attached\"] == 0) | (claims[\"amount\"] > 500))\n    manual_review = claims[rule3_mask].copy()\n    matched = matched | rule3_mask\n    \n    # Default port: standard - any rows that didn't match any rule\n    # (not needed in output, but would be: standard = claims[~matched].copy())\n    \n    # Reset index for output\n    fast_track = fast_track.reset_index(drop=True)\n    high_value = high_value.reset_index(drop=True)\n    manual_review = manual_review.reset_index(drop=True)\n    \n    return {\n        \"claims_fast_track\": fast_track[[\"claim_id\", \"amount\", \"photos_attached\"]],\n        \"claims_high_value\": high_value[[\"claim_id\", \"amount\", \"photos_attached\"]],\n        \"claims_manual_review\": manual_review[[\"claim_id\", \"amount\", \"photos_attached\"]]\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 549,
+   "tokens_out": 688,
+   "usd": 0.003989,
+   "wall_s": 4.415222644805908
+  }
+ ]
+}

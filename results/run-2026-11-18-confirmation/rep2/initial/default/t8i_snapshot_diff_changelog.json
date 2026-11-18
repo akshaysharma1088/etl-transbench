@@ -1,0 +1,17 @@
+{
+ "task": "t8i_snapshot_diff_changelog",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\nimport numpy as np\n\n\ndef _num_diff(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef _label_diff(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a.rstrip() != b.rstrip()\n\n\ndef run(inputs: dict) -> dict:\n    prev = inputs[\"snap_prev\"].copy()\n    curr = inputs[\"snap_curr\"].copy()\n\n    merged = pd.merge(\n        prev,\n        curr,\n        on=[\"region\", \"sku\"],\n        how=\"outer\",\n        suffixes=(\"_prev\", \"_curr\"),\n        indicator=True,\n    )\n\n    rows = []\n\n    for _, r in merged.iterrows():\n        region = r[\"region\"]\n        sku = r[\"sku\"]\n\n        if r[\"_merge\"] == \"left_only\":\n            rows.append((region, sku, \"D\", None))\n            continue\n\n        if r[\"_merge\"] == \"right_only\":\n            rows.append((region, sku, \"I\", None))\n            continue\n\n        # both present -> compare\n        diffs = []\n\n        if _num_diff(r[\"price_prev\"], r[\"price_curr\"]):\n            diffs.append(\"price\")\n\n        if _num_diff(r[\"stock_prev\"], r[\"stock_curr\"]):\n            diffs.append(\"stock\")\n\n        if _label_diff(r[\"label_prev\"], r[\"label_curr\"]):\n            diffs.append(\"label\")\n\n        if diffs:\n            rows.append((region, sku, \"U\", \",\".join(diffs)))\n        # no diffs -> no row\n\n    out = pd.DataFrame(rows, columns=[\"region\", \"sku\", \"change_type\", \"changed_cols\"])\n\n    if not out.empty:\n        out = out.sort_values([\"region\", \"sku\"]).reset_index(drop=True)\n    else:\n        out = pd.DataFrame(columns=[\"region\", \"sku\", \"change_type\", \"changed_cols\"])\n\n    return {\"change_log\": out}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 951,
+   "tokens_out": 1387,
+   "usd": 0.023658,
+   "wall_s": 12.022558689117432,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

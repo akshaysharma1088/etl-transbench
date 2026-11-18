@@ -1,0 +1,17 @@
+{
+ "task": "t4c_stale_snapshot",
+ "group": "cheap",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy multi-step batch job with step-order semantics.\n    \n    Step 1: Compute STG_CURR from score_feed\n    Step 2: Compute DELTA using PRE-UPDATE SCORE_SNAPSHOT\n    Step 3: Update SCORE_SNAPSHOT with STG_CURR\n    \n    Critical: DELTA must be computed against the OLD snapshot state.\n    \"\"\"\n    \n    score_feed = inputs[\"score_feed\"].copy()\n    score_snapshot = inputs[\"score_snapshot\"].copy()\n    \n    # Step 1: Create STG_CURR - compute average score per account\n    stg_curr = score_feed.groupby(\"account_id\", as_index=False)[\"score\"].mean()\n    stg_curr.rename(columns={\"score\": \"avg_score\"}, inplace=True)\n    \n    # Step 2: Create DELTA - join against OLD snapshot (before update)\n    # This is the critical part: we use the pre-update snapshot\n    delta = stg_curr.merge(\n        score_snapshot,\n        on=\"account_id\",\n        how=\"left\",\n        suffixes=(\"_new\", \"_old\")\n    )\n    \n    # Compute score_delta = new avg_score - old avg_score (or 0 if no prior record)\n    delta[\"score_delta\"] = delta[\"avg_score_new\"] - delta[\"avg_score_old\"].fillna(0)\n    \n    # Keep only account_id and score_delta for output\n    delta = delta[[\"account_id\", \"score_delta\"]].copy()\n    \n    # Step 3: Update SCORE_SNAPSHOT - replace with STG_CURR state\n    score_snapshot_updated = stg_curr[[\"account_id\", \"avg_score\"]].copy()\n    \n    return {\n        \"delta\": delta,\n        \"score_snapshot\": score_snapshot_updated\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 483,
+   "tokens_out": 495,
+   "usd": 0.002958,
+   "wall_s": 4.4037065505981445,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

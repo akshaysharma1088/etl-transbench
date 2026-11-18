@@ -25,7 +25,7 @@ for tid in ["t4b_delete_reinsert", "t4c_stale_snapshot", "t4d_union_dedup_preced
 bug_b = '''
 import pandas as pd
 def run(inputs):
-    prior = inputs["target_snapshot_prior"]
+    prior = inputs["target_snapshot"]
     inbound = inputs["inbound"]
     stg = (inbound[inbound["qty"] > 0]
            .groupby(["product_id", "batch_date"], as_index=False)

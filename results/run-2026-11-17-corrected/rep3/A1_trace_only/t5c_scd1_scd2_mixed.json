@@ -1,0 +1,48 @@
+{
+ "config": "A1_trace_only",
+ "rep": 3,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _differs(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim_acct = inputs[\"dim_acct\"].copy()\n    stg_acct = inputs[\"stg_acct\"].copy()\n\n    # --- Step 1: Dedup STG_ACCT to latest per acct_id by update_date.\n    # Ties broken by greater (email, tier) lexicographic pair.\n    if len(stg_acct) > 0:\n        stg_sorted = stg_acct.sort_values(\n            by=[\"update_date\", \"email\", \"tier\"],\n            ascending=[True, True, True],\n            kind=\"mergesort\",\n        )\n        stg_dedup = stg_sorted.groupby(\"acct_id\", as_index=False).tail(1)\n    else:\n        stg_dedup = stg_acct.copy()\n\n    # Work with a list of dict rows to allow in-place retro updates easily.\n    rows = dim_acct.to_dict(\"records\")\n\n    for _, s in stg_dedup.iterrows():\n        acct_id = s[\"acct_id\"]\n        s_email = s[\"email\"]\n        s_tier = s[\"tier\"]\n        s_update_date = s[\"update_date\"]\n\n        # find current row for this acct_id\n        cur_idx = None\n        for i, r in enumerate(rows):\n            if r[\"acct_id\"] == acct_id and r[\"is_current\"] == 1:\n                cur_idx = i\n                break\n\n        if cur_idx is None:\n            # No current row exists: insert new current version.\n            rows.append({\n                \"acct_id\": acct_id,\n                \"email\": s_email,\n                \"tier\": s_tier,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n        else:\n            c = rows[cur_idx]\n            tier_changed = _differs(c[\"tier\"], s_tier)\n            email_changed = _differs(c[\"email\"], s_email)\n\n            if tier_changed:\n                # expire current row\n                rows[cur_idx][\"eff_end_date\"] = s_update_date\n                rows[cur_idx][\"is_current\"] = 0\n                # insert new current version\n                rows.append({\n                    \"acct_id\": acct_id,\n                    \"email\": s_email,\n                    \"tier\": s_tier,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n\n            if email_changed:\n                # Type-1 retro-overwrite across ALL rows (history + current)\n                # for this acct_id, including any row just appended above.\n                for r in rows:\n                    if r[\"acct_id\"] == acct_id:\n                        r[\"email\"] = s_email\n\n    if len(rows) == 0:\n        result = pd.DataFrame(\n            columns=[\"acct_id\", \"email\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n        )\n    else:\n        result = pd.DataFrame(rows, columns=[\n            \"acct_id\", \"email\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"\n        ])\n\n    # Enforce dtypes\n    result[\"acct_id\"] = result[\"acct_id\"].astype(\"int64\")\n    result[\"email\"] = result[\"email\"].astype(\"object\")\n    result[\"tier\"] = result[\"tier\"].astype(\"object\")\n    result[\"eff_start_date\"] = pd.to_datetime(result[\"eff_start_date\"])\n    result[\"eff_end_date\"] = pd.to_datetime(result[\"eff_end_date\"])\n    result[\"is_current\"] = result[\"is_current\"].astype(\"int64\")\n\n    return {\"dim_acct_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1120,
+   "tokens_out": 3472,
+   "usd": 0.05544,
+   "wall_s": 28.32804799079895,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

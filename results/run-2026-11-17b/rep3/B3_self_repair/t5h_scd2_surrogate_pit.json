@@ -1,0 +1,67 @@
+{
+ "config": "B3_self_repair",
+ "rep": 3,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _segment_differs(seg_new, seg_cur):\n    \"\"\"Return True if staged segment differs from current segment.\n    NULL vs NULL -> not different. NULL vs non-NULL -> different.\"\"\"\n    na_new = pd.isna(seg_new)\n    na_cur = pd.isna(seg_cur)\n    if na_new and na_cur:\n        return False\n    if na_new != na_cur:\n        return True\n    return seg_new != seg_cur\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_CUSTOMER\"].copy()\n    stg = inputs[\"STG_CUSTOMER\"].copy()\n    fact = inputs[\"FACT_TXN\"].copy()\n\n    # ---------- STEP 1: SCD Type 2 load ----------\n    if len(dim) > 0 and dim[\"customer_sk\"].notna().any():\n        max_sk = dim[\"customer_sk\"].max()\n    else:\n        max_sk = 0\n    if pd.isna(max_sk):\n        max_sk = 0\n\n    # Determine, per staged record, whether it creates a new version.\n    creates_flags = []\n    cur_segments = []\n    for _, srow in stg.iterrows():\n        cid = srow[\"customer_id\"]\n        cur_rows = dim[(dim[\"customer_id\"] == cid) & (dim[\"is_current\"] == 1)]\n        if cur_rows.empty:\n            creates_flags.append(True)\n            cur_segments.append(None)\n        else:\n            cur_seg = cur_rows.iloc[0][\"segment\"]\n            cur_segments.append(cur_seg)\n            creates_flags.append(_segment_differs(srow[\"segment\"], cur_seg))\n\n    stg = stg.copy()\n    stg[\"_creates\"] = creates_flags\n\n    creating = stg[stg[\"_creates\"]].copy()\n    creating = creating.sort_values(\"customer_id\", kind=\"mergesort\").reset_index(drop=True)\n    creating[\"_rn\"] = range(1, len(creating) + 1)\n    creating[\"customer_sk\"] = max_sk + creating[\"_rn\"]\n\n    dim_out = dim.copy()\n\n    # Expire current rows for customers that get a new version.\n    for _, crow in creating.iterrows():\n        cid = crow[\"customer_id\"]\n        mask = (dim_out[\"customer_id\"] == cid) & (dim_out[\"is_current\"] == 1)\n        dim_out.loc[mask, \"eff_end_date\"] = crow[\"update_date\"]\n        dim_out.loc[mask, \"is_current\"] = 0\n\n    # Build new version rows.\n    if len(creating) > 0:\n        new_rows = pd.DataFrame({\n            \"customer_sk\": creating[\"customer_sk\"].astype(dim_out[\"customer_sk\"].dtype if len(dim_out) else \"int64\"),\n            \"customer_id\": creating[\"customer_id\"].values,\n            \"segment\": creating[\"segment\"].values,\n            \"eff_start_date\": creating[\"update_date\"].values,\n            \"eff_end_date\": pd.NaT,\n            \"is_current\": 1,\n        })\n        dim_out = pd.concat([dim_out, new_rows], ignore_index=True, sort=False)\n\n    dim_out = dim_out[\n        [\"customer_sk\", \"customer_id\", \"segment\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    ].reset_index(drop=True)\n\n    # ---------- STEP 2: Key facts against updated dimension ----------\n    def lookup_sk(cid, txn_date):\n        candidates = dim_out[dim_out[\"customer_id\"] == cid]\n        for _, r in candidates.iterrows():\n            start = r[\"eff_start_date\"]\n            end = r[\"eff_end_date\"]\n            if pd.isna(start):\n                continue\n            if txn_date >= start and (pd.isna(end) or txn_date < end):\n                return r[\"customer_sk\"]\n        return -1\n\n    fact_out = fact.copy()\n    fact_out[\"customer_sk\"] = fact_out.apply(\n        lambda r: lookup_sk(r[\"customer_id\"], r[\"txn_date\"]), axis=1\n    )\n    fact_out = fact_out[[\"txn_id\", \"customer_sk\", \"amount\"]].reset_index(drop=True)\n\n    return {\n        \"dim_customer_out\": dim_out,\n        \"fact_txn_keyed\": fact_out,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1162,
+   "tokens_out": 3889,
+   "usd": 0.061821,
+   "wall_s": 31.141730070114136
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6693,
+  "tokens_out": 15223,
+  "usd": 0.24842399999999998,
+  "wall_s": 519.2062561511993
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

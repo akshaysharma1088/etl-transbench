@@ -99,10 +99,44 @@ def verify_candidate(task: Task, candidate_run: RunFn,
         except Exception:
             return VerificationResult(True, False, False, list(seeds), reports,
                                       error=traceback.format_exc(limit=5))
-        rep = compare_outputs(ref_out, cand_out, task.spec)
+        try:
+            rep = compare_outputs(ref_out, cand_out, task.spec)
+        except Exception:
+            # The candidate ran but returned something the checker cannot
+            # compare (not a dict of DataFrames, unhashable keys, ...). That is
+            # never counted as equivalent. The marker makes such cases easy to
+            # find and audit afterwards.
+            return VerificationResult(True, False, False, list(seeds), reports,
+                                      error="CHECKER_COULD_NOT_COMPARE\n"
+                                            + traceback.format_exc(limit=5))
         reports.append({"seed": seed, **rep})
         if not rep["equivalent"]:
             return VerificationResult(True, True, False, list(seeds), reports)
+        # Replay check (tasks that declare "replay": {output relation: input
+        # relation}). Each program is run a second time with its own output
+        # fed back as the prior state and the same events. An idempotent job
+        # reproduces its first output; the candidate must match the reference
+        # on this second pass too.
+        feed = task.meta.get("replay")
+        if feed:
+            def again(fn, first):
+                second = {k: v.copy() for k, v in inputs.items()}
+                for out_rel, in_rel in feed.items():
+                    second[in_rel] = first[out_rel][list(inputs[in_rel].columns)].copy()
+                return fn(second)
+            ref_2 = again(task.reference, ref_out)
+            try:
+                cand_2 = again(candidate_run, cand_out)
+                rep2 = compare_outputs(ref_2, cand_2, task.spec)
+            except Exception:
+                return VerificationResult(True, False, False, list(seeds), reports,
+                                          error="REPLAY PASS (output fed back as prior state)\n"
+                                                + traceback.format_exc(limit=5))
+            if not rep2["equivalent"]:
+                for rel in rep2["relations"]:
+                    rel["detail"] = "on replay (output fed back as prior state): " + (rel["detail"] or "ok")
+                reports.append({"seed": seed, "replay": True, **rep2})
+                return VerificationResult(True, True, False, list(seeds), reports)
     return VerificationResult(True, True, True, list(seeds), reports)
 
 

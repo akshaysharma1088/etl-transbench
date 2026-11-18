@@ -1,0 +1,66 @@
+{
+ "config": "LEGATO",
+ "rep": 1,
+ "task": "t1c_teradata_intdiv",
+ "category": "T1",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import math\nimport numpy as np\nimport pandas as pd\n\n\ndef _trunc_int_div(a: int, b: int) -> int:\n    \"\"\"Integer division truncating toward zero, Teradata INTEGER/INTEGER semantics.\"\"\"\n    q = abs(a) // abs(b)\n    sign = -1 if (a < 0) != (b < 0) else 1\n    return sign * q\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"acct_balance\"].copy()\n\n    # WHERE acct_type <> 'CLOSED'\n    # In SQL, comparisons against NULL yield NULL (not TRUE), so NULL acct_type\n    # rows are excluded as well.\n    mask = df[\"acct_type\"].notna() & (df[\"acct_type\"] != \"CLOSED\")\n    df = df.loc[mask].copy()\n\n    # ZEROIFNULL(balance_cents): map NULL -> 0 BEFORE any arithmetic.\n    balance_filled = df[\"balance_cents\"].apply(lambda v: 0 if pd.isna(v) else int(v))\n\n    # balance_bucket = ZEROIFNULL(balance_cents) / 100, INTEGER / INTEGER\n    # truncates toward zero.\n    balance_bucket = balance_filled.apply(lambda v: _trunc_int_div(v, 100))\n\n    # fx_units = CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER)\n    # fx_rate may be NULL -> product is NULL -> CAST(NULL) is NULL.\n    def compute_fx(bal, fx):\n        if pd.isna(fx):\n            return pd.NA\n        raw = bal * fx / 100\n        # CAST ... AS INTEGER truncates toward zero.\n        return math.trunc(raw)\n\n    fx_units = [\n        compute_fx(b, fx)\n        for b, fx in zip(balance_filled, df[\"fx_rate\"])\n    ]\n\n    out = pd.DataFrame(\n        {\n            \"account_id\": df[\"account_id\"].values,\n            \"balance_bucket\": balance_bucket.astype(\"int64\").values,\n            \"fx_units\": pd.array(fx_units, dtype=\"Int64\"),\n        }\n    )\n\n    return {\"balance_buckets\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 373,
+   "tokens_out": 444,
+   "usd": 0.002593,
+   "wall_s": 3.217682361602783
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4631,
+  "tokens_out": 9970,
+  "usd": 0.163443,
+  "wall_s": 98.63238191604614
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

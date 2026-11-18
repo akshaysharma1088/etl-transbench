@@ -1,0 +1,56 @@
+{
+ "config": "B2_retranslate",
+ "rep": 1,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    df = inputs['ledger'].copy()\n\n    # Preserve exact cursor ORDER BY semantics: account_id, entry_date, row_seq\n    df_sorted = df.sort_values(\n        ['account_id', 'entry_date', 'row_seq'],\n        kind='mergesort'\n    ).reset_index(drop=True)\n\n    results = []\n    prev_acct = None\n    bal = 0.0\n    cyc = 1\n\n    for _, row in df_sorted.iterrows():\n        acct = row['account_id']\n\n        # account boundary reset\n        if acct != prev_acct:\n            bal = 0.0\n            cyc = 1\n            prev_acct = acct\n\n        # STMT row: reset happens BEFORE adding amount\n        if row['entry_type'] == 'STMT':\n            bal = 0.0\n            cyc += 1\n\n        amt = row['amount']\n        if pd.isna(amt):\n            amt = 0.0\n        bal = bal + amt\n\n        results.append({\n            'account_id': row['account_id'],\n            'row_seq': row['row_seq'],\n            'entry_date': row['entry_date'],\n            'entry_type': row['entry_type'],\n            'amount': row['amount'],\n            'cycle_no': cyc,\n            'cycle_balance': bal,\n        })\n\n    out = pd.DataFrame(\n        results,\n        columns=['account_id', 'row_seq', 'entry_date', 'entry_type',\n                 'amount', 'cycle_no', 'cycle_balance']\n    )\n\n    return {'cycle_balances': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 750,
+   "tokens_out": 1446,
+   "usd": 0.02394,
+   "wall_s": 12.616673231124878
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1500,
+  "tokens_out": 2591,
+  "usd": 0.043365,
+  "wall_s": 22.785167455673218
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

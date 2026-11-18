@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _differs(a, b):\n    \"\"\"Null-aware inequality: NULL vs NULL -> False, NULL vs non-NULL -> True,\n    otherwise standard inequality.\"\"\"\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null or b_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim_acct = inputs[\"dim_acct\"].copy()\n    stg_acct = inputs[\"stg_acct\"].copy()\n\n    # ---- Step 1: Dedup STG_ACCT to latest per acct_id by update_date,\n    #      ties broken by greater (email, tier) lexicographic pair. ----\n    stg = stg_acct.copy()\n    stg[\"_email_sort\"] = stg[\"email\"].fillna(\"\")\n    stg[\"_tier_sort\"] = stg[\"tier\"].fillna(\"\")\n\n    stg_sorted = stg.sort_values(\n        by=[\"acct_id\", \"update_date\", \"_email_sort\", \"_tier_sort\"],\n        ascending=[True, False, False, False],\n        kind=\"mergesort\",\n    )\n\n    dedup = stg_sorted.groupby(\"acct_id\", as_index=False, sort=False).first()\n    dedup = dedup.drop(columns=[\"_email_sort\", \"_tier_sort\"])\n\n    # ---- Prepare mutable representation of dim_acct rows ----\n    rows = []\n    for _, r in dim_acct.iterrows():\n        rows.append({\n            \"acct_id\": r[\"acct_id\"],\n            \"email\": r[\"email\"],\n            \"tier\": r[\"tier\"],\n            \"eff_start_date\": r[\"eff_start_date\"],\n            \"eff_end_date\": r[\"eff_end_date\"],\n            \"is_current\": r[\"is_current\"],\n        })\n\n    # ---- Step 2: process each staged record ----\n    for _, s in dedup.iterrows():\n        acct_id = s[\"acct_id\"]\n        s_email = s[\"email\"]\n        s_tier = s[\"tier\"]\n        s_date = s[\"update_date\"]\n\n        # find current row for this acct_id\n        current_row = None\n        for row in rows:\n            if row[\"acct_id\"] == acct_id and row[\"is_current\"] == 1:\n                current_row = row\n                break\n\n        if current_row is None:\n            # insert new current version\n            new_row = {\n                \"acct_id\": acct_id,\n                \"email\": s_email,\n                \"tier\": s_tier,\n                \"eff_start_date\": s_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            }\n            rows.append(new_row)\n        else:\n            c_tier = current_row[\"tier\"]\n            c_email = current_row[\"email\"]\n\n            if _differs(c_tier, s_tier):\n                # expire current row\n                current_row[\"eff_end_date\"] = s_date\n                current_row[\"is_current\"] = 0\n\n                # insert new current version\n                new_row = {\n                    \"acct_id\": acct_id,\n                    \"email\": s_email,\n                    \"tier\": s_tier,\n                    \"eff_start_date\": s_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n                rows.append(new_row)\n\n            if _differs(c_email, s_email):\n                # retro-overwrite email across ALL rows of this acct_id\n                for row in rows:\n                    if row[\"acct_id\"] == acct_id:\n                        row[\"email\"] = s_email\n\n    # ---- Build output DataFrame ----\n    out = pd.DataFrame(rows, columns=[\n        \"acct_id\", \"email\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"\n    ])\n\n    if len(out) > 0:\n        out[\"acct_id\"] = out[\"acct_id\"].astype(\"int64\")\n        out[\"is_current\"] = out[\"is_current\"].astype(\"int64\")\n        out[\"eff_start_date\"] = pd.to_datetime(out[\"eff_start_date\"])\n        out[\"eff_end_date\"] = pd.to_datetime(out[\"eff_end_date\"])\n    else:\n        out = pd.DataFrame(columns=[\n            \"acct_id\", \"email\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"\n        ])\n        out[\"acct_id\"] = out[\"acct_id\"].astype(\"int64\")\n        out[\"is_current\"] = out[\"is_current\"].astype(\"int64\")\n        out[\"eff_start_date\"] = pd.to_datetime(out[\"eff_start_date\"])\n        out[\"eff_end_date\"] = pd.to_datetime(out[\"eff_end_date\"])\n\n    return {\"dim_acct_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1065,
+   "tokens_out": 3303,
+   "usd": 0.05274,
+   "wall_s": 27.825292587280273,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

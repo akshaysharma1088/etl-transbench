@@ -1,0 +1,52 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _get_input(inputs, name):\n    # Try exact match first\n    if name in inputs:\n        return inputs[name]\n    # Try case-insensitive match\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    if name.lower() in lower_map:\n        return inputs[lower_map[name.lower()]]\n    # Try matching ignoring underscores/case\n    norm_map = {k.lower().replace(\"_\", \"\"): k for k in inputs.keys()}\n    norm_name = name.lower().replace(\"_\", \"\")\n    if norm_name in norm_map:\n        return inputs[norm_map[norm_name]]\n    raise KeyError(f\"Could not find input matching '{name}' among {list(inputs.keys())}\")\n\n\ndef _segments_equal(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return True\n    if a_null != b_null:\n        return False\n    return a == b\n\n\ndef run(inputs: dict) -> dict:\n    dim_customer = _get_input(inputs, \"DIM_CUSTOMER\").copy()\n    stg_customer = _get_input(inputs, \"STG_CUSTOMER\").copy()\n    fact_txn = _get_input(inputs, \"FACT_TXN\").copy()\n\n    # Ensure date columns are datetime (so comparisons work, NULL stays NaT)\n    for col in [\"eff_start_date\", \"eff_end_date\"]:\n        if col in dim_customer.columns:\n            dim_customer[col] = pd.to_datetime(dim_customer[col])\n    if \"update_date\" in stg_customer.columns:\n        stg_customer[\"update_date\"] = pd.to_datetime(stg_customer[\"update_date\"])\n    if \"txn_date\" in fact_txn.columns:\n        fact_txn[\"txn_date\"] = pd.to_datetime(fact_txn[\"txn_date\"])\n\n    dim_customer[\"is_current\"] = dim_customer[\"is_current\"].astype(int)\n\n    # Map of current row per customer_id (at most one current row per customer_id expected)\n    current_rows = dim_customer[dim_customer[\"is_current\"] == 1]\n    current_map = {}\n    for _, r in current_rows.iterrows():\n        current_map[r[\"customer_id\"]] = r\n\n    # Determine which staged rows create a new version\n    stg_customer = stg_customer.reset_index(drop=True)\n    creates_flags = []\n    for _, s in stg_customer.iterrows():\n        cust_id = s[\"customer_id\"]\n        if cust_id not in current_map:\n            creates_flags.append(True)\n        else:\n            cur_seg = current_map[cust_id][\"segment\"]\n            if _segments_equal(cur_seg, s[\"segment\"]):\n                creates_flags.append(False)\n            else:\n                creates_flags.append(True)\n\n    stg_customer[\"_creates\"] = creates_flags\n\n    creating = stg_customer[stg_customer[\"_creates\"]].copy()\n    creating = creating.sort_values(by=\"customer_id\", kind=\"mergesort\").reset_index(drop=True)\n\n    if len(dim_customer) > 0:\n        max_sk = dim_customer[\"customer_sk\"].max()\n    else:\n        max_sk = 0\n\n    creating[\"_row_num\"] = np.arange(1, len(creating) + 1)\n    creating[\"_new_sk\"] = max_sk + creating[\"_row_num\"]\n\n    # Build expiration updates for existing current rows that are being superseded\n    expire_map = {}  # customer_id -> update_date (the staged update_date that creates new version)\n    for _, s in creating.iterrows():\n        cust_id = s[\"customer_id\"]\n        if cust_id in current_map:\n            expire_map[cust_id] = s[\"update_date\"]\n\n    # Apply expirations to dim_customer\n    dim_out = dim_customer.copy()\n\n    def expire_row(row):\n        if row[\"is_current\"] == 1 and row[\"customer_id\"] in expire_map:\n            row = row.copy()\n            row[\"eff_end_date\"] = expire_map[row[\"customer_id\"]]\n            row[\"is_current\"] = 0\n        return row\n\n    dim_out = dim_out.apply(expire_row, axis=1)\n\n    # Build new rows for creating staged records\n    new_rows = []\n    for _, s in creating.iterrows():\n        new_rows.append({\n            \"customer_sk\": s[\"_new_sk\"],\n            \"customer_id\": s[\"customer_id\"],\n            \"segment\": s[\"segment\"],\n            \"eff_start_date\": s[\"update_date\"],\n            \"eff_end_date\": pd.NaT,\n            \"is_current\": 1,\n        })\n\n    new_rows_df = pd.DataFrame(new_rows, columns=[\n        \"customer_sk\", \"customer_id\", \"segment\", \"eff_start_date\", \"eff_end_date\", \"is_current\"\n    ])\n\n    dim_customer_out = pd.concat([dim_out, new_rows_df], ignore_index=True, sort=False)\n\n    # Ensure proper dtypes\n    dim_customer_out[\"customer_sk\"] = dim_customer_out[\"customer_sk\"].astype(int)\n    dim_customer_out[\"customer_id\"] = dim_customer_out[\"customer_id\"].astype(int)\n    dim_customer_out[\"is_current\"] = dim_customer_out[\"is_current\"].astype(int)\n    dim_customer_out[\"eff_start_date\"] = pd.to_datetime(dim_customer_out[\"eff_start_date\"])\n    dim_customer_out[\"eff_end_date\"] = pd.to_datetime(dim_customer_out[\"eff_end_date\"])\n\n    # ---- STEP 2: Key the facts against the updated dimension ----\n    fact_txn = fact_txn.reset_index(drop=True)\n\n    fact_txn_idx = fact_txn.reset_index().rename(columns={\"index\": \"_orig_idx\"})\n    merged_idx = fact_txn_idx.merge(\n        dim_customer_out,\n        on=\"customer_id\",\n        how=\"left\",\n        suffixes=(\"\", \"_dim\")\n    )\n\n    start_ok2 = merged_idx[\"eff_start_date\"] <= merged_idx[\"txn_date\"]\n    end_ok2 = merged_idx[\"eff_end_date\"].isna() | (merged_idx[\"txn_date\"] < merged_idx[\"eff_end_date\"])\n    valid2 = start_ok2 & end_ok2 & merged_idx[\"customer_sk\"].notna()\n    merged_idx[\"_valid\"] = valid2\n\n    valid_rows = merged_idx[merged_idx[\"_valid\"]].copy()\n    valid_rows = valid_rows.sort_values(\n        by=[\"eff_start_date\", \"customer_sk\"],\n        ascending=[False, False],\n        kind=\"mergesort\"\n    )\n    best_per_fact = valid_rows.drop_duplicates(subset=[\"_orig_idx\"], keep=\"first\")\n\n    sk_map = dict(zip(best_per_fact[\"_orig_idx\"], best_per_fact[\"customer_sk\"]))\n\n    result_sk = []\n    for i in range(len(fact_txn)):\n        if i in sk_map:\n            result_sk.append(int(sk_map[i]))\n        else:\n            result_sk.append(-1)\n\n    fact_txn_keyed = pd.DataFrame({\n        \"txn_id\": fact_txn[\"txn_id\"],\n        \"customer_sk\": result_sk,\n        \"amount\": fact_txn[\"amount\"],\n    })\n\n    return {\n        \"dim_customer_out\": dim_customer_out,\n        \"fact_txn_keyed\": fact_txn_keyed,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1107,
+   "tokens_out": 3861,
+   "usd": 0.061236,
+   "wall_s": 33.076759815216064
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4167,
+  "tokens_out": 2896,
+  "usd": 0.055941,
+  "wall_s": 20.702129125595093
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

@@ -1,0 +1,51 @@
+{
+ "config": "A1_trace_only",
+ "rep": 4,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    # Resolve input key case-insensitively (legacy artifact uses LEDGER,\n    # but harness may supply a different case).\n    ledger_key = None\n    for k in inputs.keys():\n        if k.lower() == \"ledger\":\n            ledger_key = k\n            break\n    if ledger_key is None:\n        raise KeyError(\"LEDGER\")\n\n    ledger = inputs[ledger_key].copy()\n\n    # Preserve original dtypes / values but ensure sort stability and\n    # correct ordering per the legacy cursor: ORDER BY account_id, entry_date, row_seq\n    ledger = ledger.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        kind=\"mergesort\"  # stable sort to break ties deterministically in original order\n    ).reset_index(drop=True)\n\n    # Coalesce amount to 0 for balance accumulation purposes (nulls treated as 0)\n    coalesced_amount = ledger[\"amount\"].fillna(0)\n\n    is_stmt = (ledger[\"entry_type\"] == \"STMT\").astype(int)\n\n    # cycle_no: starts at 1 per account, increments (inclusive) on each STMT row,\n    # i.e. cycle_no = 1 + cumulative count of STMT rows seen so far (including current row)\n    stmt_cumcount = is_stmt.groupby(ledger[\"account_id\"]).cumsum()\n    cycle_no = 1 + stmt_cumcount\n\n    ledger[\"cycle_no\"] = cycle_no\n\n    # cycle_balance: cumulative sum of coalesced amount within (account_id, cycle_no)\n    # groups, in the sorted order established above. Because a STMT row resets bal to 0\n    # BEFORE adding its own amount, and the STMT row itself already belongs to the new\n    # cycle_no, grouping by (account_id, cycle_no) and cumsum reproduces exactly that.\n    ledger[\"cycle_balance\"] = coalesced_amount.groupby(\n        [ledger[\"account_id\"], ledger[\"cycle_no\"]]\n    ).cumsum()\n\n    out = ledger[\n        [\"account_id\", \"row_seq\", \"entry_date\", \"entry_type\", \"amount\", \"cycle_no\", \"cycle_balance\"]\n    ].reset_index(drop=True)\n\n    return {\"cycle_balances\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 750,
+   "tokens_out": 1989,
+   "usd": 0.032085,
+   "wall_s": 19.857125520706177
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1842,
+  "tokens_out": 882,
+  "usd": 0.018756,
+  "wall_s": 6.780714750289917
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

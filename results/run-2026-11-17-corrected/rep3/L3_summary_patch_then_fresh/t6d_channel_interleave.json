@@ -1,0 +1,58 @@
+{
+ "config": "L3_summary_patch_then_fresh",
+ "rep": 3,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    events = inputs[\"events\"].copy()\n\n    # Ensure correct dtypes\n    events[\"user_id\"] = events[\"user_id\"].astype(\"int64\")\n    events[\"channel\"] = events[\"channel\"].astype(str)\n    events[\"event_id\"] = events[\"event_id\"].astype(\"int64\")\n    events[\"event_ts\"] = pd.to_datetime(events[\"event_ts\"])\n\n    # Sort by user_id, channel, event_ts, event_id for deterministic ordering\n    events = events.sort_values(\n        by=[\"user_id\", \"channel\", \"event_ts\", \"event_id\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # Compute previous timestamp within each (user_id, channel) group\n    grp_cols = [\"user_id\", \"channel\"]\n    prev_ts = events.groupby(grp_cols, sort=False)[\"event_ts\"].shift(1)\n\n    # Gap in minutes since previous event in same (user, channel) stream\n    gap_minutes = (events[\"event_ts\"] - prev_ts).dt.total_seconds() / 60.0\n\n    # New session starts when there's no previous event, or gap > 25 minutes (strict)\n    new_session = prev_ts.isna() | (gap_minutes > 25)\n\n    # Session number within each (user_id, channel) group (1-based)\n    events[\"_new_session\"] = new_session.astype(int)\n    events[\"session_num\"] = events.groupby(grp_cols, sort=False)[\"_new_session\"].cumsum()\n\n    # Aggregate per (user_id, channel, session_num)\n    channel_sessions = (\n        events.groupby([\"user_id\", \"channel\", \"session_num\"], sort=False)\n        .agg(\n            session_start=(\"event_ts\", \"min\"),\n            session_end=(\"event_ts\", \"max\"),\n            event_count=(\"event_id\", \"count\"),\n        )\n        .reset_index()\n    )\n\n    # Sort output for deterministic ordering\n    channel_sessions = channel_sessions.sort_values(\n        by=[\"user_id\", \"channel\", \"session_num\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    return {\"channel_sessions\": channel_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 351,
+   "tokens_out": 730,
+   "usd": 0.004001,
+   "wall_s": 5.204728364944458,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3933,
+  "tokens_out": 1813,
+  "usd": 0.038994,
+  "wall_s": 15.919381380081177
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

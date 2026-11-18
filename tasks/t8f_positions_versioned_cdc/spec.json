@@ -1,0 +1,43 @@
+{
+  "task_id": "t8f_positions_versioned_cdc",
+  "relations": [
+    {
+      "name": "new_positions",
+      "key_columns": [
+        "account_id",
+        "symbol"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "qty",
+          "kind": "float",
+          "abs_tol": 1e-06
+        },
+        {
+          "name": "price",
+          "kind": "float",
+          "abs_tol": 1e-06
+        },
+        {
+          "name": "row_version",
+          "kind": "int"
+        }
+      ]
+    },
+    {
+      "name": "closed_positions",
+      "key_columns": [
+        "account_id",
+        "symbol"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "closed_version",
+          "kind": "int"
+        }
+      ]
+    }
+  ]
+}

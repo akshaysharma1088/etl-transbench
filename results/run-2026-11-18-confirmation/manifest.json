@@ -1,0 +1,202 @@
+{
+ "mode": "REAL",
+ "models_requested": {
+  "cheap": "claude-haiku-4-5-20251001",
+  "frontier": "claude-sonnet-5"
+ },
+ "models_resolved": {
+  "frontier": "claude-sonnet-5",
+  "cheap": "claude-haiku-4-5-20251001"
+ },
+ "temperature": "API default (1.0)",
+ "max_tokens": 16000,
+ "replies_cut_off_at_max_tokens": {
+  "frontier": 6
+ },
+ "prices_usd_per_mtok": {
+  "cheap": {
+   "in": 1.0,
+   "out": 5.0
+  },
+  "frontier": {
+   "in": 3.0,
+   "out": 15.0
+  }
+ },
+ "reps": 5,
+ "configs": [
+  "B1_single_pass",
+  "LEGATO",
+  "B2_retranslate",
+  "B3_self_repair",
+  "L1_counterexample",
+  "C0_cheap_single",
+  "C1_cheap_grounded",
+  "C2_cheap_retranslate",
+  "C3_cheap_self_repair",
+  "C5_cheap_counterexample"
+ ],
+ "n_tasks": 10,
+ "tasks": [
+  "t2e_overdraft_fee_cursor",
+  "t2f_fifo_lot_matching",
+  "t2g_payment_waterfall",
+  "t5i_scd2_future_dated",
+  "t6f_cross_device_session_merge",
+  "t7f_running_limit_validation",
+  "t8f_positions_versioned_cdc",
+  "t8g_partial_update_sentinel",
+  "t8h_inventory_movements",
+  "t8i_snapshot_diff_changelog"
+ ],
+ "python": "3.12.5",
+ "pandas": "3.1.1",
+ "numpy": "2.5.5",
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ],
+ "rep_stride": 1000,
+ "policies": {
+  "B1_single_pass": {
+   "max_iters": 0,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "full",
+   "strategy": "patch",
+   "use_hints": true,
+   "fixed_tier": null
+  },
+  "LEGATO": {
+   "max_iters": 5,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "full",
+   "strategy": "patch",
+   "use_hints": true,
+   "fixed_tier": null
+  },
+  "B2_retranslate": {
+   "max_iters": 5,
+   "escalate_after": 0,
+   "retranslate_after": 0,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "full",
+   "strategy": "patch",
+   "use_hints": true,
+   "fixed_tier": null
+  },
+  "B3_self_repair": {
+   "max_iters": 5,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": false,
+   "evidence": "full",
+   "strategy": "patch",
+   "use_hints": true,
+   "fixed_tier": null
+  },
+  "L1_counterexample": {
+   "max_iters": 5,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "counterexample",
+   "strategy": "patch",
+   "use_hints": true,
+   "fixed_tier": null
+  },
+  "C0_cheap_single": {
+   "max_iters": 0,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "full",
+   "strategy": "patch",
+   "use_hints": true,
+   "fixed_tier": "cheap"
+  },
+  "C1_cheap_grounded": {
+   "max_iters": 5,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "full",
+   "strategy": "patch",
+   "use_hints": true,
+   "fixed_tier": "cheap"
+  },
+  "C2_cheap_retranslate": {
+   "max_iters": 5,
+   "escalate_after": 0,
+   "retranslate_after": 0,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "full",
+   "strategy": "patch",
+   "use_hints": true,
+   "fixed_tier": "cheap"
+  },
+  "C3_cheap_self_repair": {
+   "max_iters": 5,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": false,
+   "evidence": "full",
+   "strategy": "patch",
+   "use_hints": true,
+   "fixed_tier": "cheap"
+  },
+  "C5_cheap_counterexample": {
+   "max_iters": 5,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "counterexample",
+   "strategy": "patch",
+   "use_hints": true,
+   "fixed_tier": "cheap"
+  }
+ },
+ "initial_groups": {
+  "B1_single_pass": "default",
+  "LEGATO": "default",
+  "B2_retranslate": "default",
+  "B3_self_repair": "default",
+  "L1_counterexample": "default",
+  "C0_cheap_single": "cheap",
+  "C1_cheap_grounded": "cheap",
+  "C2_cheap_retranslate": "cheap",
+  "C3_cheap_self_repair": "cheap",
+  "C5_cheap_counterexample": "cheap"
+ },
+ "prompts": {
+  "translator_system": "You translate legacy ETL artifacts into Python.\nOutput ONLY a Python module inside one ```python code fence. The module must\ndefine run(inputs: dict[str, pandas.DataFrame]) -> dict[str, pandas.DataFrame]\nthat reproduces the legacy semantics exactly, including null handling, type\ncoercion, duplicate keys, and tie-breaking. Do not invent columns. Do not\nread or write files. Use only pandas and the Python standard library.",
+  "repair_system": "You translate legacy ETL artifacts into Python.\nOutput ONLY a Python module inside one ```python code fence. The module must\ndefine run(inputs: dict[str, pandas.DataFrame]) -> dict[str, pandas.DataFrame]\nthat reproduces the legacy semantics exactly, including null handling, type\ncoercion, duplicate keys, and tie-breaking. Do not invent columns. Do not\nread or write files. Use only pandas and the Python standard library.\nYou will receive your previous code plus EXTERNAL verification evidence\n(error traces, schema diffs, mismatched keys, per-column mismatch counts)\nfrom differential execution against the legacy system. Fix the code. Address\nthe evidence specifically; do not weaken or reinterpret the requirements.",
+  "construct_hints": {
+   "T1": "Dialect SQL: QUALIFY filters on window results AFTER they are computed; replicate Teradata-style null sorting and integer division semantics explicitly.",
+   "T2": "Procedural logic: rewrite cursors/loops as set-oriented operations; preserve per-iteration state effects exactly.",
+   "T5": "SCD Type 2: close prior current rows (end_date, is_current=0) before inserting new versions; unchanged records must NOT create versions; compare tracked attributes only.",
+   "T8": "Incremental/CDC: respect the watermark, apply latest-record-wins per key by event time with deterministic tie-breaks, and make the merge idempotent."
+  }
+ }
+}

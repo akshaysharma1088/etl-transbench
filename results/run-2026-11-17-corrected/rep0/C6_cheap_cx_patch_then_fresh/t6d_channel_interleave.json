@@ -1,0 +1,48 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 0,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Ensure proper types\n    events[\"user_id\"] = events[\"user_id\"].astype(\"int64\")\n    events[\"channel\"] = events[\"channel\"].astype(\"str\")\n    events[\"event_id\"] = events[\"event_id\"].astype(\"int64\")\n    events[\"event_ts\"] = pd.to_datetime(events[\"event_ts\"])\n    \n    # Sort by (user_id, channel, event_ts, event_id) for deterministic ordering\n    events = events.sort_values(\n        by=[\"user_id\", \"channel\", \"event_ts\", \"event_id\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Group by (user_id, channel) for independent sessionization\n    sessions_list = []\n    \n    for (user_id, channel), group in events.groupby([\"user_id\", \"channel\"], sort=False):\n        group = group.reset_index(drop=True)\n        \n        if len(group) == 0:\n            continue\n        \n        # Calculate time differences between consecutive events (within this user+channel)\n        group[\"time_diff\"] = group[\"event_ts\"].diff()\n        \n        # A new session starts if:\n        # 1. It's the first event (NaT diff)\n        # 2. Time difference > 25 minutes\n        gap_threshold = pd.Timedelta(minutes=25)\n        group[\"new_session\"] = (\n            group[\"time_diff\"].isna() | (group[\"time_diff\"] > gap_threshold)\n        )\n        \n        # Assign session numbers (1-based) within this (user_id, channel)\n        group[\"session_num\"] = group[\"new_session\"].cumsum()\n        \n        # Aggregate to get session-level information\n        session_groups = group.groupby(\"session_num\", sort=False)\n        \n        for session_num, session_group in session_groups:\n            session_start = session_group[\"event_ts\"].min()\n            session_end = session_group[\"event_ts\"].max()\n            event_count = len(session_group)\n            \n            sessions_list.append({\n                \"user_id\": user_id,\n                \"channel\": channel,\n                \"session_num\": int(session_num),\n                \"session_start\": session_start,\n                \"session_end\": session_end,\n                \"event_count\": event_count\n            })\n    \n    channel_sessions = pd.DataFrame(sessions_list)\n    \n    if len(channel_sessions) > 0:\n        channel_sessions = channel_sessions.astype({\n            \"user_id\": \"int64\",\n            \"channel\": \"str\",\n            \"session_num\": \"int64\",\n            \"event_count\": \"int64\"\n        })\n        channel_sessions[\"session_start\"] = pd.to_datetime(channel_sessions[\"session_start\"])\n        channel_sessions[\"session_end\"] = pd.to_datetime(channel_sessions[\"session_end\"])\n    else:\n        channel_sessions = pd.DataFrame({\n            \"user_id\": pd.Series(dtype=\"int64\"),\n            \"channel\": pd.Series(dtype=\"str\"),\n            \"session_num\": pd.Series(dtype=\"int64\"),\n            \"session_start\": pd.Series(dtype=\"datetime64[us]\"),\n            \"session_end\": pd.Series(dtype=\"datetime64[us]\"),\n            \"event_count\": pd.Series(dtype=\"int64\")\n        })\n    \n    return {\"channel_sessions\": channel_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 351,
+   "tokens_out": 908,
+   "usd": 0.004891,
+   "wall_s": 5.509246587753296,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

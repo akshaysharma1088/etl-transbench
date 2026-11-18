@@ -1,0 +1,48 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 1,
+ "task": "t8h_inventory_movements",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\nfrom io import StringIO\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    stock_balance = inputs[\"stock_balance\"].copy()\n    applied_movements_df = inputs[\"applied_movements\"].copy()\n    movements = inputs[\"movements\"].copy()\n    \n    # Get the set of already-applied movement IDs\n    applied_set = set(applied_movements_df[\"movement_id\"].values) if len(applied_movements_df) > 0 else set()\n    \n    # Initialize balance dict: (sku, warehouse) -> on_hand\n    balance = {}\n    for _, row in stock_balance.iterrows():\n        balance[(row[\"sku\"], row[\"warehouse\"])] = row[\"on_hand\"]\n    \n    # Sort movements by movement_ts, then line_no\n    movements = movements.sort_values(by=[\"movement_ts\", \"line_no\"]).reset_index(drop=True)\n    \n    # Track which movement_ids have been applied in this run\n    applied_this_run = set()\n    \n    # List to collect rejects\n    rejects = []\n    \n    # Process each line\n    for _, row in movements.iterrows():\n        line_no = row[\"line_no\"]\n        movement_id = row[\"movement_id\"]\n        sku = row[\"sku\"]\n        warehouse = row[\"warehouse\"]\n        qty = row[\"qty\"]\n        \n        # Check if movement was already applied (before or during this run)\n        if movement_id in applied_set or movement_id in applied_this_run:\n            # Skip silently\n            continue\n        \n        # Get current on_hand (defaults to 0 if key doesn't exist)\n        key = (sku, warehouse)\n        current_on_hand = balance.get(key, 0)\n        \n        # Check if applying would overdraw\n        new_on_hand = current_on_hand + qty\n        if new_on_hand < 0:\n            # Reject the line\n            rejects.append({\"line_no\": line_no, \"reason\": \"INSUFFICIENT_STOCK\"})\n            # Do NOT mark movement_id as applied, so it stays retryable\n        else:\n            # Apply the movement\n            balance[key] = new_on_hand\n            applied_this_run.add(movement_id)\n    \n    # Build new_balance: include all keys from stock_balance, plus any new keys from movements\n    new_balance_rows = []\n    \n    # Start with all original balance keys\n    all_keys = set(balance.keys())\n    \n    for key in all_keys:\n        sku, warehouse = key\n        on_hand = balance[key]\n        new_balance_rows.append({\"sku\": sku, \"warehouse\": warehouse, \"on_hand\": on_hand})\n    \n    new_balance_df = pd.DataFrame(new_balance_rows) if new_balance_rows else pd.DataFrame(\n        columns=[\"sku\", \"warehouse\", \"on_hand\"]\n    )\n    \n    # Build applied_out: original applied_movements + newly applied ones\n    all_applied = list(applied_set | applied_this_run)\n    applied_out_df = pd.DataFrame({\"movement_id\": all_applied}) if all_applied else pd.DataFrame(\n        columns=[\"movement_id\"]\n    )\n    \n    # Build movement_rejects\n    movement_rejects_df = pd.DataFrame(rejects) if rejects else pd.DataFrame(\n        columns=[\"line_no\", \"reason\"]\n    )\n    \n    # Ensure correct dtypes\n    if len(new_balance_df) > 0:\n        new_balance_df = new_balance_df.astype({\"sku\": \"object\", \"warehouse\": \"object\", \"on_hand\": \"int64\"})\n    else:\n        new_balance_df = new_balance_df.astype({\"sku\": \"object\", \"warehouse\": \"object\", \"on_hand\": \"int64\"})\n    \n    if len(applied_out_df) > 0:\n        applied_out_df = applied_out_df.astype({\"movement_id\": \"object\"})\n    else:\n        applied_out_df = applied_out_df.astype({\"movement_id\": \"object\"})\n    \n    if len(movement_rejects_df) > 0:\n        movement_rejects_df = movement_rejects_df.astype({\"line_no\": \"int64\", \"reason\": \"object\"})\n    else:\n        movement_rejects_df = movement_rejects_df.astype({\"line_no\": \"int64\", \"reason\": \"object\"})\n    \n    return {\n        \"new_balance\": new_balance_df,\n        \"applied_out\": applied_out_df,\n        \"movement_rejects\": movement_rejects_df,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 780,
+   "tokens_out": 1193,
+   "usd": 0.006745,
+   "wall_s": 7.0277276039123535,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

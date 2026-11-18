@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 4,
+ "task": "t8b_delete_reinsert_cdc",
+ "category": "T8",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_snapshot = inputs['target_snapshot']\n    cdc_events = inputs['cdc_events']\n    watermark = inputs['watermark']\n\n    # Determine watermark high_ts (apply only events strictly after it)\n    if watermark is not None and len(watermark) > 0:\n        high_ts = watermark['high_ts'].iloc[0]\n    else:\n        high_ts = None\n\n    events = cdc_events.copy()\n    if high_ts is not None:\n        events = events[events['event_ts'] > high_ts]\n\n    # Sort events per item in (event_ts, event_seq) order for sequential application\n    events = events.sort_values(['item_id', 'event_ts', 'event_seq'])\n\n    # Initialize state from the existing snapshot\n    state = {}\n    for _, row in target_snapshot.iterrows():\n        state[row['item_id']] = {\n            'exists': True,\n            'qty': row['qty_on_hand'],\n            'last_ts': row['last_event_ts'],\n        }\n\n    # Apply each event sequentially per item\n    for _, ev in events.iterrows():\n        item = ev['item_id']\n        op = ev['op']\n        qty_val = ev['qty']\n        ts_val = ev['event_ts']\n\n        if item not in state:\n            state[item] = {'exists': False, 'qty': None, 'last_ts': None}\n        s = state[item]\n\n        if op == 'D':\n            s['exists'] = False\n            s['qty'] = None\n            s['last_ts'] = None\n        elif op == 'R':\n            if s['exists']:\n                s['qty'] = s['qty'] + qty_val\n            else:\n                s['qty'] = 0 + qty_val\n                s['exists'] = True\n            s['last_ts'] = ts_val\n        elif op == 'A':\n            s['qty'] = qty_val\n            s['exists'] = True\n            s['last_ts'] = ts_val\n        # any unrecognized op is ignored (defensive, not expected per spec)\n\n    rows = []\n    for item, s in state.items():\n        if s['exists']:\n            rows.append({\n                'item_id': item,\n                'qty_on_hand': s['qty'],\n                'last_event_ts': s['last_ts'],\n            })\n\n    new_snapshot = pd.DataFrame(rows, columns=['item_id', 'qty_on_hand', 'last_event_ts'])\n\n    return {'new_snapshot': new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 691,
+   "tokens_out": 2891,
+   "usd": 0.045438,
+   "wall_s": 26.32418203353882
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

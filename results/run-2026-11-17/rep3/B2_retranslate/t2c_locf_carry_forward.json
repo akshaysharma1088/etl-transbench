@@ -1,0 +1,66 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t2c_locf_carry_forward",
+ "category": "T2",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"RATE_FEED\"].copy()\n\n    # Legacy cursor order: ORDER BY account_id, obs_date, obs_seq\n    df = df.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        kind=\"mergesort\"  # stable sort to mimic deterministic cursor traversal\n    ).reset_index(drop=True)\n\n    # Forward-fill rate within each account only (carry never crosses accounts)\n    df[\"rate_filled\"] = df.groupby(\"account_id\")[\"rate\"].ffill()\n\n    # was_carried = 1 only when original rate was NULL and a prior non-null\n    # rate existed within the same account (i.e., ffill produced a value).\n    df[\"was_carried\"] = (\n        (df[\"rate\"].isna()) & (df[\"rate_filled\"].notna())\n    ).astype(\"int64\")\n\n    # Preserve COALESCE semantics: if no prior rate exists, rate_filled stays NULL\n    # (already guaranteed by ffill behavior).\n\n    result = df[[\"account_id\", \"obs_seq\", \"obs_date\", \"rate_filled\", \"was_carried\"]]\n\n    return {\"rate_filled\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 774,
+   "tokens_out": 822,
+   "usd": 0.014652,
+   "wall_s": 8.220586776733398
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3096,
+  "tokens_out": 3527,
+  "usd": 0.062193000000000005,
+  "wall_s": 34.83725833892822
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

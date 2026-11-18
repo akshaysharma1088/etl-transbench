@@ -1,0 +1,35 @@
+{
+  "task_id": "t5g_scd2_snapshot_close",
+  "relations": [
+    {
+      "name": "dim_store_out",
+      "key_columns": [
+        "store_id",
+        "eff_start_date"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "region",
+          "kind": "string"
+        },
+        {
+          "name": "format",
+          "kind": "string"
+        },
+        {
+          "name": "eff_start_date",
+          "kind": "timestamp"
+        },
+        {
+          "name": "eff_end_date",
+          "kind": "timestamp"
+        },
+        {
+          "name": "is_current",
+          "kind": "int"
+        }
+      ]
+    }
+  ]
+}

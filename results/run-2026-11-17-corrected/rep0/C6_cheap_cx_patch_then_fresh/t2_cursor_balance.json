@@ -1,0 +1,53 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 0,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    transactions = inputs[\"transactions\"].copy()\n    \n    # Sort by account_id, txn_date, txn_seq to match cursor order\n    transactions = transactions.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        ignore_index=False\n    )\n    \n    # Keep original amount column for output (preserves NULLs)\n    original_amount = transactions[\"amount\"].copy()\n    \n    # Handle NULL amounts by coercing to 0 for computation only\n    transactions[\"amount_filled\"] = transactions[\"amount\"].fillna(0.0)\n    \n    # Compute running balance per account using filled amounts\n    transactions[\"running_balance\"] = transactions.groupby(\"account_id\")[\"amount_filled\"].cumsum()\n    \n    # Compute overdraft flag: 1 if running_balance < 0, else 0\n    transactions[\"overdraft_flag\"] = (transactions[\"running_balance\"] < 0).astype(\"int16\")\n    \n    # Restore original amount column (with NULLs)\n    transactions[\"amount\"] = original_amount\n    \n    # Select and order output columns as specified\n    result = transactions[[\n        \"account_id\",\n        \"txn_seq\",\n        \"txn_date\",\n        \"amount\",\n        \"running_balance\",\n        \"overdraft_flag\"\n    ]].reset_index(drop=True)\n    \n    return {\"acct_balance_flags\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 520,
+   "tokens_out": 334,
+   "usd": 0.00219,
+   "wall_s": 3.292602777481079,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4158,
+  "tokens_out": 652,
+  "usd": 0.007418,
+  "wall_s": 5.840737342834473
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "L3_summary_patch_then_fresh",
+ "rep": 1,
+ "task": "t6e_session_heartbeat_logout",
+ "category": "T6",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"app_events\"].copy()\n\n    df = df.sort_values([\"user_id\", \"event_ts\", \"event_id\"], kind=\"mergesort\")\n\n    thirty_min = pd.Timedelta(minutes=30)\n\n    results = []\n\n    for user_id, group in df.groupby(\"user_id\", sort=False):\n        session_open = False\n        last_activity_ts = None\n        session_num = 0\n        cur_start = None\n        cur_end = None\n        cur_event_count = 0\n        cur_heartbeat_count = 0\n\n        def finalize():\n            results.append({\n                \"user_id\": user_id,\n                \"session_num\": session_num,\n                \"session_start\": cur_start,\n                \"session_end\": cur_end,\n                \"event_count\": cur_event_count,\n                \"heartbeat_count\": cur_heartbeat_count,\n            })\n\n        for row in group.itertuples(index=False):\n            ts = row.event_ts\n            etype = row.event_type\n\n            if etype in (\"view\", \"click\", \"logout\"):\n                starts_new = False\n                if not session_open:\n                    starts_new = True\n                else:\n                    if (ts - last_activity_ts) > thirty_min:\n                        starts_new = True\n\n                if starts_new:\n                    if session_open:\n                        finalize()\n                    session_num += 1\n                    cur_start = ts\n                    cur_end = ts\n                    cur_event_count = 0\n                    cur_heartbeat_count = 0\n                    session_open = True\n\n                cur_event_count += 1\n                last_activity_ts = ts\n                cur_end = ts\n\n                if etype == \"logout\":\n                    finalize()\n                    session_open = False\n                    last_activity_ts = None\n\n            else:\n                # heartbeat\n                if session_open and (ts - last_activity_ts) <= thirty_min:\n                    cur_event_count += 1\n                    cur_heartbeat_count += 1\n                # else dropped\n\n        if session_open:\n            finalize()\n\n    out_cols = [\"user_id\", \"session_num\", \"session_start\", \"session_end\",\n                \"event_count\", \"heartbeat_count\"]\n\n    if results:\n        out_df = pd.DataFrame(results, columns=out_cols)\n    else:\n        out_df = pd.DataFrame(columns=out_cols)\n        out_df[\"user_id\"] = out_df[\"user_id\"].astype(\"int64\")\n        out_df[\"session_num\"] = out_df[\"session_num\"].astype(\"int64\")\n        out_df[\"event_count\"] = out_df[\"event_count\"].astype(\"int64\")\n        out_df[\"heartbeat_count\"] = out_df[\"heartbeat_count\"].astype(\"int64\")\n\n    return {\"user_sessions\": out_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 991,
+   "tokens_out": 1337,
+   "usd": 0.023028,
+   "wall_s": 11.446077823638916,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

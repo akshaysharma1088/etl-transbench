@@ -1,0 +1,56 @@
+{
+ "config": "LEGATO",
+ "rep": 0,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_null(x):\n    try:\n        return pd.isna(x)\n    except (TypeError, ValueError):\n        return x is None\n\n\ndef _not_equal(a, b):\n    a_null = _is_null(a)\n    b_null = _is_null(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef _find_input(inputs: dict, *candidates):\n    \"\"\"Case-insensitive / whitespace-insensitive lookup of an input frame.\"\"\"\n    if inputs is None:\n        return None\n    # exact match first\n    for c in candidates:\n        if c in inputs:\n            return inputs[c]\n    # case-insensitive match\n    lower_map = {str(k).strip().lower(): k for k in inputs.keys()}\n    for c in candidates:\n        key = lower_map.get(c.strip().lower())\n        if key is not None:\n            return inputs[key]\n    return None\n\n\ndef run(inputs: dict) -> dict:\n    dim_acct = _find_input(inputs, \"DIM_ACCT\", \"dim_acct\", \"DimAcct\")\n    stg_acct = _find_input(inputs, \"STG_ACCT\", \"stg_acct\", \"StgAcct\")\n\n    dim_cols = [\"acct_id\", \"email\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    if dim_acct is None:\n        dim_acct = pd.DataFrame(columns=dim_cols)\n    else:\n        dim_acct = dim_acct.copy()\n        # ensure all expected columns exist\n        for col in dim_cols:\n            if col not in dim_acct.columns:\n                dim_acct[col] = pd.NA\n\n    stg_cols = [\"acct_id\", \"email\", \"tier\", \"update_date\"]\n    if stg_acct is None or len(stg_acct) == 0:\n        stg_acct = pd.DataFrame(columns=stg_cols)\n    else:\n        stg_acct = stg_acct.copy()\n        for col in stg_cols:\n            if col not in stg_acct.columns:\n                stg_acct[col] = pd.NA\n\n    # ---------------------------------------------------------------\n    # Step 1: Dedup STG_ACCT to latest per acct_id by update_date.\n    # Ties: greater (email, tier) lexicographic pair wins.\n    # ---------------------------------------------------------------\n    if len(stg_acct) > 0:\n        stg_acct[\"_email_key\"] = stg_acct[\"email\"].fillna(\"\")\n        stg_acct[\"_tier_key\"] = stg_acct[\"tier\"].fillna(\"\")\n        stg_sorted = stg_acct.sort_values(\n            by=[\"acct_id\", \"update_date\", \"_email_key\", \"_tier_key\"],\n            kind=\"mergesort\",\n        )\n        dedup = stg_sorted.groupby(\"acct_id\", as_index=False, sort=False).tail(1)\n        dedup = dedup.drop(columns=[\"_email_key\", \"_tier_key\"])\n    else:\n        dedup = stg_acct.copy()\n\n    # ---------------------------------------------------------------\n    # Step 2: Process each staged record against DIM_ACCT.\n    # Maintain rows as a mutable list of dicts for in-place history edits.\n    # ---------------------------------------------------------------\n    rows = dim_acct.to_dict(\"records\")\n\n    # Normalize existing rows' is_current to plain python values for safe compare\n    for r in rows:\n        if \"is_current\" in r and not _is_null(r[\"is_current\"]):\n            try:\n                r[\"is_current\"] = int(r[\"is_current\"])\n            except (TypeError, ValueError):\n                pass\n\n    for _, s in dedup.iterrows():\n        acct_id = s[\"acct_id\"]\n        s_email = s[\"email\"]\n        s_tier = s[\"tier\"]\n        s_update_date = s[\"update_date\"]\n\n        # find current row index for this acct_id\n        current_idx = None\n        for idx, r in enumerate(rows):\n            if r.get(\"acct_id\") == acct_id and not _is_null(r.get(\"is_current\")) and int(r.get(\"is_current\")) == 1:\n                current_idx = idx\n                break\n\n        if current_idx is None:\n            # No current row -> insert new current version\n            rows.append(\n                {\n                    \"acct_id\": acct_id,\n                    \"email\": s_email,\n                    \"tier\": s_tier,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            )\n            continue\n\n        c = rows[current_idx]\n        c_tier = c.get(\"tier\")\n        c_email = c.get(\"email\")\n\n        tier_changed = _not_equal(c_tier, s_tier)\n        email_changed = _not_equal(c_email, s_email)\n\n        if tier_changed:\n            # expire old current row\n            rows[current_idx][\"eff_end_date\"] = s_update_date\n            rows[current_idx][\"is_current\"] = 0\n            # insert new current version\n            rows.append(\n                {\n                    \"acct_id\": acct_id,\n                    \"email\": s_email,\n                    \"tier\": s_tier,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            )\n\n        if email_changed:\n            # retro-overwrite email across ALL rows of this acct_id\n            for r in rows:\n                if r.get(\"acct_id\") == acct_id:\n                    r[\"email\"] = s_email\n\n    # ---------------------------------------------------------------\n    # Build output DataFrame\n    # ---------------------------------------------------------------\n    out = pd.DataFrame(rows, columns=dim_cols)\n\n    return {\"dim_acct_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 983,
+   "tokens_out": 4000,
+   "usd": 0.062949,
+   "wall_s": 36.730624198913574
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6072,
+  "tokens_out": 4851,
+  "usd": 0.090981,
+  "wall_s": 38.44263744354248
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

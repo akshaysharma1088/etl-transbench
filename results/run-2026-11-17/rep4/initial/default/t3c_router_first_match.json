@@ -1,0 +1,16 @@
+{
+ "task": "t3c_router_first_match",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Router component that directs claims to three output ports based on ordered rules.\n    Rules are evaluated in order; a row matches the FIRST applicable rule only.\n    Unmatched rows go to the default port (standard).\n    \"\"\"\n    claims = inputs[\"claims\"].copy()\n    \n    # Initialize output dataframes\n    fast_track = []\n    high_value = []\n    manual_review = []\n    standard = []\n    \n    # Process each row\n    for idx, row in claims.iterrows():\n        amount = row[\"amount\"]\n        photos_attached = row[\"photos_attached\"]\n        \n        matched = False\n        \n        # Rule 1: amount <= 500 and photos_attached == 1\n        if not matched and amount <= 500 and photos_attached == 1:\n            fast_track.append(row)\n            matched = True\n        \n        # Rule 2: amount > 10000\n        if not matched and amount > 10000:\n            high_value.append(row)\n            matched = True\n        \n        # Rule 3: photos_attached == 0 or amount > 500\n        if not matched and (photos_attached == 0 or amount > 500):\n            manual_review.append(row)\n            matched = True\n        \n        # Default port: standard\n        if not matched:\n            standard.append(row)\n    \n    # Convert lists to dataframes\n    claims_fast_track = pd.DataFrame(fast_track)[[\"claim_id\", \"amount\", \"photos_attached\"]] if fast_track else pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    claims_high_value = pd.DataFrame(high_value)[[\"claim_id\", \"amount\", \"photos_attached\"]] if high_value else pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    claims_manual_review = pd.DataFrame(manual_review)[[\"claim_id\", \"amount\", \"photos_attached\"]] if manual_review else pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    \n    return {\n        \"claims_fast_track\": claims_fast_track,\n        \"claims_high_value\": claims_high_value,\n        \"claims_manual_review\": claims_manual_review\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 549,
+   "tokens_out": 583,
+   "usd": 0.003464,
+   "wall_s": 3.4681646823883057
+  }
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "LEGATO",
+ "rep": 1,
+ "task": "t6b_capped_session",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import timedelta\n\n\ndef run(inputs: dict) -> dict:\n    events = inputs[\"events\"].copy()\n\n    out_cols = [\"user_id\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]\n\n    if events.empty:\n        return {\"user_sessions\": pd.DataFrame(columns=out_cols)}\n\n    events = events.sort_values([\"user_id\", \"event_ts\", \"event_id\"], kind=\"mergesort\").reset_index(drop=True)\n\n    gap_limit = timedelta(minutes=20)\n    cap_limit = timedelta(hours=4)\n\n    session_nums = [0] * len(events)\n\n    user_ids = events[\"user_id\"].to_numpy()\n    event_ts = events[\"event_ts\"].to_numpy()\n\n    current_user = None\n    session_num = 0\n    session_start = None\n    prev_ts = None\n\n    for i in range(len(events)):\n        u = user_ids[i]\n        ts = pd.Timestamp(event_ts[i])\n\n        if u != current_user:\n            current_user = u\n            session_num = 1\n            session_start = ts\n            prev_ts = ts\n        else:\n            gap = ts - prev_ts\n            cap_exceed = (ts - session_start) > cap_limit\n            if gap > gap_limit or cap_exceed:\n                session_num += 1\n                session_start = ts\n            prev_ts = ts\n\n        session_nums[i] = session_num\n\n    events[\"session_num\"] = session_nums\n\n    grouped = events.groupby([\"user_id\", \"session_num\"], as_index=False).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\"),\n    )\n\n    grouped = grouped[out_cols]\n\n    return {\"user_sessions\": grouped}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 591,
+   "tokens_out": 1143,
+   "usd": 0.018918,
+   "wall_s": 10.250767230987549,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

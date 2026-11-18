@@ -1,0 +1,17 @@
+{
+ "task": "t3_dataflow_orders",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    # Step 1: Filter orders with status == 'SHIPPED'\n    orders = inputs[\"orders\"]\n    filtered = orders[orders[\"status\"] == \"SHIPPED\"].copy()\n    \n    # Step 2: Lookup customers to get region\n    customers = inputs[\"customers\"]\n    # Perform left join on customer_id\n    enriched = filtered.merge(\n        customers[[\"customer_id\", \"region\"]],\n        on=\"customer_id\",\n        how=\"left\"\n    )\n    # Fill missing regions with \"UNKNOWN\"\n    enriched[\"region\"] = enriched[\"region\"].fillna(\"UNKNOWN\")\n    \n    # Step 3: Reformat - compute net_amount\n    # NULL discount treated as 0 by legacy reformat component\n    enriched[\"discount\"] = enriched[\"discount\"].fillna(0)\n    enriched[\"net_amount\"] = enriched[\"qty\"] * enriched[\"unit_price\"] * (1 - enriched[\"discount\"])\n    \n    # Step 4: Select output columns in specified order\n    output_columns = [\"order_id\", \"customer_id\", \"region\", \"qty\", \"unit_price\", \"net_amount\"]\n    result = enriched[output_columns].copy()\n    \n    return {\"shipped_orders_enriched\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 525,
+   "tokens_out": 343,
+   "usd": 0.00224,
+   "wall_s": 2.3499605655670166,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

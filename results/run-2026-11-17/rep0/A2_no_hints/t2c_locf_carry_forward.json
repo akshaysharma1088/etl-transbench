@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t2c_locf_carry_forward",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"rate_feed\"].copy()\n\n    # Preserve original row identity for stable ordering on ties\n    df[\"_orig_idx\"] = np.arange(len(df))\n\n    # Order exactly as the cursor: account_id, obs_date, obs_seq\n    df = df.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\", \"_orig_idx\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    account_ids = []\n    obs_seqs = []\n    obs_dates = []\n    rates_filled = []\n    was_carried = []\n\n    prev_acct = None\n    last_rate = None\n\n    for row in df.itertuples(index=False):\n        acct = row.account_id\n        seq = row.obs_seq\n        date = row.obs_date\n        rate = row.rate\n\n        if acct != prev_acct:\n            last_rate = None\n            prev_acct = acct\n\n        if pd.notna(rate):\n            last_rate = rate\n            carried = 0\n        else:\n            carried = 0 if pd.isna(last_rate) else 1\n\n        filled = rate if pd.notna(rate) else last_rate\n\n        account_ids.append(acct)\n        obs_seqs.append(seq)\n        obs_dates.append(date)\n        rates_filled.append(filled)\n        was_carried.append(carried)\n\n    result = pd.DataFrame({\n        \"account_id\": account_ids,\n        \"obs_seq\": obs_seqs,\n        \"obs_date\": obs_dates,\n        \"rate_filled\": rates_filled,\n        \"was_carried\": was_carried,\n    })\n\n    # Type coercion matching legacy output schema\n    result[\"account_id\"] = result[\"account_id\"].astype(\"int64\")\n    result[\"obs_seq\"] = result[\"obs_seq\"].astype(\"int64\")\n    result[\"rate_filled\"] = result[\"rate_filled\"].astype(\"float64\")\n    result[\"was_carried\"] = result[\"was_carried\"].astype(\"int64\")\n\n    return {\"rate_filled\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 734,
+   "tokens_out": 1003,
+   "usd": 0.017247,
+   "wall_s": 8.203191995620728
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

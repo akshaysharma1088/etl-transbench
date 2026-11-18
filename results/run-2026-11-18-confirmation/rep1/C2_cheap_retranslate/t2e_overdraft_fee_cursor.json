@@ -1,0 +1,48 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 1,
+ "task": "t2e_overdraft_fee_cursor",
+ "category": "T2",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\nfrom datetime import datetime\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    accounts = inputs[\"accounts\"].copy()\n    txns = inputs[\"txns\"].copy()\n    \n    # Filter txns to only include known accounts\n    txns = txns[txns[\"account_id\"].isin(accounts[\"account_id\"])].copy()\n    \n    # Sort transactions by account, then by timestamp, then by txn_id\n    txns = txns.sort_values([\"account_id\", \"txn_ts\", \"txn_id\"]).reset_index(drop=True)\n    \n    # Initialize output lists\n    txn_ledger_rows = []\n    fees_rows = []\n    \n    # Create a mapping of account_id to opening_balance\n    account_balances = dict(zip(accounts[\"account_id\"], accounts[\"opening_balance\"]))\n    \n    # Track which accounts have been charged a fee on which date\n    # Key: (account_id, date), Value: True\n    fees_charged = {}\n    \n    # Process each account's transactions\n    for account_id in txns[\"account_id\"].unique():\n        bal = account_balances[account_id]\n        account_txns = txns[txns[\"account_id\"] == account_id].copy()\n        \n        for _, row in account_txns.iterrows():\n            txn_id = row[\"txn_id\"]\n            amount = row[\"amount\"]\n            txn_ts = row[\"txn_ts\"]\n            \n            # Apply transaction\n            bal = bal + amount\n            \n            # Check if fee should be charged\n            # Conditions:\n            # 1. amount < 0 (it's a debit)\n            # 2. bal < 0 (balance is negative after the debit)\n            # 3. No fee charged to this account on this date yet\n            txn_date = pd.Timestamp(txn_ts).date()\n            fee_key = (account_id, txn_date)\n            \n            if amount < 0 and bal < 0 and fee_key not in fees_charged:\n                # Charge overdraft fee\n                bal = bal - 35.00\n                fees_charged[fee_key] = True\n                fees_rows.append({\n                    \"account_id\": account_id,\n                    \"fee_date\": txn_date,\n                    \"trigger_txn_id\": txn_id\n                })\n            \n            # Record the transaction and balance after any fee\n            txn_ledger_rows.append({\n                \"txn_id\": txn_id,\n                \"balance_after\": bal\n            })\n    \n    # Create output DataFrames\n    txn_ledger = pd.DataFrame(txn_ledger_rows)\n    fees = pd.DataFrame(fees_rows)\n    \n    # Ensure correct dtypes\n    if not txn_ledger.empty:\n        txn_ledger[\"txn_id\"] = txn_ledger[\"txn_id\"].astype(\"int64\")\n        txn_ledger[\"balance_after\"] = txn_ledger[\"balance_after\"].astype(\"float64\")\n    else:\n        txn_ledger = pd.DataFrame(columns=[\"txn_id\", \"balance_after\"])\n        txn_ledger[\"txn_id\"] = txn_ledger[\"txn_id\"].astype(\"int64\")\n        txn_ledger[\"balance_after\"] = txn_ledger[\"balance_after\"].astype(\"float64\")\n    \n    if not fees.empty:\n        fees[\"account_id\"] = fees[\"account_id\"].astype(\"int64\")\n        fees[\"fee_date\"] = pd.to_datetime(fees[\"fee_date\"])\n        fees[\"trigger_txn_id\"] = fees[\"trigger_txn_id\"].astype(\"int64\")\n    else:\n        fees = pd.DataFrame(columns=[\"account_id\", \"fee_date\", \"trigger_txn_id\"])\n        fees[\"account_id\"] = fees[\"account_id\"].astype(\"int64\")\n        fees[\"fee_date\"] = fees[\"fee_date\"].astype(\"datetime64[ns]\")\n        fees[\"trigger_txn_id\"] = fees[\"trigger_txn_id\"].astype(\"int64\")\n    \n    return {\n        \"txn_ledger\": txn_ledger,\n        \"fees\": fees\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 718,
+   "tokens_out": 1086,
+   "usd": 0.006148,
+   "wall_s": 6.410989999771118,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

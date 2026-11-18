@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 4,
+ "task": "t7_reject_validation",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"payments\"].copy()\n\n    n = len(df)\n    reason = pd.Series([None] * n, index=df.index, dtype=object)\n    unresolved = pd.Series(True, index=df.index)\n\n    # R1: amount IS NULL\n    cond = unresolved & df[\"amount\"].isna()\n    reason[cond] = \"AMT_NULL\"\n    unresolved &= ~cond\n\n    # R2: amount <= 0\n    cond = unresolved & (df[\"amount\"] <= 0)\n    reason[cond] = \"AMT_NONPOS\"\n    unresolved &= ~cond\n\n    # R3: currency NOT IN ('USD','EUR','GBP')\n    valid_ccy = {\"USD\", \"EUR\", \"GBP\"}\n    cond = unresolved & (~df[\"currency\"].isin(valid_ccy))\n    reason[cond] = \"CCY_INVALID\"\n    unresolved &= ~cond\n\n    # R4: country IS NULL\n    cond = unresolved & df[\"country\"].isna()\n    reason[cond] = \"CTRY_NULL\"\n    unresolved &= ~cond\n\n    rejected_mask = reason.notna()\n    passed_mask = ~rejected_mask\n\n    clean_df = df.loc[passed_mask].copy()\n    clean_df[\"amount\"] = clean_df[\"amount\"].round(2)\n    clean_df = clean_df[[\"payment_id\", \"amount\", \"currency\", \"country\"]]\n\n    rejects_df = df.loc[rejected_mask].copy()\n    rejects_df[\"reason_code\"] = reason[rejected_mask]\n    rejects_df = rejects_df[[\"payment_id\", \"amount\", \"currency\", \"country\", \"reason_code\"]]\n\n    return {\n        \"payments_clean\": clean_df.reset_index(drop=True),\n        \"payments_rejects\": rejects_df.reset_index(drop=True),\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 615,
+   "tokens_out": 877,
+   "usd": 0.015,
+   "wall_s": 7.7473790645599365,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

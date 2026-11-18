@@ -1,0 +1,53 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 1,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize events per (user_id, channel) independently.\n    A session ends when there's a >25 minute gap within the same (user_id, channel).\n    Sessions are numbered 1-based per (user_id, channel) pair.\n    \"\"\"\n    events = inputs[\"events\"].copy()\n    \n    # Sort by (user_id, channel, event_ts, event_id) to establish order\n    events = events.sort_values(\n        by=[\"user_id\", \"channel\", \"event_ts\", \"event_id\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Create a session group indicator\n    # For each (user_id, channel) group, check if time gap > 25 minutes\n    events[\"session_group\"] = 0\n    session_counter = 0\n    \n    for idx in range(len(events)):\n        if idx == 0:\n            session_counter = 1\n            events.at[idx, \"session_group\"] = session_counter\n        else:\n            prev_user = events.at[idx - 1, \"user_id\"]\n            prev_channel = events.at[idx - 1, \"channel\"]\n            curr_user = events.at[idx, \"user_id\"]\n            curr_channel = events.at[idx, \"channel\"]\n            \n            prev_ts = events.at[idx - 1, \"event_ts\"]\n            curr_ts = events.at[idx, \"event_ts\"]\n            \n            # Check if same (user_id, channel)\n            if curr_user == prev_user and curr_channel == prev_channel:\n                # Calculate time gap in minutes\n                time_gap = (curr_ts - prev_ts).total_seconds() / 60.0\n                \n                # If gap > 25 minutes, start new session\n                if time_gap > 25:\n                    session_counter += 1\n                \n                events.at[idx, \"session_group\"] = session_counter\n            else:\n                # Different (user_id, channel), start new session\n                session_counter += 1\n                events.at[idx, \"session_group\"] = session_counter\n    \n    # Group by (user_id, channel, session_group) to create sessions\n    grouped = events.groupby(\n        [\"user_id\", \"channel\", \"session_group\"],\n        as_index=False\n    ).agg({\n        \"event_ts\": [\"min\", \"max\"],\n        \"event_id\": \"count\"\n    })\n    \n    # Flatten column names\n    grouped.columns = [\"user_id\", \"channel\", \"session_group\", \"session_start\", \"session_end\", \"event_count\"]\n    \n    # Assign session_num (1-based per user_id, channel)\n    grouped[\"session_num\"] = grouped.groupby([\"user_id\", \"channel\"]).cumcount() + 1\n    \n    # Select and order output columns\n    channel_sessions = grouped[[\"user_id\", \"channel\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]]\n    \n    # Sort by user_id, channel, session_num for consistent output\n    channel_sessions = channel_sessions.sort_values(\n        by=[\"user_id\", \"channel\", \"session_num\"]\n    ).reset_index(drop=True)\n    \n    return {\"channel_sessions\": channel_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 351,
+   "tokens_out": 665,
+   "usd": 0.003676,
+   "wall_s": 4.560734272003174,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 351,
+  "tokens_out": 864,
+  "usd": 0.004671,
+  "wall_s": 6.029396057128906
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

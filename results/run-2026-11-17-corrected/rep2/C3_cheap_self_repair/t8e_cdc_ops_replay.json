@@ -1,0 +1,68 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 2,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_state = inputs[\"target_state\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    \n    # Ensure proper types\n    target_state[\"order_id\"] = target_state[\"order_id\"].astype(\"int64\")\n    target_state[\"last_seq\"] = target_state[\"last_seq\"].astype(\"int64\")\n    \n    cdc_events[\"seq\"] = cdc_events[\"seq\"].astype(\"int64\")\n    cdc_events[\"order_id\"] = cdc_events[\"order_id\"].astype(\"int64\")\n    \n    # Step 1: Deduplicate events by seq (keep first occurrence)\n    cdc_events = cdc_events.drop_duplicates(subset=[\"seq\"], keep=\"first\").reset_index(drop=True)\n    \n    # Step 2: Apply replay guard - filter out events where seq <= last_seq for existing orders\n    # Create a mapping of order_id to last_seq from target_state\n    last_seq_map = dict(zip(target_state[\"order_id\"], target_state[\"last_seq\"]))\n    \n    # Mark events to skip based on replay guard\n    def should_skip(row):\n        order_id = row[\"order_id\"]\n        seq = row[\"seq\"]\n        if order_id in last_seq_map:\n            return seq <= last_seq_map[order_id]\n        return False\n    \n    cdc_events[\"skip\"] = cdc_events.apply(should_skip, axis=1)\n    cdc_events = cdc_events[~cdc_events[\"skip\"]].drop(columns=[\"skip\"]).reset_index(drop=True)\n    \n    # Step 3: Sort events by seq to apply in order\n    cdc_events = cdc_events.sort_values(\"seq\").reset_index(drop=True)\n    \n    # Step 4: Build new state by applying events\n    # Initialize state from target_state\n    state_dict = {}\n    for _, row in target_state.iterrows():\n        order_id = row[\"order_id\"]\n        state_dict[order_id] = {\n            \"status\": row[\"status\"],\n            \"amount\": row[\"amount\"],\n            \"last_seq\": row[\"last_seq\"],\n            \"exists\": True\n        }\n    \n    # Track which orders have been touched and their last operation\n    last_op_map = {}  # order_id -> (op, seq)\n    \n    # Apply each event in seq order\n    for _, event in cdc_events.iterrows():\n        order_id = event[\"order_id\"]\n        seq = event[\"seq\"]\n        op = event[\"op\"]\n        \n        if op == \"I\":\n            # Insert or update (creates if missing, updates if exists)\n            state_dict[order_id] = {\n                \"status\": event[\"status\"],\n                \"amount\": event[\"amount\"],\n                \"last_seq\": seq,\n                \"exists\": True\n            }\n            last_op_map[order_id] = (\"I\", seq)\n        elif op == \"U\":\n            # Update (creates if missing)\n            if order_id not in state_dict:\n                # Create new row\n                state_dict[order_id] = {\n                    \"status\": event[\"status\"],\n                    \"amount\": event[\"amount\"],\n                    \"last_seq\": seq,\n                    \"exists\": True\n                }\n            else:\n                # Update existing row\n                state_dict[order_id][\"status\"] = event[\"status\"]\n                # Only update amount if not NULL\n                if pd.notna(event[\"amount\"]):\n                    state_dict[order_id][\"amount\"] = event[\"amount\"]\n                state_dict[order_id][\"last_seq\"] = seq\n            last_op_map[order_id] = (\"U\", seq)\n        elif op == \"D\":\n            # Delete\n            if order_id in state_dict:\n                state_dict[order_id][\"exists\"] = False\n            last_op_map[order_id] = (\"D\", seq)\n    \n    # Step 5: Build new_state (only rows that exist)\n    new_state_rows = []\n    for order_id, state in state_dict.items():\n        if state[\"exists\"]:\n            new_state_rows.append({\n                \"order_id\": order_id,\n                \"status\": state[\"status\"],\n                \"amount\": state[\"amount\"],\n                \"last_seq\": state[\"last_seq\"]\n            })\n    \n    new_state = pd.DataFrame(new_state_rows)\n    if len(new_state) == 0:\n        new_state = pd.DataFrame(columns=[\"order_id\", \"status\", \"amount\", \"last_seq\"])\n    \n    new_state = new_state.astype({\n        \"order_id\": \"int64\",\n        \"status\": \"object\",\n        \"amount\": \"float64\",\n        \"last_seq\": \"int64\"\n    })\n    \n    # Step 6: Build tombstones (orders whose last operation is 'D')\n    tombstone_rows = []\n    for order_id, (op, seq) in last_op_map.items():\n        if op == \"D\":\n            tombstone_rows.append({\n                \"order_id\": order_id,\n                \"deleted_seq\": seq\n            })\n    \n    tombstones = pd.DataFrame(tombstone_rows)\n    if len(tombstones) == 0:\n        tombstones = pd.DataFrame(columns=[\"order_id\", \"deleted_seq\"])\n    \n    tombstones = tombstones.astype({\n        \"order_id\": \"int64\",\n        \"deleted_seq\": \"int64\"\n    })\n    \n    return {\n        \"new_state\": new_state,\n        \"tombstones\": tombstones\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 948,
+   "tokens_out": 1523,
+   "usd": 0.008563,
+   "wall_s": 9.000327825546265,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 7078,
+  "tokens_out": 6899,
+  "usd": 0.041573,
+  "wall_s": 46.49601602554321
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

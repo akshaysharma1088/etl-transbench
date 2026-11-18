@@ -1,0 +1,37 @@
+-- Legacy stored procedure SP_LOAD_DIM_ACCOUNT_LATE (abstracted, vendor-neutral).
+-- Inputs:
+--   DIM_ACCOUNT (account_id INT, plan VARCHAR, eff_start_date DATE,
+--                eff_end_date DATE NULL, is_current SMALLINT)
+--        -- one account may already have SEVERAL versions; a version covers
+--        -- eff_start_date <= d < eff_end_date (end is EXCLUSIVE; NULL = open).
+--   STG_ACCOUNT (account_id INT, plan VARCHAR, update_date DATE)
+--        -- update_date may lie in the PAST (late-arriving change).
+--        -- (account_id, update_date) is unique in staging.
+-- Output: DIM_ACCOUNT post-state, relation name dim_account_out,
+--         columns account_id, plan, eff_start_date, eff_end_date, is_current.
+--
+-- PROCEDURE BODY (pseudocode preserved):
+--   CURSOR over STG_ACCOUNT ORDER BY account_id, update_date ASC;
+--   FOR EACH staged record s (each one sees the effects of the earlier ones):
+--     IF the account has no version at all THEN
+--         INSERT (s.plan, start = s.update_date, end = NULL, is_current = 1);
+--     ELSE
+--       v := the version of the account that COVERS s.update_date;
+--       IF v does not exist THEN
+--           -- s.update_date is earlier than the account's first version
+--           f := the account's earliest version;
+--           INSERT (s.plan, start = s.update_date, end = f.eff_start_date,
+--                   is_current = 0);
+--       ELSIF v.plan is the same as s.plan THEN
+--           no-op;
+--       ELSIF s.update_date = v.eff_start_date THEN
+--           UPDATE v SET plan = s.plan;        -- same-day correction, no new version
+--       ELSE
+--           -- split v at s.update_date
+--           INSERT (s.plan, start = s.update_date, end = v.eff_end_date,
+--                   is_current = v.is_current);
+--           UPDATE v SET eff_end_date = s.update_date, is_current = 0;
+--       END IF;
+--     END IF;
+--   Adjacent versions that end up with the same plan are NOT merged.
+--   NULL semantics: NULL vs non-NULL plan is a difference; NULL vs NULL is not.

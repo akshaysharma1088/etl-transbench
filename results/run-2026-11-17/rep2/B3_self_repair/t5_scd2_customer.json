@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _differs(c_val, s_val):\n    \"\"\"NULL <> 'x' => change; NULL vs NULL => no change; else normal compare.\"\"\"\n    c_na = pd.isna(c_val)\n    s_na = pd.isna(s_val)\n    if c_na and s_na:\n        return False\n    if c_na or s_na:\n        return True\n    return c_val != s_val\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_CUSTOMER\"].copy()\n    stg = inputs[\"STG_CUSTOMER\"].copy()\n\n    # Preserve original column order for output\n    dim_columns = list(dim.columns)\n\n    # --- Step 1: Deduplicate STG_CUSTOMER ---\n    # Keep latest record per customer_id by update_date.\n    # On ties, keep the record with the greater (name, segment) pair\n    # under lexicographic comparison (legacy ORDER BY ... DESC behavior).\n    if not stg.empty:\n        stg_sorted = stg.sort_values(\n            by=[\"customer_id\", \"update_date\", \"name\", \"segment\"],\n            ascending=[True, False, False, False],\n            kind=\"mergesort\",\n        )\n        stg_dedup = stg_sorted.groupby(\"customer_id\", as_index=False, sort=False).first()\n    else:\n        stg_dedup = stg.copy()\n\n    new_rows = []\n\n    # --- Step 2: Process each staged (deduplicated) record ---\n    for _, s in stg_dedup.iterrows():\n        cid = s[\"customer_id\"]\n        s_name = s[\"name\"]\n        s_segment = s[\"segment\"]\n        s_update_date = s[\"update_date\"]\n\n        current_mask = (dim[\"customer_id\"] == cid) & (dim[\"is_current\"] == 1)\n        current_idx = dim.index[current_mask]\n\n        if len(current_idx) == 0:\n            # No current row exists -> insert new version\n            new_rows.append({\n                \"customer_id\": cid,\n                \"name\": s_name,\n                \"segment\": s_segment,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n        else:\n            # Use the first current row found (expected at most one per customer_id)\n            c_idx = current_idx[0]\n            c_name = dim.at[c_idx, \"name\"]\n            c_segment = dim.at[c_idx, \"segment\"]\n\n            if _differs(c_name, s_name) or _differs(c_segment, s_segment):\n                # Tracked-attribute change: expire current row, insert new version\n                dim.at[c_idx, \"eff_end_date\"] = s_update_date\n                dim.at[c_idx, \"is_current\"] = 0\n\n                new_rows.append({\n                    \"customer_id\": cid,\n                    \"name\": s_name,\n                    \"segment\": s_segment,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            # else: no change -> do nothing, no new version\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=dim_columns)\n        result = pd.concat([dim, new_df], ignore_index=True)\n    else:\n        result = dim.copy()\n\n    # Ensure column order matches original DIM_CUSTOMER schema\n    result = result[dim_columns]\n\n    return {\"dim_customer_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1017,
+   "tokens_out": 2751,
+   "usd": 0.044316,
+   "wall_s": 23.68339967727661
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5389,
+  "tokens_out": 11564,
+  "usd": 0.189627,
+  "wall_s": 110.99151277542114
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

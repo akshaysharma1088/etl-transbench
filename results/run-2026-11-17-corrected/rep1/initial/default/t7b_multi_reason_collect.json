@@ -1,0 +1,17 @@
+{
+ "task": "t7b_multi_reason_collect",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"invoices\"].copy()\n\n    amount = df[\"amount\"]\n    tax = df[\"tax\"]\n    due_date = df[\"due_date\"]\n    customer_ref = df[\"customer_ref\"]\n\n    r1 = amount.isna() | (amount < 0)\n    r2 = tax.isna() | (tax < 0)\n    r3 = amount.notna() & tax.notna() & (tax > amount * 0.5)\n    r4 = due_date.isna()\n    r5 = customer_ref.isna() | (customer_ref.astype(str).str.strip() == \"\")\n\n    codes = []\n    for i in range(len(df)):\n        parts = []\n        if r1.iloc[i]:\n            parts.append(\"AMT_BAD\")\n        if r2.iloc[i]:\n            parts.append(\"TAX_BAD\")\n        if r3.iloc[i]:\n            parts.append(\"TAX_EXCESS\")\n        if r4.iloc[i]:\n            parts.append(\"DUE_NULL\")\n        if r5.iloc[i]:\n            parts.append(\"REF_EMPTY\")\n        codes.append(\"|\".join(parts))\n\n    df[\"reason_codes\"] = codes\n\n    is_fail = df[\"reason_codes\"] != \"\"\n\n    rejects = df[is_fail].copy()\n    clean = df[~is_fail].copy()\n    clean = clean.drop(columns=[\"reason_codes\"])\n\n    return {\n        \"invoices_clean\": clean.reset_index(drop=True),\n        \"invoices_rejects\": rejects.reset_index(drop=True),\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 747,
+   "tokens_out": 802,
+   "usd": 0.014271,
+   "wall_s": 6.897073268890381,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

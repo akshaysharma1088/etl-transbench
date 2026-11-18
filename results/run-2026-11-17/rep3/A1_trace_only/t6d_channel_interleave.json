@@ -1,0 +1,51 @@
+{
+ "config": "A1_trace_only",
+ "rep": 3,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom typing import Dict\n\ndef run(inputs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize events per (user_id, channel) independently.\n    A strict 25-minute gap (i.e., time difference > 25 minutes) within the\n    same (user_id, channel) pair starts a new session. Events from different\n    channels do not interact, even though they may interleave in time for\n    the same user.\n\n    Ordering within a (user_id, channel) stream: event_ts, then event_id.\n    \"\"\"\n\n    events = inputs['events'].copy()\n\n    # Preserve original dtypes for user_id, channel, event_id as given in the\n    # input - only event_ts needs explicit datetime conversion for arithmetic.\n    events['event_ts'] = pd.to_datetime(events['event_ts'])\n\n    # Sort by (user_id, channel, event_ts, event_id) to establish order,\n    # using the natural dtypes (no forced string coercion which could\n    # change comparison/tie-break semantics, e.g. for numeric event_id).\n    events = events.sort_values(\n        by=['user_id', 'channel', 'event_ts', 'event_id'],\n        kind='mergesort',   # stable sort\n        na_position='last'\n    ).reset_index(drop=True)\n\n    sessions_list = []\n\n    for (user_id, channel), group in events.groupby(['user_id', 'channel'], sort=False):\n        group = group.reset_index(drop=True)\n\n        # Calculate time gaps (in minutes) between consecutive events\n        time_diff = group['event_ts'].diff().dt.total_seconds() / 60.0\n\n        # Session boundaries: strictly more than 25 minutes gap, or first event\n        new_session = (time_diff > 25) | (group.index == 0)\n\n        # Assign session numbers (1-based)\n        session_num = new_session.cumsum()\n\n        group = group.assign(session_num=session_num)\n\n        for sn, session_group in group.groupby('session_num', sort=False):\n            session_start = session_group['event_ts'].min()\n            session_end = session_group['event_ts'].max()\n            event_count = len(session_group)\n\n            sessions_list.append({\n                'user_id': user_id,\n                'channel': channel,\n                'session_num': int(sn),\n                'session_start': session_start,\n                'session_end': session_end,\n                'event_count': event_count\n            })\n\n    if len(sessions_list) > 0:\n        channel_sessions = pd.DataFrame(sessions_list)\n        channel_sessions = channel_sessions[[\n            'user_id', 'channel', 'session_num', 'session_start', 'session_end', 'event_count'\n        ]]\n        channel_sessions['session_num'] = channel_sessions['session_num'].astype('int64')\n        channel_sessions['event_count'] = channel_sessions['event_count'].astype('int64')\n    else:\n        channel_sessions = pd.DataFrame(columns=[\n            'user_id', 'channel', 'session_num', 'session_start', 'session_end', 'event_count'\n        ])\n\n    return {'channel_sessions': channel_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 299,
+   "tokens_out": 819,
+   "usd": 0.004394,
+   "wall_s": 5.34492301940918
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1648,
+  "tokens_out": 2215,
+  "usd": 0.038169,
+  "wall_s": 22.804433822631836
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 4,
+ "task": "t1b_oracle_decode_nvl",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces the Oracle SQL logic:\n    - Filters to status='POSTED'\n    - Truncates txn_ts to month start\n    - Applies DECODE logic for region (NULL\u2192'MISSING', 'XX'\u2192'UNKNOWN', else unchanged)\n    - Groups by truncated month and normalized region\n    - Sums amount with NVL (NULL\u21920) and counts rows\n    \"\"\"\n    df = inputs[\"regional_txn\"].copy()\n    \n    # Filter to POSTED status only\n    df = df[df[\"status\"] == \"POSTED\"].copy()\n    \n    # Truncate txn_ts to month start (first day of month)\n    df[\"txn_month\"] = df[\"txn_ts\"].dt.to_period(\"M\").dt.to_timestamp()\n    \n    # Apply DECODE logic for region normalization\n    # DECODE(region, NULL, 'MISSING', 'XX', 'UNKNOWN', region)\n    # In Oracle, NULL = NULL is TRUE in DECODE (unlike CASE)\n    def decode_region(region_val):\n        if pd.isna(region_val):\n            return \"MISSING\"\n        elif region_val == \"XX\":\n            return \"UNKNOWN\"\n        else:\n            return region_val\n    \n    df[\"region_norm\"] = df[\"region\"].apply(decode_region)\n    \n    # Apply NVL to amount: NULL \u2192 0\n    df[\"amount_coalesced\"] = df[\"amount\"].fillna(0)\n    \n    # Group by txn_month and region_norm, then aggregate\n    result = df.groupby(\n        [\"txn_month\", \"region_norm\"],\n        as_index=False,\n        dropna=False\n    ).agg(\n        total_amount=(\"amount_coalesced\", \"sum\"),\n        txn_count=(\"txn_id\", \"count\")\n    )\n    \n    # Rename for output\n    result.rename(columns={\"txn_month\": \"txn_month\"}, inplace=True)\n    \n    return {\"monthly_region_rollup\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 449,
+   "tokens_out": 549,
+   "usd": 0.003194,
+   "wall_s": 5.057180166244507,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

@@ -1,0 +1,17 @@
+{
+ "task": "t7d_quarantine_threshold",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    readings = inputs[\"readings\"].copy()\n\n    cols = [\"batch_id\", \"reading_id\", \"sensor\", \"value\"]\n\n    # Row-level bad flag\n    def is_bad(v):\n        return pd.isnull(v) or v < 0 or v > 1000\n\n    if len(readings) == 0:\n        readings[\"is_bad\"] = pd.Series(dtype=bool)\n    else:\n        readings[\"is_bad\"] = readings[\"value\"].apply(is_bad)\n\n    # Per-batch stats\n    grp = readings.groupby(\"batch_id\")[\"is_bad\"].agg([\"sum\", \"count\"]).reset_index()\n    grp.columns = [\"batch_id\", \"bad_count\", \"total_count\"]\n    grp[\"quarantine\"] = grp[\"bad_count\"] * 100 > grp[\"total_count\"] * 20\n    grp[\"batch_reject_pct\"] = (grp[\"bad_count\"] * 100.0 / grp[\"total_count\"]).round(2)\n\n    quarantine_batches = set(grp.loc[grp[\"quarantine\"], \"batch_id\"])\n    pct_map = dict(zip(grp[\"batch_id\"], grp[\"batch_reject_pct\"]))\n\n    readings[\"_quarantine\"] = readings[\"batch_id\"].isin(quarantine_batches)\n\n    quarantine_df = readings[readings[\"_quarantine\"]].copy()\n    quarantine_df[\"batch_reject_pct\"] = quarantine_df[\"batch_id\"].map(pct_map)\n    quarantine_df = quarantine_df[cols + [\"batch_reject_pct\"]].reset_index(drop=True)\n\n    non_quarantine = readings[~readings[\"_quarantine\"]]\n\n    clean_df = non_quarantine[~non_quarantine[\"is_bad\"]][cols].reset_index(drop=True)\n    rejects_df = non_quarantine[non_quarantine[\"is_bad\"]][cols].reset_index(drop=True)\n\n    return {\n        \"readings_clean\": clean_df,\n        \"readings_rejects\": rejects_df,\n        \"readings_quarantine\": quarantine_df,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 623,
+   "tokens_out": 974,
+   "usd": 0.016479,
+   "wall_s": 8.135983228683472,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

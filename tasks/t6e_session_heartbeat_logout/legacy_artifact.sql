@@ -1,0 +1,31 @@
+-- Legacy analytical job: sessionize app events with heartbeats and logouts.
+-- Input:  app_events (event_id INT, user_id INT, event_ts TIMESTAMP,
+--                     event_type VARCHAR)   -- 'view', 'click', 'logout', 'heartbeat'
+-- Output: user_sessions (user_id, session_num, session_start, session_end,
+--                        event_count, heartbeat_count)
+--
+-- Within a user, process events ORDER BY event_ts, event_id.
+-- 'view', 'click' and 'logout' are ACTIVITY events. 'heartbeat' is not.
+--
+-- For an ACTIVITY event e:
+--   e STARTS A NEW SESSION when any of these holds:
+--     (a) the user has no open session;
+--     (b) e.event_ts - (ts of the session's LAST ACTIVITY event) is STRICTLY
+--         greater than 30 minutes;   -- heartbeats in between do NOT count
+--   otherwise e joins the open session.
+--   If e is a 'logout', the session CLOSES after e: the logout belongs to the
+--   session, and the user has no open session afterwards.
+--
+-- For a 'heartbeat' event h:
+--   h joins the open session ONLY IF a session is open AND
+--   h.event_ts - (ts of the session's last activity event) <= 30 minutes.
+--   Otherwise h is DROPPED: it belongs to no session and starts none.
+--   A heartbeat never changes the session's last-activity time.
+--
+-- Per session:
+--   session_num     = 1, 2, 3, ... per user in time order
+--   session_start   = event_ts of its first event (always an activity event)
+--   session_end     = event_ts of its LAST ACTIVITY event
+--   event_count     = number of events in the session, heartbeats included
+--   heartbeat_count = number of heartbeats in the session
+-- Users whose events are all dropped produce no rows.

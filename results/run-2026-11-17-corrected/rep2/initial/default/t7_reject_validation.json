@@ -1,0 +1,17 @@
+{
+ "task": "t7_reject_validation",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    payments = inputs[\"payments\"]\n\n    clean_rows = []\n    reject_rows = []\n\n    valid_currencies = {\"USD\", \"EUR\", \"GBP\"}\n\n    for _, row in payments.iterrows():\n        payment_id = row[\"payment_id\"]\n        amount = row[\"amount\"]\n        currency = row[\"currency\"]\n        country = row[\"country\"]\n\n        reason_code = None\n\n        if pd.isna(amount):\n            reason_code = \"AMT_NULL\"\n        elif amount <= 0:\n            reason_code = \"AMT_NONPOS\"\n        elif pd.isna(currency) or currency not in valid_currencies:\n            reason_code = \"CCY_INVALID\"\n        elif pd.isna(country):\n            reason_code = \"CTRY_NULL\"\n\n        if reason_code is None:\n            clean_rows.append({\n                \"payment_id\": payment_id,\n                \"amount\": round(amount, 2),\n                \"currency\": currency,\n                \"country\": country,\n            })\n        else:\n            reject_rows.append({\n                \"payment_id\": payment_id,\n                \"amount\": amount,\n                \"currency\": currency,\n                \"country\": country,\n                \"reason_code\": reason_code,\n            })\n\n    payments_clean = pd.DataFrame(\n        clean_rows,\n        columns=[\"payment_id\", \"amount\", \"currency\", \"country\"]\n    )\n    payments_rejects = pd.DataFrame(\n        reject_rows,\n        columns=[\"payment_id\", \"amount\", \"currency\", \"country\", \"reason_code\"]\n    )\n\n    return {\n        \"payments_clean\": payments_clean,\n        \"payments_rejects\": payments_rejects,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 615,
+   "tokens_out": 879,
+   "usd": 0.01503,
+   "wall_s": 7.820363759994507,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

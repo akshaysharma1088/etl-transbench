@@ -1,0 +1,53 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 0,
+ "task": "t7d_quarantine_threshold",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    readings = inputs[\"readings\"].copy()\n    \n    # Step 1: Mark rows as BAD or GOOD based on row rules\n    # Row is BAD if: value IS NULL OR value < 0 OR value > 1000\n    readings['is_bad'] = (\n        readings['value'].isna() | \n        (readings['value'] < 0) | \n        (readings['value'] > 1000)\n    )\n    \n    # Step 2: Group by batch_id and evaluate batch rules\n    batch_stats = readings.groupby('batch_id').agg(\n        bad_count=('is_bad', 'sum'),\n        total_count=('is_bad', 'count')\n    ).reset_index()\n    \n    # Calculate bad_row_count * 100 > total_rows * 20 (STRICTLY over 20%)\n    batch_stats['bad_pct'] = (batch_stats['bad_count'] * 100.0) / batch_stats['total_count']\n    batch_stats['is_quarantined'] = batch_stats['bad_pct'] > 20.0\n    \n    # Merge batch decision back to readings\n    readings = readings.merge(\n        batch_stats[['batch_id', 'is_quarantined', 'bad_pct']],\n        on='batch_id',\n        how='left'\n    )\n    \n    # Step 3: Route rows based on batch quarantine decision\n    readings_clean = pd.DataFrame()\n    readings_rejects = pd.DataFrame()\n    readings_quarantine = pd.DataFrame()\n    \n    # Rows from quarantined batches go to readings_quarantine\n    quarantined = readings[readings['is_quarantined']].copy()\n    if len(quarantined) > 0:\n        quarantined['batch_reject_pct'] = quarantined['bad_pct'].round(2)\n        readings_quarantine = quarantined[[\n            'batch_id', 'reading_id', 'sensor', 'value', 'batch_reject_pct'\n        ]]\n    \n    # Rows from non-quarantined batches: split by is_bad\n    non_quarantined = readings[~readings['is_quarantined']].copy()\n    \n    good_rows = non_quarantined[~non_quarantined['is_bad']]\n    if len(good_rows) > 0:\n        readings_clean = good_rows[[\n            'batch_id', 'reading_id', 'sensor', 'value'\n        ]]\n    \n    bad_rows = non_quarantined[non_quarantined['is_bad']]\n    if len(bad_rows) > 0:\n        readings_rejects = bad_rows[[\n            'batch_id', 'reading_id', 'sensor', 'value'\n        ]]\n    \n    # Ensure output DataFrames have correct structure even if empty\n    if readings_clean.empty:\n        readings_clean = pd.DataFrame(\n            columns=['batch_id', 'reading_id', 'sensor', 'value']\n        )\n        readings_clean = readings_clean.astype({\n            'batch_id': 'int64',\n            'reading_id': 'int64',\n            'sensor': 'str',\n            'value': 'float64'\n        })\n    \n    if readings_rejects.empty:\n        readings_rejects = pd.DataFrame(\n            columns=['batch_id', 'reading_id', 'sensor', 'value']\n        )\n        readings_rejects = readings_rejects.astype({\n            'batch_id': 'int64',\n            'reading_id': 'int64',\n            'sensor': 'str',\n            'value': 'float64'\n        })\n    \n    if readings_quarantine.empty:\n        readings_quarantine = pd.DataFrame(\n            columns=['batch_id', 'reading_id', 'sensor', 'value', 'batch_reject_pct']\n        )\n        readings_quarantine = readings_quarantine.astype({\n            'batch_id': 'int64',\n            'reading_id': 'int64',\n            'sensor': 'str',\n            'value': 'float64',\n            'batch_reject_pct': 'float64'\n        })\n    \n    return {\n        'readings_clean': readings_clean,\n        'readings_rejects': readings_rejects,\n        'readings_quarantine': readings_quarantine\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 423,
+   "tokens_out": 1049,
+   "usd": 0.005668,
+   "wall_s": 6.070713996887207,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 423,
+  "tokens_out": 1139,
+  "usd": 0.006118,
+  "wall_s": 6.8127007484436035
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

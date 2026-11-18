@@ -1,0 +1,50 @@
+{
+  "task_id": "t3e_effective_lookup_route",
+  "relations": [
+    {
+      "name": "order_enriched",
+      "key_columns": [
+        "order_id"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "sku_norm",
+          "kind": "string"
+        },
+        {
+          "name": "unit_price",
+          "kind": "float",
+          "abs_tol": 1e-09
+        },
+        {
+          "name": "route",
+          "kind": "string"
+        }
+      ]
+    },
+    {
+      "name": "route_daily",
+      "key_columns": [
+        "route",
+        "order_date"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "order_date",
+          "kind": "timestamp"
+        },
+        {
+          "name": "order_count",
+          "kind": "int"
+        },
+        {
+          "name": "total_ext",
+          "kind": "float",
+          "abs_tol": 1e-06
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t1_dialect_qualify",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    acct_txn = inputs[\"acct_txn\"].copy()\n    \n    # WHERE amount > 100\n    acct_txn = acct_txn[acct_txn[\"amount\"] > 100].copy()\n    \n    # Add size_band column\n    acct_txn[\"size_band\"] = acct_txn[\"amount\"].apply(\n        lambda x: \"JUMBO\" if x >= 1000 else (\"LARGE\" if x >= 500 else \"STANDARD\")\n    )\n    \n    # QUALIFY: ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC) = 1\n    # This means: for each account_id, keep only the row with the latest txn_ts (descending),\n    # and break ties by latest txn_id (descending)\n    acct_txn[\"rn\"] = acct_txn.groupby(\"account_id\", sort=False).cumcount()\n    acct_txn = acct_txn.sort_values(\n        by=[\"account_id\", \"txn_ts\", \"txn_id\"],\n        ascending=[True, False, False],\n        kind=\"stable\"\n    )\n    acct_txn[\"rn\"] = acct_txn.groupby(\"account_id\", sort=False).cumcount()\n    acct_txn = acct_txn[acct_txn[\"rn\"] == 0].copy()\n    \n    # Drop the helper column\n    acct_txn = acct_txn.drop(columns=[\"rn\"])\n    \n    # SELECT: account_id, txn_id, txn_ts, amount, channel, size_band\n    result = acct_txn[[\"account_id\", \"txn_id\", \"txn_ts\", \"amount\", \"channel\", \"size_band\"]].reset_index(drop=True)\n    \n    return {\"latest_high_value_txn\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 401,
+   "tokens_out": 516,
+   "usd": 0.002981,
+   "wall_s": 4.398715019226074,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

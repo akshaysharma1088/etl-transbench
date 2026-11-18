@@ -1,0 +1,17 @@
+{
+ "task": "t2c_locf_carry_forward",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    df = inputs[\"rate_feed\"].copy()\n\n    # Stable sort replicating cursor ORDER BY account_id, obs_date, obs_seq\n    df_sorted = df.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # Last-observation-carried-forward within each account_id group only\n    filled = df_sorted.groupby(\"account_id\")[\"rate\"].ffill()\n\n    was_carried = (df_sorted[\"rate\"].isna() & filled.notna()).astype(\"int64\")\n\n    result = pd.DataFrame({\n        \"account_id\": df_sorted[\"account_id\"],\n        \"obs_seq\": df_sorted[\"obs_seq\"],\n        \"obs_date\": df_sorted[\"obs_date\"],\n        \"rate_filled\": filled,\n        \"was_carried\": was_carried,\n    })\n\n    return {\"rate_filled\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 810,
+   "tokens_out": 837,
+   "usd": 0.014985,
+   "wall_s": 8.669656753540039,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

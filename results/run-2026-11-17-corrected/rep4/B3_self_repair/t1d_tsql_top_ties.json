@@ -1,0 +1,48 @@
+{
+ "config": "B3_self_repair",
+ "rep": 4,
+ "task": "t1d_tsql_top_ties",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    df = inputs[\"branch_scores\"].copy()\n    \n    # WHERE active = 1\n    df = df[df[\"active\"] == 1].copy()\n    \n    # ORDER BY score DESC\n    df = df.sort_values(by=\"score\", ascending=False, na_position=\"last\")\n    \n    # TOP (5) WITH TIES semantics:\n    # 1. Find the rank of each row (using dense_rank for ties)\n    # 2. Identify the rank of the 5th row\n    # 3. Keep all rows with rank <= rank_of_5th_row\n    \n    # Compute rank (SQL Server TOP WITH TIES uses dense_rank-like behavior)\n    # We use rank() which handles ties correctly\n    df[\"__rank\"] = df[\"score\"].rank(method=\"dense\", ascending=False)\n    \n    # Find the cutoff rank (rank of the 5th row or higher)\n    # TOP (5) means we want the top 5 distinct score values\n    cutoff_rank = 5\n    \n    # Keep rows where rank <= cutoff_rank (this includes ties at cutoff)\n    df = df[df[\"__rank\"] <= cutoff_rank].copy()\n    \n    # ISNULL(manager, 'UNASSIGNED') AS manager_norm\n    df[\"manager_norm\"] = df[\"manager\"].fillna(\"UNASSIGNED\")\n    \n    # branch_code + '-' + region_code AS branch_label\n    # In SQL Server, + operator propagates NULL\n    # If either operand is NULL, result is NULL\n    def concat_with_null(branch_code, region_code):\n        if pd.isna(branch_code) or pd.isna(region_code):\n            return np.nan\n        return str(branch_code) + \"-\" + str(region_code)\n    \n    df[\"branch_label\"] = df.apply(\n        lambda row: concat_with_null(row[\"branch_code\"], row[\"region_code\"]),\n        axis=1\n    )\n    \n    # SELECT branch_id, manager_norm, branch_label, score\n    result = df[[\"branch_id\", \"manager_norm\", \"branch_label\", \"score\"]].copy()\n    \n    # Remove the helper rank column\n    result = result.reset_index(drop=True)\n    \n    return {\"top_branches\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 424,
+   "tokens_out": 608,
+   "usd": 0.003464,
+   "wall_s": 4.4170613288879395,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

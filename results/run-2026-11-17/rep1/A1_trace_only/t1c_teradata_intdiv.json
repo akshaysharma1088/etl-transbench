@@ -1,0 +1,66 @@
+{
+ "config": "A1_trace_only",
+ "rep": 1,
+ "task": "t1c_teradata_intdiv",
+ "category": "T1",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import math\n\nimport numpy as np\nimport pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    \"\"\"\n    Reproduce the legacy Teradata SQL:\n\n        SELECT\n            account_id,\n            ZEROIFNULL(balance_cents) / 100                            AS balance_bucket,\n            CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER) AS fx_units\n        FROM acct_balance\n        WHERE acct_type <> 'CLOSED'\n\n    Teradata semantics reproduced here:\n      * WHERE acct_type <> 'CLOSED' : comparisons against NULL yield NULL,\n        and NULL is treated as FALSE in a WHERE clause -> rows with NULL\n        acct_type are excluded, along with rows literally equal to 'CLOSED'.\n      * ZEROIFNULL(x): NULL -> 0, applied BEFORE any arithmetic.\n      * INTEGER / INTEGER (and CAST ... AS INTEGER) truncates toward zero\n        (NOT floor division), e.g. -150/100 = -1.\n      * fx_rate itself is NOT zeroified; if fx_rate is NULL the final\n        CAST(... AS INTEGER) propagates NULL (fx_units is NULL).\n    \"\"\"\n    df = inputs[\"acct_balance\"].copy()\n\n    # ---- WHERE acct_type <> 'CLOSED' (NULL-safe exclusion) ----\n    mask = df[\"acct_type\"].notna() & (df[\"acct_type\"] != \"CLOSED\")\n    df = df.loc[mask].copy()\n\n    # ---- ZEROIFNULL(balance_cents) ----\n    balance_raw = df[\"balance_cents\"]\n    balance_zeroified = balance_raw.where(balance_raw.notna(), 0)\n    # Work in integer space for exact truncation semantics.\n    balance_int = balance_zeroified.astype(\"int64\")\n\n    # ---- balance_bucket = ZEROIFNULL(balance_cents) / 100, trunc toward zero ----\n    def trunc_div_int(a: np.ndarray, b: int) -> np.ndarray:\n        a = np.asarray(a, dtype=np.int64)\n        sign = np.sign(a)\n        abs_q = np.abs(a) // b\n        return (sign * abs_q).astype(np.int64)\n\n    balance_bucket_vals = trunc_div_int(balance_int.values, 100)\n    balance_bucket = pd.array(balance_bucket_vals, dtype=\"Int64\")\n\n    # ---- fx_units = CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER) ----\n    fx_rate = df[\"fx_rate\"]\n\n    def compute_fx_unit(bal: int, rate) -> object:\n        if pd.isna(rate):\n            return pd.NA\n        product = float(bal) * float(rate)\n        quotient = product / 100.0\n        return int(math.trunc(quotient))\n\n    fx_units_vals = [\n        compute_fx_unit(b, r)\n        for b, r in zip(balance_int.values, fx_rate.values)\n    ]\n    fx_units = pd.array(fx_units_vals, dtype=\"Int64\")\n\n    result = pd.DataFrame(\n        {\n            \"account_id\": df[\"account_id\"].values,\n            \"balance_bucket\": balance_bucket,\n            \"fx_units\": fx_units,\n        }\n    )\n\n    return {\"balance_buckets\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 373,
+   "tokens_out": 444,
+   "usd": 0.002593,
+   "wall_s": 3.217682361602783
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4300,
+  "tokens_out": 11859,
+  "usd": 0.19078499999999998,
+  "wall_s": 116.78200197219849
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

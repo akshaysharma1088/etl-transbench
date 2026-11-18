@@ -1,0 +1,46 @@
+{
+ "config": "LEGATO",
+ "rep": 1,
+ "task": "t8_cdc_merge",
+ "category": "T8",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n\n    # Get watermark high_ts (single row)\n    high_ts = watermark[\"high_ts\"].iloc[0]\n\n    # Step 1: keep only events with event_ts > watermark.high_ts\n    events = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n\n    # Step 2: per product_id, pick latest event by (event_ts, event_seq)\n    if not events.empty:\n        events = events.sort_values(\n            by=[\"product_id\", \"event_ts\", \"event_seq\"],\n            ascending=[True, True, True],\n        )\n        latest_events = events.groupby(\"product_id\", as_index=False).tail(1)\n    else:\n        latest_events = events.copy()\n\n    # Build dict of current snapshot keyed by product_id\n    snapshot = target_snapshot.set_index(\"product_id\", drop=False).to_dict(orient=\"index\")\n\n    # Apply latest events\n    for _, row in latest_events.iterrows():\n        pid = row[\"product_id\"]\n        op = row[\"op\"]\n        if op == \"D\":\n            if pid in snapshot:\n                del snapshot[pid]\n        elif op in (\"I\", \"U\"):\n            snapshot[pid] = {\n                \"product_id\": pid,\n                \"name\": row[\"name\"],\n                \"price\": row[\"price\"],\n                \"last_event_ts\": row[\"event_ts\"],\n            }\n        # unknown op values: ignore (no spec given)\n\n    # Build output DataFrame preserving target_snapshot's column order/dtypes\n    cols = list(target_snapshot.columns)\n    if snapshot:\n        new_snapshot = pd.DataFrame(list(snapshot.values()), columns=cols)\n    else:\n        new_snapshot = pd.DataFrame(columns=cols)\n\n    # Try to restore original dtypes where possible\n    for col in cols:\n        try:\n            new_snapshot[col] = new_snapshot[col].astype(target_snapshot[col].dtype)\n        except (ValueError, TypeError):\n            pass\n\n    new_snapshot = new_snapshot.reset_index(drop=True)\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 644,
+   "tokens_out": 971,
+   "usd": 0.016497,
+   "wall_s": 8.008964776992798
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

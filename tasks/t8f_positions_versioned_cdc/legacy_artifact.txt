@@ -1,0 +1,32 @@
+-- Legacy incremental loader APPLY_POSITION_EVENTS (abstracted, vendor-neutral).
+-- Inputs:
+--   target_positions (account_id INT, symbol VARCHAR, qty INT, price DECIMAL NULL, row_version INT)
+--        -- one row per (account_id, symbol); row_version = version that last wrote the row
+--   position_events (batch_seq INT, account_id INT, symbol VARCHAR, op CHAR(1),
+--                    qty INT NULL, price DECIMAL NULL, row_version INT)
+--        -- op is 'I', 'U' or 'D'. batch_seq is unique per event, but the SAME event
+--        -- (same batch_seq) can be delivered more than once.
+-- Outputs:
+--   new_positions    (account_id, symbol, qty, price, row_version)
+--   closed_positions (account_id, symbol, closed_version)
+--
+-- Semantics, per key (account_id, symbol):
+--   1. Events delivered more than once are applied once (distinct by batch_seq).
+--   2. REPLAY GUARD: when the key has a row in target_positions, an event with
+--      row_version <= that row's row_version is skipped. A key with no row in
+--      target_positions has no guard.
+--   3. The remaining events are applied ORDER BY row_version, batch_seq.
+--        'D'         : remove the row. On a missing row it does nothing.
+--        'I' or 'U'  : if qty = 0 the event CLOSES the position: it removes the
+--                      row exactly like a 'D' (and does nothing on a missing row).
+--                      Otherwise, if the row exists: qty := event qty;
+--                      price := event price, EXCEPT that a 'U' with NULL price
+--                      keeps the existing price; row_version := event row_version.
+--                      If the row is missing it is created with the event's qty,
+--                      price (NULL stays NULL) and row_version.
+--   4. new_positions = target_positions after all events; untouched keys carry forward.
+--   5. closed_positions has one row per key whose LAST applied event removed an
+--      existing row (a 'D', or an 'I'/'U' with qty = 0); closed_version is that
+--      event's row_version. An event that did nothing does not count.
+--   Running the job again with new_positions as target_positions and the same
+--   events must give the same new_positions.

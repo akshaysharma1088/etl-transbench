@@ -1,0 +1,47 @@
+{
+ "config": "B1_single_pass",
+ "rep": 3,
+ "task": "t3e_effective_lookup_route",
+ "category": "T3",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  }
+ ],
+ "final_code": "```python\nimport pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    price_list = inputs[\"price_list\"].copy()\n\n    # ---------------------------------------------------------------\n    # 1. expression: sku_norm = UPPER(TRIM(sku))  (NULL sku -> NULL sku_norm)\n    # ---------------------------------------------------------------\n    def norm_sku(x):\n        if pd.isna(x):\n            return pd.NA\n        return str(x).strip().upper()\n\n    orders[\"sku_norm\"] = orders[\"sku\"].apply(norm_sku)\n    price_list[\"sku_norm_pl\"] = price_list[\"sku\"].apply(norm_sku)\n\n    orders = orders.reset_index(drop=True)\n    orders[\"_row_id\"] = orders.index\n\n    # ---------------------------------------------------------------\n    # 2. lookup: price_list matched on sku_norm and valid_from <= order_date\n    #    tie-break: greatest valid_from, then lowest list_id\n    #    NULL sku_norm never matches\n    # ---------------------------------------------------------------\n    cand = orders[[\"_row_id\", \"sku_norm\", \"order_date\"]].merge(\n        price_list[[\"list_id\", \"sku_norm_pl\", \"unit_price\", \"valid_from\"]],\n        left_on=\"sku_norm\",\n        right_on=\"sku_norm_pl\",\n        how=\"inner\",\n    )\n\n    # NaN keys never match in an inner merge, satisfying the NULL-sku_norm rule.\n    cand = cand[cand[\"valid_from\"] <= cand[\"order_date\"]]\n\n    cand = cand.sort_values([\"valid_from\", \"list_id\"], ascending=[False, True])\n    best = cand.groupby(\"_row",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1407,
+   "tokens_out": 4000,
+   "usd": 0.064221,
+   "wall_s": 38.63086271286011
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

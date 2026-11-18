@@ -1,0 +1,46 @@
+{
+ "config": "B3_self_repair",
+ "rep": 0,
+ "task": "t8b_delete_reinsert_cdc",
+ "category": "T8",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n\n    # High watermark: events with event_ts <= high_ts are already applied.\n    high_ts = watermark[\"high_ts\"].iloc[0]\n\n    # Only unapplied events need to be processed.\n    pending = events[events[\"event_ts\"] > high_ts].copy()\n\n    # Sequential application order: per item, by (event_ts, event_seq).\n    pending = pending.sort_values(\n        [\"item_id\", \"event_ts\", \"event_seq\"], kind=\"mergesort\"\n    )\n\n    # Build initial snapshot state keyed by item_id.\n    snapshot = {}\n    for _, row in target.iterrows():\n        snapshot[row[\"item_id\"]] = {\n            \"qty_on_hand\": row[\"qty_on_hand\"],\n            \"last_event_ts\": row[\"last_event_ts\"],\n        }\n\n    for _, ev in pending.iterrows():\n        item = ev[\"item_id\"]\n        op = ev[\"op\"]\n        qty = ev[\"qty\"]\n        ts = ev[\"event_ts\"]\n\n        if op == \"R\":\n            if item in snapshot:\n                snapshot[item][\"qty_on_hand\"] = snapshot[item][\"qty_on_hand\"] + qty\n                snapshot[item][\"last_event_ts\"] = ts\n            else:\n                # Absent (never existed or previously delisted): start from 0.\n                snapshot[item] = {\"qty_on_hand\": qty, \"last_event_ts\": ts}\n        elif op == \"A\":\n            # Absolute reset, recreating the item if it was delisted/absent.\n            snapshot[item] = {\"qty_on_hand\": qty, \"last_event_ts\": ts}\n        elif op == \"D\":\n            if item in snapshot:\n                del snapshot[item]\n            # If absent already, delete is a no-op.\n        else:\n            # Unknown op codes are ignored (defensive; not expected per spec).\n            continue\n\n    rows = [\n        {\n            \"item_id\": item_id,\n            \"qty_on_hand\": state[\"qty_on_hand\"],\n            \"last_event_ts\": state[\"last_event_ts\"],\n        }\n        for item_id, state in snapshot.items()\n    ]\n\n    new_snapshot = pd.DataFrame(\n        rows, columns=[\"item_id\", \"qty_on_hand\", \"last_event_ts\"]\n    )\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 742,
+   "tokens_out": 3003,
+   "usd": 0.047271,
+   "wall_s": 26.40699815750122
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

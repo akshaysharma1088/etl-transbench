@@ -1,0 +1,48 @@
+{
+ "config": "LEGATO",
+ "rep": 3,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _values_equal(a, b):\n    \"\"\"NULL-aware equality: NaN/None == NaN/None is True,\n    NaN vs non-NaN is False, otherwise normal equality.\"\"\"\n    a_na = pd.isna(a)\n    b_na = pd.isna(b)\n    if a_na and b_na:\n        return True\n    if a_na or b_na:\n        return False\n    return a == b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_product\"].copy()\n    stg = inputs[\"stg_product\"].copy()\n\n    # Ensure stable chronological ordering per product, as legacy cursor did.\n    stg_sorted = stg.sort_values(\n        [\"product_id\", \"update_date\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    all_pids = sorted(set(dim[\"product_id\"].tolist()) | set(stg[\"product_id\"].tolist()))\n\n    output_rows = []\n\n    for pid in all_pids:\n        dim_rows = dim[dim[\"product_id\"] == pid]\n        current_rows = dim_rows[dim_rows[\"is_current\"] == 1]\n        history_rows = dim_rows[dim_rows[\"is_current\"] == 0]\n\n        current = None\n        if len(current_rows) > 0:\n            current = current_rows.iloc[0].to_dict()\n\n        history = [r.to_dict() for _, r in history_rows.iterrows()]\n\n        stg_rows = stg_sorted[stg_sorted[\"product_id\"] == pid]\n\n        for _, s in stg_rows.iterrows():\n            if current is None:\n                current = {\n                    \"product_id\": pid,\n                    \"category\": s[\"category\"],\n                    \"price_band\": s[\"price_band\"],\n                    \"eff_start_date\": s[\"update_date\"],\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            else:\n                cat_eq = _values_equal(current[\"category\"], s[\"category\"])\n                pb_eq = _values_equal(current[\"price_band\"], s[\"price_band\"])\n                if not (cat_eq and pb_eq):\n                    expired = dict(current)\n                    expired[\"eff_end_date\"] = s[\"update_date\"]\n                    expired[\"is_current\"] = 0\n                    history.append(expired)\n\n                    current = {\n                        \"product_id\": pid,\n                        \"category\": s[\"category\"],\n                        \"price_band\": s[\"price_band\"],\n                        \"eff_start_date\": s[\"update_date\"],\n                        \"eff_end_date\": pd.NaT,\n                        \"is_current\": 1,\n                    }\n                # else: no change -> no-op\n\n        output_rows.extend(history)\n        if current is not None:\n            output_rows.append(current)\n\n    out = pd.DataFrame(\n        output_rows,\n        columns=[\n            \"product_id\",\n            \"category\",\n            \"price_band\",\n            \"eff_start_date\",\n            \"eff_end_date\",\n            \"is_current\",\n        ],\n    )\n\n    if len(out) > 0:\n        out[\"product_id\"] = out[\"product_id\"].astype(\"int64\")\n        out[\"is_current\"] = out[\"is_current\"].astype(\"int64\")\n        out[\"eff_start_date\"] = pd.to_datetime(out[\"eff_start_date\"])\n        out[\"eff_end_date\"] = pd.to_datetime(out[\"eff_end_date\"])\n    else:\n        out = out.astype(\n            {\n                \"product_id\": \"int64\",\n                \"category\": \"object\",\n                \"price_band\": \"object\",\n                \"eff_start_date\": \"datetime64[ns]\",\n                \"eff_end_date\": \"datetime64[ns]\",\n                \"is_current\": \"int64\",\n            }\n        )\n\n    return {\"dim_product_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 968,
+   "tokens_out": 2890,
+   "usd": 0.046254,
+   "wall_s": 23.275465965270996,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

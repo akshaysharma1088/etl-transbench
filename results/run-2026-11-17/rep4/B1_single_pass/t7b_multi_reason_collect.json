@@ -1,0 +1,46 @@
+{
+ "config": "B1_single_pass",
+ "rep": 4,
+ "task": "t7b_multi_reason_collect",
+ "category": "T7",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs['invoices'].copy()\n\n    amount = pd.to_numeric(df['amount'], errors='coerce')\n    tax = pd.to_numeric(df['tax'], errors='coerce')\n    due_date = df['due_date']\n    customer_ref = df['customer_ref']\n\n    # R1: amount IS NULL OR amount < 0\n    r1 = amount.isna() | (amount < 0)\n\n    # R2: tax IS NULL OR tax < 0\n    r2 = tax.isna() | (tax < 0)\n\n    # R3: tax > amount * 0.5, NULL-safe (skipped if amount or tax is NULL)\n    r3 = amount.notna() & tax.notna() & (tax > amount * 0.5)\n\n    # R4: due_date IS NULL\n    r4 = due_date.isna()\n\n    # R5: customer_ref IS NULL OR TRIM(customer_ref) = ''\n    r5 = customer_ref.isna()\n    non_null_mask = ~r5\n    if non_null_mask.any():\n        stripped = customer_ref.loc[non_null_mask].astype(str).str.strip()\n        r5.loc[non_null_mask] = stripped == ''\n\n    flags = pd.DataFrame({\n        'AMT_BAD': r1,\n        'TAX_BAD': r2,\n        'TAX_EXCESS': r3,\n        'DUE_NULL': r4,\n        'REF_EMPTY': r5,\n    }, index=df.index)\n\n    rule_order = ['AMT_BAD', 'TAX_BAD', 'TAX_EXCESS', 'DUE_NULL', 'REF_EMPTY']\n\n    def combine(row):\n        codes = [c for c in rule_order if row[c]]\n        return '|'.join(codes)\n\n    reason_codes = flags.apply(combine, axis=1)\n    mask_fail = flags.any(axis=1)\n\n    invoices_clean = df.loc[~mask_fail].reset_index(drop=True)\n\n    invoices_rejects = df.loc[mask_fail].copy()\n    invoices_rejects['reason_codes'] = reason_codes.loc[mask_fail]\n    invoices_rejects = invoices_rejects.reset_index(drop=True)\n\n    return {\n        'invoices_clean': invoices_clean,\n        'invoices_rejects': invoices_rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 667,
+   "tokens_out": 1902,
+   "usd": 0.030531,
+   "wall_s": 15.863466739654541
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

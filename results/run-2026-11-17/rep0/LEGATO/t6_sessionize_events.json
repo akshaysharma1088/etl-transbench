@@ -1,0 +1,46 @@
+{
+ "config": "LEGATO",
+ "rep": 0,
+ "task": "t6_sessionize_events",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import timedelta\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize user events based on 30-minute inactivity gap.\n    A new session starts when the gap from the previous event of the same user\n    is STRICTLY GREATER than 30 minutes.\n    \"\"\"\n    events = inputs['events'].copy()\n    \n    # Ensure event_ts is datetime\n    if not pd.api.types.is_datetime64_any_dtype(events['event_ts']):\n        events['event_ts'] = pd.to_datetime(events['event_ts'])\n    \n    # Sort by user_id, event_ts, event_id\n    events = events.sort_values(['user_id', 'event_ts', 'event_id']).reset_index(drop=True)\n    \n    # Calculate time gap from previous event within same user\n    events['prev_event_ts'] = events.groupby('user_id')['event_ts'].shift(1)\n    \n    # Calculate time difference in minutes\n    events['time_gap'] = (events['event_ts'] - events['prev_event_ts']).dt.total_seconds() / 60\n    \n    # New session starts if:\n    # 1. First event for user (prev_event_ts is null)\n    # 2. Gap is strictly greater than 30 minutes\n    events['new_sess'] = (events['prev_event_ts'].isna()) | (events['time_gap'] > 30)\n    events['new_sess'] = events['new_sess'].astype(int)\n    \n    # Cumulative sum to assign session numbers within each user\n    events['session_num'] = events.groupby('user_id')['new_sess'].cumsum()\n    \n    # Group by user_id and session_num to aggregate\n    user_sessions = events.groupby(['user_id', 'session_num'], as_index=False).agg({\n        'event_ts': ['min', 'max'],\n        'event_id': 'count'\n    }).reset_index(drop=True)\n    \n    # Flatten column names\n    user_sessions.columns = ['user_id', 'session_num', 'session_start', 'session_end', 'event_count']\n    \n    # Ensure session_num is 1-based per user (it already is from cumsum)\n    # Sort output by user_id and session_num\n    user_sessions = user_sessions.sort_values(['user_id', 'session_num']).reset_index(drop=True)\n    \n    return {'user_sessions': user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 424,
+   "tokens_out": 657,
+   "usd": 0.003709,
+   "wall_s": 5.685010671615601
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

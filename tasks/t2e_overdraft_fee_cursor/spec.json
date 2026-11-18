@@ -1,0 +1,37 @@
+{
+  "task_id": "t2e_overdraft_fee_cursor",
+  "relations": [
+    {
+      "name": "txn_ledger",
+      "key_columns": [
+        "txn_id"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "balance_after",
+          "kind": "float",
+          "abs_tol": 1e-06
+        }
+      ]
+    },
+    {
+      "name": "fees",
+      "key_columns": [
+        "account_id",
+        "fee_date"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "fee_date",
+          "kind": "timestamp"
+        },
+        {
+          "name": "trigger_txn_id",
+          "kind": "int"
+        }
+      ]
+    }
+  ]
+}

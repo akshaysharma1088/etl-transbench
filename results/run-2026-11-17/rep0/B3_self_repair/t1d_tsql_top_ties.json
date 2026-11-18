@@ -1,0 +1,46 @@
+{
+ "config": "B3_self_repair",
+ "rep": 0,
+ "task": "t1d_tsql_top_ties",
+ "category": "T1",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicates T-SQL TOP (5) WITH TIES semantics:\n    - Filters WHERE active = 1\n    - Orders by score DESC\n    - Returns TOP 5 rows WITH TIES (all rows that tie at rank 5)\n    - ISNULL(manager, 'UNASSIGNED') replaces NULL manager with default\n    - String concatenation propagates NULL: NULL + '-' + x = NULL\n    \"\"\"\n    \n    df = inputs['branch_scores'].copy()\n    \n    # Filter: WHERE active = 1\n    df = df[df['active'] == 1].copy()\n    \n    # ORDER BY score DESC\n    df = df.sort_values('score', ascending=False, na_position='last').reset_index(drop=True)\n    \n    # Compute rank for WITH TIES logic\n    # rank() gives the same rank to ties, with gaps (1,1,3,...)\n    df['_rank'] = df['score'].rank(method='min', ascending=False)\n    \n    # TOP (5) WITH TIES: include all rows where rank <= 5\n    df = df[df['_rank'] <= 5].copy()\n    \n    # Apply ISNULL(manager, 'UNASSIGNED')\n    df['manager_norm'] = df['manager'].fillna('UNASSIGNED')\n    \n    # String concatenation with NULL propagation:\n    # branch_code + '-' + region_code\n    # In T-SQL, if any operand is NULL, result is NULL\n    def concat_with_null_propagation(row):\n        branch_code = row['branch_code']\n        region_code = row['region_code']\n        \n        # NULL propagation: if either is None/NaN, result is None\n        if pd.isna(branch_code) or pd.isna(region_code):\n            return None\n        \n        return str(branch_code) + '-' + str(region_code)\n    \n    df['branch_label'] = df.apply(concat_with_null_propagation, axis=1)\n    \n    # Select and order output columns\n    result = df[['branch_id', 'manager_norm', 'branch_label', 'score']].reset_index(drop=True)\n    \n    return {'top_branches': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 364,
+   "tokens_out": 597,
+   "usd": 0.003349,
+   "wall_s": 5.177589178085327
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

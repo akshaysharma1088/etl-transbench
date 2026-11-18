@@ -1,0 +1,48 @@
+{
+ "config": "L3_summary_patch_then_fresh",
+ "rep": 4,
+ "task": "t7b_multi_reason_collect",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    df = inputs[\"invoices\"].copy()\n\n    amount = df[\"amount\"]\n    tax = df[\"tax\"]\n    due_date = df[\"due_date\"]\n    customer_ref = df[\"customer_ref\"]\n\n    amount_null = amount.isna()\n    tax_null = tax.isna()\n\n    r1 = amount_null | (amount < 0)\n    r2 = tax_null | (tax < 0)\n    r3 = (~amount_null) & (~tax_null) & (tax > amount * 0.5)\n    r4 = due_date.isna()\n\n    ref_null = customer_ref.isna()\n    ref_trim_empty = customer_ref.apply(\n        lambda x: isinstance(x, str) and x.strip() == \"\"\n    )\n    r5 = ref_null | ref_trim_empty\n\n    reasons = pd.Series([[] for _ in range(len(df))], index=df.index)\n\n    rule_defs = [\n        (r1, \"AMT_BAD\"),\n        (r2, \"TAX_BAD\"),\n        (r3, \"TAX_EXCESS\"),\n        (r4, \"DUE_NULL\"),\n        (r5, \"REF_EMPTY\"),\n    ]\n\n    for mask, code in rule_defs:\n        mask = mask.fillna(False)\n        for idx in df.index[mask]:\n            reasons.at[idx].append(code)\n\n    reason_codes = reasons.apply(lambda lst: \"|\".join(lst))\n    has_failure = reason_codes.str.len() > 0\n\n    clean = df.loc[~has_failure].copy()\n    rejects = df.loc[has_failure].copy()\n    rejects[\"reason_codes\"] = reason_codes.loc[has_failure]\n\n    clean = clean.reset_index(drop=True)\n    rejects = rejects.reset_index(drop=True)\n\n    return {\n        \"invoices_clean\": clean,\n        \"invoices_rejects\": rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 747,
+   "tokens_out": 858,
+   "usd": 0.015111,
+   "wall_s": 8.492309808731079,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

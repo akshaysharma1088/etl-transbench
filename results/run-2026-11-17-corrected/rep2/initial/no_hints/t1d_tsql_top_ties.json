@@ -1,0 +1,17 @@
+{
+ "task": "t1d_tsql_top_ties",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces T-SQL TOP (5) WITH TIES logic with NULL-propagating concatenation.\n    \n    Key semantics:\n    1. WHERE active = 1 (filter)\n    2. ORDER BY score DESC (descending)\n    3. TOP (5) WITH TIES: returns all rows with score equal to the 5th highest score\n    4. ISNULL(manager, 'UNASSIGNED'): coalesce NULL manager to 'UNASSIGNED'\n    5. branch_code + '-' + region_code: NULL-propagating concat (if either is NULL, result is NULL)\n    \"\"\"\n    \n    df = inputs[\"branch_scores\"].copy()\n    \n    # WHERE active = 1\n    df = df[df[\"active\"] == 1].copy()\n    \n    # ORDER BY score DESC\n    df = df.sort_values(by=\"score\", ascending=False, na_position=\"last\")\n    \n    # TOP (5) WITH TIES logic:\n    # Get the 5th row's score (0-indexed, so row 4)\n    if len(df) <= 5:\n        # If 5 or fewer rows, include all\n        cutoff_score = df[\"score\"].min()\n    else:\n        cutoff_score = df.iloc[4][\"score\"]\n    \n    # Include all rows with score >= cutoff_score (this handles ties)\n    df = df[df[\"score\"] >= cutoff_score].copy()\n    \n    # Reset index for clean output\n    df = df.reset_index(drop=True)\n    \n    # Create manager_norm: ISNULL(manager, 'UNASSIGNED')\n    df[\"manager_norm\"] = df[\"manager\"].fillna(\"UNASSIGNED\")\n    \n    # Create branch_label: branch_code + '-' + region_code (NULL-propagating)\n    # In SQL Server, NULL + anything = NULL\n    # In pandas, we need to replicate this: if either operand is NULL, result is NULL\n    def concat_propagate_null(branch_code, region_code):\n        if pd.isna(branch_code) or pd.isna(region_code):\n            return np.nan\n        return str(branch_code) + \"-\" + str(region_code)\n    \n    df[\"branch_label\"] = df.apply(\n        lambda row: concat_propagate_null(row[\"branch_code\"], row[\"region_code\"]),\n        axis=1\n    )\n    \n    # Select final columns\n    result = df[[\"branch_id\", \"manager_norm\", \"branch_label\", \"score\"]].copy()\n    \n    return {\"top_branches\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 393,
+   "tokens_out": 682,
+   "usd": 0.003803,
+   "wall_s": 6.267400741577148,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

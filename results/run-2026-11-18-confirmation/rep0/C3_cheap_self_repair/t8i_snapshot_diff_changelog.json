@@ -1,0 +1,48 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 0,
+ "task": "t8i_snapshot_diff_changelog",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    snap_prev = inputs[\"snap_prev\"].copy()\n    snap_curr = inputs[\"snap_curr\"].copy()\n    \n    # Ensure columns are in the expected order\n    snap_prev = snap_prev[[\"region\", \"sku\", \"price\", \"stock\", \"label\"]]\n    snap_curr = snap_curr[[\"region\", \"sku\", \"price\", \"stock\", \"label\"]]\n    \n    # Create key columns for merging\n    snap_prev[\"_key\"] = snap_prev[\"region\"] + \"|\" + snap_prev[\"sku\"]\n    snap_curr[\"_key\"] = snap_curr[\"region\"] + \"|\" + snap_curr[\"sku\"]\n    \n    # Merge on the key\n    merged = pd.merge(\n        snap_prev,\n        snap_curr,\n        on=\"_key\",\n        how=\"outer\",\n        suffixes=(\"_prev\", \"_curr\"),\n        indicator=True\n    )\n    \n    rows = []\n    \n    for _, row in merged.iterrows():\n        region = row[\"region_curr\"] if pd.notna(row[\"region_curr\"]) else row[\"region_prev\"]\n        sku = row[\"sku_curr\"] if pd.notna(row[\"sku_curr\"]) else row[\"sku_prev\"]\n        \n        in_prev = row[\"_merge\"] in [\"left_only\", \"both\"]\n        in_curr = row[\"_merge\"] in [\"right_only\", \"both\"]\n        \n        if in_prev and not in_curr:\n            # Delete\n            rows.append({\n                \"region\": region,\n                \"sku\": sku,\n                \"change_type\": \"D\",\n                \"changed_cols\": None\n            })\n        elif in_curr and not in_prev:\n            # Insert\n            rows.append({\n                \"region\": region,\n                \"sku\": sku,\n                \"change_type\": \"I\",\n                \"changed_cols\": None\n            })\n        else:\n            # Both exist - check for differences\n            changed_cols_list = []\n            \n            # Compare price (NULL-safe)\n            price_prev = row[\"price_prev\"]\n            price_curr = row[\"price_curr\"]\n            if pd.isna(price_prev) and pd.isna(price_curr):\n                price_equal = True\n            elif pd.isna(price_prev) or pd.isna(price_curr):\n                price_equal = False\n            else:\n                price_equal = (price_prev == price_curr)\n            \n            if not price_equal:\n                changed_cols_list.append(\"price\")\n            \n            # Compare stock (NULL-safe)\n            stock_prev = row[\"stock_prev\"]\n            stock_curr = row[\"stock_curr\"]\n            if pd.isna(stock_prev) and pd.isna(stock_curr):\n                stock_equal = True\n            elif pd.isna(stock_prev) or pd.isna(stock_curr):\n                stock_equal = False\n            else:\n                stock_equal = (stock_prev == stock_curr)\n            \n            if not stock_equal:\n                changed_cols_list.append(\"stock\")\n            \n            # Compare label (trailing space insensitive, NULL-safe)\n            label_prev = row[\"label_prev\"]\n            label_curr = row[\"label_curr\"]\n            \n            # Normalize labels: convert NaN to None, then RTRIM\n            if pd.isna(label_prev):\n                label_prev_norm = None\n            else:\n                label_prev_norm = label_prev.rstrip() if isinstance(label_prev, str) else label_prev\n            \n            if pd.isna(label_curr):\n                label_curr_norm = None\n            else:\n                label_curr_norm = label_curr.rstrip() if isinstance(label_curr, str) else label_curr\n            \n            # Compare after normalization\n            if label_prev_norm is None and label_curr_norm is None:\n                label_equal = True\n            elif label_prev_norm is None or label_curr_norm is None:\n                label_equal = False\n            else:\n                label_equal = (label_prev_norm == label_curr_norm)\n            \n            if not label_equal:\n                changed_cols_list.append(\"label\")\n            \n            # Only emit row if there are changes\n            if changed_cols_list:\n                rows.append({\n                    \"region\": region,\n                    \"sku\": sku,\n                    \"change_type\": \"U\",\n                    \"changed_cols\": \",\".join(changed_cols_list)\n                })\n    \n    change_log = pd.DataFrame(rows)\n    \n    if len(change_log) == 0:\n        change_log = pd.DataFrame(columns=[\"region\", \"sku\", \"change_type\", \"changed_cols\"])\n    \n    # Ensure correct dtypes\n    change_log[\"region\"] = change_log[\"region\"].astype(\"object\")\n    change_log[\"sku\"] = change_log[\"sku\"].astype(\"object\")\n    change_log[\"change_type\"] = change_log[\"change_type\"].astype(\"object\")\n    change_log[\"changed_cols\"] = change_log[\"changed_cols\"].astype(\"object\")\n    \n    return {\"change_log\": change_log}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 661,
+   "tokens_out": 1326,
+   "usd": 0.007291,
+   "wall_s": 7.477232933044434,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

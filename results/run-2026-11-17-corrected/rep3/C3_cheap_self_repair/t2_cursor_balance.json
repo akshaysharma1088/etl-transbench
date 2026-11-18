@@ -1,0 +1,68 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 3,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy SP_RUNNING_BALANCE cursor logic as set-oriented pandas operations.\n    \n    Computes running balance per account and overdraft flag (1 if balance < 0, else 0).\n    Processes transactions in order: account_id, txn_date, txn_seq.\n    NULL amounts are treated as 0.\n    \"\"\"\n    transactions = inputs[\"transactions\"].copy()\n    \n    # Sort exactly as the cursor: by account_id, txn_date, txn_seq\n    transactions = transactions.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        ignore_index=False\n    )\n    \n    # Handle NULL amounts: replace with 0\n    transactions[\"amount\"] = transactions[\"amount\"].fillna(0.0)\n    \n    # Compute running balance per account using groupby cumsum\n    # Group by account_id, then cumulative sum of amount within each account\n    transactions[\"running_balance\"] = transactions.groupby(\"account_id\", sort=False)[\"amount\"].cumsum()\n    \n    # Compute overdraft flag: 1 if running_balance < 0, else 0\n    transactions[\"overdraft_flag\"] = (transactions[\"running_balance\"] < 0).astype(np.int16)\n    \n    # Select and order output columns\n    result = transactions[[\n        \"account_id\", \n        \"txn_seq\", \n        \"txn_date\", \n        \"amount\",\n        \"running_balance\", \n        \"overdraft_flag\"\n    ]].reset_index(drop=True)\n    \n    return {\"acct_balance_flags\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 520,
+   "tokens_out": 529,
+   "usd": 0.003165,
+   "wall_s": 5.077462911605835,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3387,
+  "tokens_out": 2895,
+  "usd": 0.017862,
+  "wall_s": 25.15889263153076
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

@@ -1,0 +1,51 @@
+{
+ "config": "LEGATO",
+ "rep": 4,
+ "task": "t2c_locf_carry_forward",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    # Resolve input key case-insensitively (legacy artifact name vs actual key casing)\n    key = None\n    for k in inputs.keys():\n        if k.lower() == 'rate_feed':\n            key = k\n            break\n    if key is None:\n        # fallback: if exactly one input provided, use it\n        if len(inputs) == 1:\n            key = next(iter(inputs))\n        else:\n            raise KeyError('RATE_FEED')\n\n    df = inputs[key].copy()\n\n    # Preserve cursor ordering: account_id, obs_date, obs_seq\n    df = df.sort_values(['account_id', 'obs_date', 'obs_seq'], kind='mergesort')\n    df = df.reset_index(drop=True)\n\n    # Forward-fill rate within each account_id group (carry never crosses accounts)\n    df['rate_filled'] = df.groupby('account_id')['rate'].ffill()\n\n    # was_carried = 1 only when original rate was NULL but a prior non-null rate\n    # existed in the same account (i.e., rate_filled is not NULL)\n    df['was_carried'] = ((df['rate'].isna()) & (df['rate_filled'].notna())).astype('int64')\n\n    result = df[['account_id', 'obs_seq', 'obs_date', 'rate_filled', 'was_carried']].copy()\n\n    return {'rate_filled': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 774,
+   "tokens_out": 698,
+   "usd": 0.012792,
+   "wall_s": 6.947598934173584
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1495,
+  "tokens_out": 531,
+  "usd": 0.01245,
+  "wall_s": 4.644376516342163
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

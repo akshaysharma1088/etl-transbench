@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t1b_oracle_decode_nvl",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom pandas.api.types import is_datetime64_any_dtype\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    df = inputs[\"regional_txn\"].copy()\n    \n    # Filter for POSTED status\n    df = df[df[\"status\"] == \"POSTED\"].copy()\n    \n    # Apply TRUNC(txn_ts, 'MM') - truncate to month start\n    df[\"txn_month\"] = df[\"txn_ts\"].dt.to_period(\"M\").dt.to_timestamp()\n    \n    # Apply DECODE logic for region normalization\n    # DECODE(region, NULL, 'MISSING', 'XX', 'UNKNOWN', region)\n    # Oracle DECODE matches NULL = NULL\n    def decode_region(region_val):\n        if pd.isna(region_val):\n            return 'MISSING'\n        elif region_val == 'XX':\n            return 'UNKNOWN'\n        else:\n            return region_val\n    \n    df[\"region_norm\"] = df[\"region\"].apply(decode_region)\n    \n    # Apply NVL(amount, 0) - replace NULL amounts with 0\n    df[\"amount_normalized\"] = df[\"amount\"].fillna(0)\n    \n    # Group by txn_month and region_norm, then aggregate\n    grouped = df.groupby([\"txn_month\", \"region_norm\"], as_index=False).agg(\n        total_amount=(\"amount_normalized\", \"sum\"),\n        txn_count=(\"txn_id\", \"count\")\n    )\n    \n    # Rename txn_month to match expected output\n    result = grouped[[\"txn_month\", \"region_norm\", \"total_amount\", \"txn_count\"]].copy()\n    \n    return {\"monthly_region_rollup\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 480,
+   "tokens_out": 458,
+   "usd": 0.00277,
+   "wall_s": 4.218804359436035,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

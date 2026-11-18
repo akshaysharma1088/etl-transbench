@@ -1,0 +1,16 @@
+{
+ "task": "t5h_scd2_surrogate_pit",
+ "group": "default",
+ "tier": "frontier",
+ "code": "```python\nimport pandas as pd\nimport numpy as np\n\n\ndef _segments_differ(a, b):\n    a_na = pd.isna(a)\n    b_na = pd.isna(b)\n    if a_na and b_na:\n        return False\n    if a_na != b_na:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_CUSTOMER\"].copy()\n    stg = inputs[\"ST",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1162,
+   "tokens_out": 4000,
+   "usd": 0.063486,
+   "wall_s": 39.495598554611206
+  }
+ ]
+}

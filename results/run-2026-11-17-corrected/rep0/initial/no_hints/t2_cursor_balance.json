@@ -1,0 +1,17 @@
+{
+ "task": "t2_cursor_balance",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"transactions\"].copy()\n\n    # Preserve cursor ORDER BY account_id, txn_date, txn_seq (stable sort)\n    df = df.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # COALESCE(amount, 0) for the running sum\n    filled_amount = df[\"amount\"].fillna(0)\n\n    # Running balance resets to 0 at start of each account group,\n    # then accumulates COALESCE(amount, 0)\n    running_balance = filled_amount.groupby(df[\"account_id\"]).cumsum()\n\n    overdraft_flag = (running_balance < 0).astype(\"int64\")\n\n    result = pd.DataFrame({\n        \"account_id\": df[\"account_id\"],\n        \"txn_seq\": df[\"txn_seq\"],\n        \"txn_date\": df[\"txn_date\"],\n        \"amount\": df[\"amount\"],\n        \"running_balance\": running_balance,\n        \"overdraft_flag\": overdraft_flag,\n    }).reset_index(drop=True)\n\n    return {\"acct_balance_flags\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 747,
+   "tokens_out": 585,
+   "usd": 0.011016,
+   "wall_s": 6.113032102584839,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

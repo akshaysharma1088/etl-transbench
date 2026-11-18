@@ -1,0 +1,48 @@
+{
+ "config": "B3_self_repair",
+ "rep": 1,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _sig(city, tier):\n    c = '' if pd.isna(city) else str(city)\n    t = '' if pd.isna(tier) else str(tier)\n    return c.rstrip() + '|' + t.rstrip()\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_member\"].copy()\n    stg = inputs[\"stg_member\"].copy()\n\n    # Work with a list of row-dicts so we can freely mutate and append.\n    records = dim.to_dict(orient=\"records\")\n\n    # Build lookup: member_id -> index of current row (is_current == 1) in records\n    current_idx = {}\n    for idx, rec in enumerate(records):\n        if rec[\"is_current\"] == 1:\n            # In case of duplicates, keep the last one found (shouldn't normally happen)\n            current_idx[rec[\"member_id\"]] = idx\n\n    for _, s in stg.iterrows():\n        mid = s[\"member_id\"]\n        s_city = s[\"city\"]\n        s_tier = s[\"tier\"]\n        s_update = s[\"update_date\"]\n\n        if mid not in current_idx:\n            new_rec = {\n                \"member_id\": mid,\n                \"city\": s_city,\n                \"tier\": s_tier,\n                \"eff_start_date\": s_update,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            }\n            records.append(new_rec)\n            current_idx[mid] = len(records) - 1\n        else:\n            c_idx = current_idx[mid]\n            c_rec = records[c_idx]\n            sig_s = _sig(s_city, s_tier)\n            sig_c = _sig(c_rec[\"city\"], c_rec[\"tier\"])\n            if sig_s != sig_c:\n                # close old current row\n                c_rec[\"eff_end_date\"] = s_update\n                c_rec[\"is_current\"] = 0\n                records[c_idx] = c_rec\n\n                new_rec = {\n                    \"member_id\": mid,\n                    \"city\": s_city,\n                    \"tier\": s_tier,\n                    \"eff_start_date\": s_update,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n                records.append(new_rec)\n                current_idx[mid] = len(records) - 1\n            # else: no-op\n\n    out_cols = [\"member_id\", \"city\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    out_df = pd.DataFrame(records, columns=out_cols)\n\n    # Ensure dtypes align with expected schema as closely as possible.\n    out_df[\"member_id\"] = out_df[\"member_id\"].astype(\"int64\")\n    out_df[\"is_current\"] = out_df[\"is_current\"].astype(\"int64\")\n    out_df[\"eff_start_date\"] = pd.to_datetime(out_df[\"eff_start_date\"])\n    out_df[\"eff_end_date\"] = pd.to_datetime(out_df[\"eff_end_date\"])\n\n    return {\"dim_member_out\": out_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1247,
+   "tokens_out": 1702,
+   "usd": 0.029271,
+   "wall_s": 15.431532382965088,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

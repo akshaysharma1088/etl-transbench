@@ -1,0 +1,17 @@
+{
+ "task": "t3_dataflow_orders",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Legacy ETL pipeline:\n    1. Filter orders where status == 'SHIPPED'\n    2. Lookup customer region from customers table\n    3. Compute net_amount = qty * unit_price * (1 - discount), treating NULL discount as 0\n    4. Output selected columns\n    \"\"\"\n    \n    # src: source orders table\n    orders = inputs[\"orders\"].copy()\n    \n    # flt: filter where status == 'SHIPPED'\n    filtered = orders[orders[\"status\"] == \"SHIPPED\"].copy()\n    \n    # lkp: lookup customer region\n    customers = inputs[\"customers\"].copy()\n    \n    # Merge with customers on customer_id\n    # Keep only rows from filtered (left join), fill missing region with 'UNKNOWN'\n    enriched = filtered.merge(\n        customers[[\"customer_id\", \"region\"]],\n        on=\"customer_id\",\n        how=\"left\"\n    )\n    enriched[\"region\"] = enriched[\"region\"].fillna(\"UNKNOWN\")\n    \n    # rfm: reformat - compute net_amount\n    # NULL discount is treated as 0\n    enriched[\"discount\"] = enriched[\"discount\"].fillna(0.0)\n    enriched[\"net_amount\"] = enriched[\"qty\"] * enriched[\"unit_price\"] * (1 - enriched[\"discount\"])\n    \n    # out: output - select specific columns\n    result = enriched[[\"order_id\", \"customer_id\", \"region\", \"qty\", \"unit_price\", \"net_amount\"]].copy()\n    \n    return {\"shipped_orders_enriched\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 525,
+   "tokens_out": 417,
+   "usd": 0.00261,
+   "wall_s": 3.317255973815918,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

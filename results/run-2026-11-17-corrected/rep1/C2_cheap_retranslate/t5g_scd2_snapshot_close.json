@@ -1,0 +1,48 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 1,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    SCD Type 2 implementation: load full snapshot of stores.\n    - Close prior current rows when attributes change.\n    - Reactivate closed stores that reappear.\n    - Unchanged records create no new versions.\n    - Keys missing from snapshot are closed.\n    \"\"\"\n    \n    dim_store = inputs[\"dim_store\"].copy()\n    stg_store_full = inputs[\"stg_store_full\"].copy()\n    batch_control = inputs[\"batch_control\"]\n    \n    batch_date = batch_control.iloc[0][\"batch_date\"]\n    \n    # Get distinct rows from staging (remove exact duplicates)\n    stg_distinct = stg_store_full.drop_duplicates().reset_index(drop=True)\n    \n    # Initialize output with current dim_store\n    result = dim_store.copy()\n    \n    # Step 1: Process each distinct store in staging\n    for _, stg_row in stg_distinct.iterrows():\n        store_id = stg_row[\"store_id\"]\n        stg_region = stg_row[\"region\"]\n        stg_format = stg_row[\"format\"]\n        \n        # Find current row for this store_id\n        current_rows = result[(result[\"store_id\"] == store_id) & (result[\"is_current\"] == 1)]\n        \n        if len(current_rows) > 0:\n            # Current row exists\n            current_row = current_rows.iloc[0]\n            current_region = current_row[\"region\"]\n            current_format = current_row[\"format\"]\n            \n            # Check if attributes differ (NULL handling: NULL != non-NULL, NULL == NULL is False for differs)\n            region_differs = (\n                (pd.isna(current_region) and not pd.isna(stg_region)) or\n                (not pd.isna(current_region) and pd.isna(stg_region)) or\n                (not pd.isna(current_region) and not pd.isna(stg_region) and current_region != stg_region)\n            )\n            format_differs = (\n                (pd.isna(current_format) and not pd.isna(stg_format)) or\n                (not pd.isna(current_format) and pd.isna(stg_format)) or\n                (not pd.isna(current_format) and not pd.isna(stg_format) and current_format != stg_format)\n            )\n            \n            if region_differs or format_differs:\n                # Attributes changed: close current row and insert new version\n                result.loc[current_rows.index[0], \"eff_end_date\"] = batch_date\n                result.loc[current_rows.index[0], \"is_current\"] = 0\n                \n                # Insert new version\n                new_row = {\n                    \"store_id\": store_id,\n                    \"region\": stg_region,\n                    \"format\": stg_format,\n                    \"eff_start_date\": batch_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1\n                }\n                result = pd.concat([result, pd.DataFrame([new_row])], ignore_index=True)\n            # else: no-op (unchanged attributes)\n        else:\n            # No current row: new store or reactivated store\n            # Insert new version\n            new_row = {\n                \"store_id\": store_id,\n                \"region\": stg_region,\n                \"format\": stg_format,\n                \"eff_start_date\": batch_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1\n            }\n            result = pd.concat([result, pd.DataFrame([new_row])], ignore_index=True)\n    \n    # Step 2: Close current rows whose store_id is NOT in staging\n    stg_store_ids = set(stg_distinct[\"store_id\"].unique())\n    current_rows_mask = result[\"is_current\"] == 1\n    current_result = result[current_rows_mask]\n    \n    for idx, current_row in current_result.iterrows():\n        if current_row[\"store_id\"] not in stg_store_ids:\n            result.loc[idx, \"eff_end_date\"] = batch_date\n            result.loc[idx, \"is_current\"] = 0\n    \n    # Ensure correct data types\n    result = result.reset_index(drop=True)\n    result[\"store_id\"] = result[\"store_id\"].astype(\"int64\")\n    result[\"region\"] = result[\"region\"].astype(\"str\")\n    result[\"format\"] = result[\"format\"].astype(\"str\")\n    result[\"eff_start_date\"] = pd.to_datetime(result[\"eff_start_date\"], utc=False)\n    result[\"eff_end_date\"] = pd.to_datetime(result[\"eff_end_date\"], utc=False)\n    result[\"is_current\"] = result[\"is_current\"].astype(\"int64\")\n    \n    return {\"dim_store_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 902,
+   "tokens_out": 1294,
+   "usd": 0.007372,
+   "wall_s": 10.37717866897583,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

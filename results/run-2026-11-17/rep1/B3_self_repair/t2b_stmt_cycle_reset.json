@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 1,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    ledger = inputs[\"LEDGER\"].copy()\n\n    # Ensure sort order matches cursor ORDER BY account_id, entry_date, row_seq\n    ledger = ledger.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        kind=\"mergesort\"  # stable sort to preserve deterministic tie-breaking\n    ).reset_index(drop=True)\n\n    account_ids = []\n    row_seqs = []\n    entry_dates = []\n    entry_types = []\n    amounts = []\n    cycle_nos = []\n    cycle_balances = []\n\n    prev_acct = None\n    bal = 0.0\n    cyc = 1\n\n    for r in ledger.itertuples(index=False):\n        acct = r.account_id\n        amt = r.amount\n        # Coalesce null amount to 0\n        if pd.isna(amt):\n            amt_val = 0.0\n        else:\n            amt_val = float(amt)\n\n        if acct != prev_acct:\n            bal = 0.0\n            cyc = 1\n            prev_acct = acct\n\n        if r.entry_type == \"STMT\":\n            bal = 0.0\n            cyc = cyc + 1\n\n        bal = bal + amt_val\n\n        account_ids.append(r.account_id)\n        row_seqs.append(r.row_seq)\n        entry_dates.append(r.entry_date)\n        entry_types.append(r.entry_type)\n        amounts.append(r.amount)\n        cycle_nos.append(cyc)\n        cycle_balances.append(bal)\n\n    result = pd.DataFrame({\n        \"account_id\": account_ids,\n        \"row_seq\": row_seqs,\n        \"entry_date\": entry_dates,\n        \"entry_type\": entry_types,\n        \"amount\": amounts,\n        \"cycle_no\": cycle_nos,\n        \"cycle_balance\": cycle_balances,\n    })\n\n    return {\"cycle_balances\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 750,
+   "tokens_out": 1446,
+   "usd": 0.02394,
+   "wall_s": 12.616673231124878
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3892,
+  "tokens_out": 6923,
+  "usd": 0.11552100000000001,
+  "wall_s": 72.5143575668335
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

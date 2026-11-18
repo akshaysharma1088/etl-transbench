@@ -1,0 +1,17 @@
+{
+ "task": "t5d_asof_reconstruction",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    hist = inputs[\"dim_emp_hist\"]\n    queries = inputs[\"asof_queries\"]\n\n    merged = queries.merge(hist, on=\"emp_id\", how=\"inner\", suffixes=(\"\", \"_h\"))\n\n    cond = (merged[\"as_of_date\"] >= merged[\"eff_start_date\"]) & (\n        merged[\"eff_end_date\"].isna() | (merged[\"as_of_date\"] < merged[\"eff_end_date\"])\n    )\n\n    result = merged.loc[cond, [\"query_id\", \"emp_id\", \"dept\", \"grade\"]].reset_index(drop=True)\n\n    return {\"asof_result\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 879,
+   "tokens_out": 408,
+   "usd": 0.008757,
+   "wall_s": 4.336371421813965,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

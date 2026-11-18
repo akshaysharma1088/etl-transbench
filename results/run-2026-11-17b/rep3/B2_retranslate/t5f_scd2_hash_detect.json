@@ -1,0 +1,67 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _sig(city, tier):\n    c = '' if pd.isna(city) else str(city)\n    t = '' if pd.isna(tier) else str(tier)\n    return c.rstrip(' ') + '|' + t.rstrip(' ')\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_MEMBER']\n    stg = inputs['STG_MEMBER']\n\n    # Work with a list of row-dicts so we can mutate \"current\" rows in place\n    # and append newly inserted versions, mirroring the procedural logic.\n    records = dim.to_dict('records')\n\n    for _, s in stg.iterrows():\n        mid = s['member_id']\n\n        # locate the current row (is_current = 1) for this member, if any\n        cur_idx = None\n        for i, r in enumerate(records):\n            if r['member_id'] == mid and r['is_current'] == 1:\n                cur_idx = i\n                break\n\n        if cur_idx is None:\n            records.append({\n                'member_id': mid,\n                'city': s['city'],\n                'tier': s['tier'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': None,\n                'is_current': 1,\n            })\n        else:\n            c = records[cur_idx]\n            if _sig(s['city'], s['tier']) != _sig(c['city'], c['tier']):\n                c['eff_end_date'] = s['update_date']\n                c['is_current'] = 0\n                records.append({\n                    'member_id': mid,\n                    'city': s['city'],\n                    'tier': s['tier'],\n                    'eff_start_date': s['update_date'],\n                    'eff_end_date': None,\n                    'is_current': 1,\n                })\n            # else: signatures match -> no-op, current row stays untouched\n\n    out = pd.DataFrame(\n        records,\n        columns=['member_id', 'city', 'tier', 'eff_start_date', 'eff_end_date', 'is_current'],\n    )\n\n    return {'dim_member_out': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1114,
+   "tokens_out": 2321,
+   "usd": 0.038157,
+   "wall_s": 21.03826117515564
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4456,
+  "tokens_out": 9142,
+  "usd": 0.150498,
+  "wall_s": 81.97052264213562
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

@@ -1,0 +1,68 @@
+{
+ "config": "LEGATO",
+ "rep": 3,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_state = inputs[\"target_state\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n\n    # 1. Apply-once semantics: distinct by seq (keep first occurrence of a seq).\n    events = cdc_events.drop_duplicates(subset=\"seq\", keep=\"first\")\n\n    # Build initial current state from target_state.\n    current_state = {}\n    existed_ever = {}\n    orig_last_seq = {}\n    for _, row in target_state.iterrows():\n        oid = int(row[\"order_id\"])\n        current_state[oid] = {\n            \"status\": row[\"status\"],\n            \"amount\": row[\"amount\"],\n            \"last_seq\": int(row[\"last_seq\"]),\n        }\n        existed_ever[oid] = True\n        orig_last_seq[oid] = int(row[\"last_seq\"])\n\n    tomb_rows = []\n\n    # Process events per order, in seq order, with the replay guard applied.\n    for oid, grp in events.groupby(\"order_id\"):\n        grp_sorted = grp.sort_values(\"seq\")\n\n        if oid in orig_last_seq:\n            guard = orig_last_seq[oid]\n            grp_sorted = grp_sorted[grp_sorted[\"seq\"] > guard]\n\n        if grp_sorted.empty:\n            continue\n\n        last_op = None\n        last_seq_val = None\n\n        for _, ev in grp_sorted.iterrows():\n            op = ev[\"op\"]\n            seq = int(ev[\"seq\"])\n\n            if op in (\"I\", \"U\"):\n                if oid in current_state:\n                    status = ev[\"status\"]\n                    if op == \"U\" and pd.isna(ev[\"amount\"]):\n                        amount = current_state[oid][\"amount\"]\n                    else:\n                        amount = ev[\"amount\"]\n                    current_state[oid] = {\n                        \"status\": status,\n                        \"amount\": amount,\n                        \"last_seq\": seq,\n                    }\n                else:\n                    current_state[oid] = {\n                        \"status\": ev[\"status\"],\n                        \"amount\": ev[\"amount\"],\n                        \"last_seq\": seq,\n                    }\n                existed_ever[oid] = True\n            elif op == \"D\":\n                if oid in current_state:\n                    del current_state[oid]\n                # D on a missing order does nothing; existed_ever unchanged.\n\n            last_op = op\n            last_seq_val = seq\n\n        if existed_ever.get(oid, False) and last_op == \"D\":\n            tomb_rows.append({\"order_id\": oid, \"deleted_seq\": last_seq_val})\n\n    new_state_rows = []\n    for oid, st in current_state.items():\n        new_state_rows.append(\n            {\n                \"order_id\": oid,\n                \"status\": st[\"status\"],\n                \"amount\": st[\"amount\"],\n                \"last_seq\": st[\"last_seq\"],\n            }\n        )\n\n    new_state = pd.DataFrame(\n        new_state_rows, columns=[\"order_id\", \"status\", \"amount\", \"last_seq\"]\n    )\n    tombstones = pd.DataFrame(tomb_rows, columns=[\"order_id\", \"deleted_seq\"])\n\n    if not new_state.empty:\n        new_state[\"order_id\"] = new_state[\"order_id\"].astype(\"int64\")\n        new_state[\"last_seq\"] = new_state[\"last_seq\"].astype(\"int64\")\n        new_state[\"amount\"] = new_state[\"amount\"].astype(\"float64\")\n    else:\n        new_state = new_state.astype(\n            {\n                \"order_id\": \"int64\",\n                \"status\": \"object\",\n                \"amount\": \"float64\",\n                \"last_seq\": \"int64\",\n            }\n        )\n\n    if not tombstones.empty:\n        tombstones[\"order_id\"] = tombstones[\"order_id\"].astype(\"int64\")\n        tombstones[\"deleted_seq\"] = tombstones[\"deleted_seq\"].astype(\"int64\")\n    else:\n        tombstones = tombstones.astype({\"order_id\": \"int64\", \"deleted_seq\": \"int64\"})\n\n    return {\"new_state\": new_state, \"tombstones\": tombstones}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1266,
+   "tokens_out": 5850,
+   "usd": 0.091548,
+   "wall_s": 53.23061418533325,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 8940,
+  "tokens_out": 22671,
+  "usd": 0.366885,
+  "wall_s": 219.12500882148743
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 3,
+ "task": "t8g_partial_update_sentinel",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Merge profile changes into customer profiles with CDC semantics.\n    \n    - NULL in a change field means \"leave as-is\"\n    - '<<NULL>>' means \"set to NULL\"\n    - Any other value means \"set to that value\"\n    - For email: normalize with LOWER(TRIM(...))\n    - Skip changes with change_seq <= updated_seq\n    - Apply changes in change_seq order\n    - Only advance updated_seq if the row actually changed\n    - Creation (new customer) always advances updated_seq\n    \"\"\"\n    customer_profile = inputs[\"customer_profile\"].copy()\n    profile_changes = inputs[\"profile_changes\"].copy()\n    \n    # Ensure proper types\n    customer_profile[\"customer_id\"] = customer_profile[\"customer_id\"].astype(\"int64\")\n    customer_profile[\"updated_seq\"] = customer_profile[\"updated_seq\"].astype(\"int64\")\n    profile_changes[\"change_seq\"] = profile_changes[\"change_seq\"].astype(\"int64\")\n    profile_changes[\"customer_id\"] = profile_changes[\"customer_id\"].astype(\"int64\")\n    \n    # Convert empty strings to NaN for consistency\n    for col in [\"email\", \"phone\", \"tier\"]:\n        if col in customer_profile.columns:\n            customer_profile[col] = customer_profile[col].replace(\"\", np.nan)\n        if col in profile_changes.columns:\n            profile_changes[col] = profile_changes[col].replace(\"\", np.nan)\n    \n    # Sort changes by customer_id and change_seq\n    profile_changes = profile_changes.sort_values([\"customer_id\", \"change_seq\"]).reset_index(drop=True)\n    \n    # Create result dict to track updates\n    result_rows = {}\n    \n    # Initialize with existing customers\n    for _, row in customer_profile.iterrows():\n        cid = row[\"customer_id\"]\n        result_rows[cid] = {\n            \"customer_id\": cid,\n            \"email\": row[\"email\"],\n            \"phone\": row[\"phone\"],\n            \"tier\": row[\"tier\"],\n            \"updated_seq\": row[\"updated_seq\"]\n        }\n    \n    # Apply changes\n    for _, change in profile_changes.iterrows():\n        cid = change[\"customer_id\"]\n        change_seq = change[\"change_seq\"]\n        \n        # Check if customer exists and if change should be skipped\n        if cid in result_rows:\n            if change_seq <= result_rows[cid][\"updated_seq\"]:\n                continue  # Skip this change\n            current = result_rows[cid]\n        else:\n            # New customer\n            current = {\n                \"customer_id\": cid,\n                \"email\": np.nan,\n                \"phone\": np.nan,\n                \"tier\": np.nan,\n                \"updated_seq\": None\n            }\n        \n        # Store old values to detect changes\n        old_email = current[\"email\"]\n        old_phone = current[\"phone\"]\n        old_tier = current[\"tier\"]\n        \n        # Apply the three field rules\n        # Email\n        if pd.notna(change[\"email\"]):\n            if change[\"email\"] == \"<<NULL>>\":\n                current[\"email\"] = np.nan\n            else:\n                current[\"email\"] = str(change[\"email\"]).lower().strip()\n        \n        # Phone\n        if pd.notna(change[\"phone\"]):\n            if change[\"phone\"] == \"<<NULL>>\":\n                current[\"phone\"] = np.nan\n            else:\n                current[\"phone\"] = change[\"phone\"]\n        \n        # Tier\n        if pd.notna(change[\"tier\"]):\n            if change[\"tier\"] == \"<<NULL>>\":\n                current[\"tier\"] = np.nan\n            else:\n                current[\"tier\"] = change[\"tier\"]\n        \n        # Check if row actually changed (NULL-safe comparison)\n        email_changed = not (pd.isna(old_email) and pd.isna(current[\"email\"])) and old_email != current[\"email\"]\n        phone_changed = not (pd.isna(old_phone) and pd.isna(current[\"phone\"])) and old_phone != current[\"phone\"]\n        tier_changed = not (pd.isna(old_tier) and pd.isna(current[\"tier\"])) and old_tier != current[\"tier\"]\n        \n        is_new_customer = current[\"updated_seq\"] is None\n        \n        if is_new_customer:\n            # Creation is never a no-op\n            current[\"updated_seq\"] = change_seq\n            result_rows[cid] = current\n        elif email_changed or phone_changed or tier_changed:\n            # Some field changed\n            current[\"updated_seq\"] = change_seq\n            result_rows[cid] = current\n        # else: no-op, don't advance updated_seq\n    \n    # Build output DataFrame\n    output_rows = list(result_rows.values())\n    new_profile = pd.DataFrame(output_rows)\n    \n    # Ensure columns are in the right order and have correct types\n    new_profile = new_profile[[\"customer_id\", \"email\", \"phone\", \"tier\", \"updated_seq\"]]\n    new_profile[\"customer_id\"] = new_profile[\"customer_id\"].astype(\"int64\")\n    new_profile[\"updated_seq\"] = new_profile[\"updated_seq\"].astype(\"int64\")\n    \n    return {\"new_profile\": new_profile}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 717,
+   "tokens_out": 1354,
+   "usd": 0.007487,
+   "wall_s": 8.304767847061157,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

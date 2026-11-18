@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t2d_reject_skip_accum",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 4,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    postings = inputs[\"postings\"].copy()\n\n    # Preserve cursor ordering: account_id, post_date, post_seq\n    postings = postings.sort_values(\n        by=[\"account_id\", \"post_date\", \"post_seq\"], kind=\"stable\"\n    ).reset_index(drop=True)\n\n    qty = postings[\"qty\"]\n    price = postings[\"unit_price\"]\n\n    valid = (\n        qty.notna()\n        & (qty > 0)\n        & price.notna()\n        & (price >= 0)\n    )\n\n    postings[\"_valid\"] = valid\n    # value is NaN for invalid (rejected) rows -> they are excluded from output\n    postings[\"_value\"] = np.where(valid, qty * price, np.nan)\n\n    # Cumulative sum per account, skipping NaNs for accumulation but leaving\n    # NaN marker at the rejected row's position (which we discard anyway).\n    postings[\"_running_total\"] = postings.groupby(\"account_id\")[\"_value\"].cumsum()\n\n    posted_mask = postings[\"_valid\"]\n    posted_totals = postings.loc[\n        posted_mask,\n        [\"account_id\", \"post_seq\", \"post_date\", \"_value\", \"_running_total\"],\n    ].rename(columns={\"_value\": \"post_value\", \"_running_total\": \"running_total\"})\n\n    posted_totals = posted_totals.reset_index(drop=True)\n    posted_totals[\"post_value\"] = posted_totals[\"post_value\"].astype(float)\n    posted_totals[\"running_total\"] = posted_totals[\"running_total\"].astype(float)\n\n    # Reject counts per account, including accounts with zero rejects.\n    reject_counts = (\n        postings.groupby(\"account_id\")[\"_valid\"]\n        .apply(lambda s: int((~s).sum()))\n        .reset_index()\n        .rename(columns={\"_valid\": \"reject_count\"})\n    )\n    reject_counts[\"reject_count\"] = reject_counts[\"reject_count\"].astype(int)\n\n    return {\n        \"posted_totals\": posted_totals,\n        \"reject_counts\": reject_counts,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 975,
+   "tokens_out": 1036,
+   "usd": 0.018465,
+   "wall_s": 9.550680875778198
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5077,
+  "tokens_out": 8960,
+  "usd": 0.14963100000000001,
+  "wall_s": 92.37658596038818
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

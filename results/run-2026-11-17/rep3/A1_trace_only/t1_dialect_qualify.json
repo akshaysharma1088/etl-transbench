@@ -1,0 +1,56 @@
+{
+ "config": "A1_trace_only",
+ "rep": 3,
+ "task": "t1_dialect_qualify",
+ "category": "T1",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom typing import Dict\n\n\ndef run(inputs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicates Teradata-style QUALIFY filtering on window results.\n\n    SELECT account_id, txn_id, txn_ts, amount, channel, size_band\n    FROM acct_txn\n    WHERE amount > 100\n    QUALIFY ROW_NUMBER() OVER (\n        PARTITION BY account_id\n        ORDER BY txn_ts DESC, txn_id DESC\n    ) = 1\n\n    Teradata NULL ordering default: NULLs sort as the smallest value,\n    i.e. NULLs FIRST for ASC order, NULLs LAST for DESC order.\n    Since both ORDER BY keys here are DESC, NULLs should sort LAST.\n    \"\"\"\n    acct_txn = inputs['acct_txn'].copy()\n\n    # WHERE clause: filter amount > 100\n    acct_txn = acct_txn[acct_txn['amount'] > 100].copy()\n\n    # Add size_band column based on CASE WHEN logic\n    def size_band(amount):\n        if pd.isna(amount):\n            return 'STANDARD'\n        if amount >= 1000:\n            return 'JUMBO'\n        elif amount >= 500:\n            return 'LARGE'\n        else:\n            return 'STANDARD'\n\n    cols = ['account_id', 'txn_id', 'txn_ts', 'amount', 'channel', 'size_band']\n\n    if acct_txn.empty:\n        acct_txn['size_band'] = pd.Series(dtype=object)\n        result = acct_txn[cols]\n        return {'latest_high_value_txn': result}\n\n    acct_txn['size_band'] = acct_txn['amount'].apply(size_band)\n\n    # Window function: ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC)\n    # Teradata: NULLs sort LAST when order is DESC.\n    # Sort by account_id (to group partitions), then by the ORDER BY keys with\n    # NULLs placed last, matching DESC ordering semantics.\n    acct_txn = acct_txn.sort_values(\n        by=['account_id', 'txn_ts', 'txn_id'],\n        ascending=[True, False, False],\n        na_position='last',\n        kind='mergesort'  # stable sort for deterministic tie-breaking\n    )\n\n    # QUALIFY: keep only the first row (ROW_NUMBER() = 1) per account_id partition\n    result = acct_txn.drop_duplicates(subset=['account_id'], keep='first')\n\n    # Select only the original columns in the required order\n    result = result[cols].reset_index(drop=True)\n\n    return {'latest_high_value_txn': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 369,
+   "tokens_out": 742,
+   "usd": 0.004079,
+   "wall_s": 5.497732400894165
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4385,
+  "tokens_out": 3324,
+  "usd": 0.063015,
+  "wall_s": 29.93361735343933
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

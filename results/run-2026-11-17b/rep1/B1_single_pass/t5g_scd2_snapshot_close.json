@@ -1,0 +1,47 @@
+{
+ "config": "B1_single_pass",
+ "rep": 1,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _differs(a, b):\n    \"\"\"NULL-aware inequality: NULL vs NULL -> not different; NULL vs non-NULL -> different.\"\"\"\n    a_na = pd.isna(a)\n    b_na = pd.isna(b)\n    if a_na and b_na:\n        return False\n    if a_na or b_na:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_STORE'].copy()\n    stg = inputs['STG_STORE_FULL']\n    batch = inputs['BATCH_CONTROL']\n\n    # Ensure expected columns exist on dim\n    for col in ['store_id', 'region', 'format', 'eff_start_date', 'eff_end_date', 'is_current']:\n        if col not in dim.columns:\n            dim[col] = np.nan\n\n    b = batch['batch_date'].iloc[0]\n\n    # Distinct set of (store_id, region, format) from the full snapshot\n    S = stg[['store_id', 'region', 'format']].drop_duplicates().reset_index(drop=True)\n    s_ids = set(S['store_id'].tolist())\n\n    # Map store_id -> index of its current row (is_current == 1) in dim\n    current_mask = dim['is_current'] == 1\n    current_rows = dim[current_mask]\n    current_by_store = {}\n    for idx, row in current_rows.iterrows():\n        current_by_store[row['store_id']] = idx\n\n    to_close_indices = []\n    new_rows = []\n\n    # Step 1: process each distinct store in the snapshot\n    for _, s in S.iterrows():\n        store_id = s['store_id']\n        region = s['region']\n        fmt = s['format']\n\n        if store_id in current_by_store:\n            idx = current_by_store[store_id]\n            c = dim.loc[idx]\n            if _differs(c['region'], region) or _differs(c['format'], fmt):\n                to_close_indices.append(idx)\n                new_rows.append({\n                    'store_id': store_id,\n                    'region': region,\n                    'format': fmt,\n                    'eff_start_date': b,\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                })\n            # else: no-op, unchanged record\n        else:\n            # brand-new store OR reactivated (previously closed) store\n            new_rows.append({\n                'store_id': store_id,\n                'region': region,\n                'format': fmt,\n                'eff_start_date': b,\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n\n    # Step 2: close current rows whose store_id is not present in the snapshot\n    for store_id, idx in current_by_store.items():\n        if store_id not in s_ids:\n            to_close_indices.append(idx)\n\n    if to_close_indices:\n        dim.loc[to_close_indices, 'eff_end_date'] = b\n        dim.loc[to_close_indices, 'is_current'] = 0\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=['store_id', 'region', 'format',\n                                                   'eff_start_date', 'eff_end_date', 'is_current'])\n        result = pd.concat([dim, new_df], ignore_index=True)\n    else:\n        result = dim.copy()\n\n    result = result[['store_id', 'region', 'format', 'eff_start_date', 'eff_end_date', 'is_current']]\n\n    return {'dim_store_out': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1094,
+   "tokens_out": 2750,
+   "usd": 0.044532,
+   "wall_s": 23.52058506011963
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

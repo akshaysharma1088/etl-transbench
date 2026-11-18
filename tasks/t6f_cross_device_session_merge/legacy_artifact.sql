@@ -1,0 +1,20 @@
+-- Legacy analytical job MERGE_DEVICE_SESSIONS (abstracted, vendor-neutral).
+-- Input:
+--   device_sessions (session_id INT, user_id INT, device_id VARCHAR,
+--                    start_ts TIMESTAMP, end_ts TIMESTAMP)     -- end_ts >= start_ts
+-- Output:
+--   merged_sessions (user_id, merged_num, start_ts, end_ts, device_count, source_count)
+--
+-- A user can be active on several devices at once. Per user, process the
+-- device sessions ORDER BY start_ts, end_ts, session_id, keeping one open group:
+--   * the first session opens a group with group_end = its end_ts;
+--   * a session whose start_ts <= group_end + INTERVAL '5' MINUTE joins the
+--     group, and group_end := GREATEST(group_end, its end_ts);
+--     (a short session nested inside a long one must NOT shorten the group)
+--   * otherwise the group closes and the session opens a new one.
+-- Per group:
+--   merged_num   = 1, 2, 3, ... per user in time order
+--   start_ts     = start_ts of its first session
+--   end_ts       = the final group_end
+--   device_count = number of DISTINCT device_id values in the group
+--   source_count = number of device sessions in the group

@@ -1,0 +1,53 @@
+{
+ "config": "C7_cheap_summary_patch_then_fresh",
+ "rep": 1,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_customer = inputs[\"dim_customer\"].copy()\n    stg_customer = inputs[\"stg_customer\"].copy()\n    fact_txn = inputs[\"fact_txn\"].copy()\n    \n    # Ensure datetime columns are datetime64[ns]\n    dim_customer[\"eff_start_date\"] = pd.to_datetime(dim_customer[\"eff_start_date\"])\n    dim_customer[\"eff_end_date\"] = pd.to_datetime(dim_customer[\"eff_end_date\"])\n    stg_customer[\"update_date\"] = pd.to_datetime(stg_customer[\"update_date\"])\n    fact_txn[\"txn_date\"] = pd.to_datetime(fact_txn[\"txn_date\"])\n    \n    # =========================================================================\n    # STEP 1: SCD Type 2 Load\n    # =========================================================================\n    \n    # Find max customer_sk before the load\n    max_customer_sk = dim_customer[\"customer_sk\"].max() if len(dim_customer) > 0 else 0\n    if pd.isna(max_customer_sk):\n        max_customer_sk = 0\n    max_customer_sk = int(max_customer_sk)\n    \n    # Identify staged records that will create a version\n    version_creating_indices = []\n    for idx, stg_row in stg_customer.iterrows():\n        cid = stg_row[\"customer_id\"]\n        stg_segment = stg_row[\"segment\"]\n        \n        # Find current row for this customer\n        current_rows = dim_customer[\n            (dim_customer[\"customer_id\"] == cid) & \n            (dim_customer[\"is_current\"] == 1)\n        ]\n        \n        if len(current_rows) == 0:\n            # No current row: create a version\n            version_creating_indices.append(idx)\n        else:\n            # Check if segment differs\n            curr_segment = current_rows.iloc[0][\"segment\"]\n            # NULL vs non-NULL differs; NULL vs NULL does not\n            if pd.isna(curr_segment) and pd.isna(stg_segment):\n                # Both NULL: same, no version\n                pass\n            elif pd.isna(curr_segment) or pd.isna(stg_segment):\n                # One NULL, one not: different, create version\n                version_creating_indices.append(idx)\n            elif curr_segment != stg_segment:\n                # Both non-NULL but different: create version\n                version_creating_indices.append(idx)\n    \n    # Assign surrogate keys to version-creating records\n    version_stg = stg_customer.iloc[version_creating_indices].copy()\n    version_stg = version_stg.reset_index(drop=True).sort_values(\"customer_id\").reset_index(drop=True)\n    version_stg[\"new_customer_sk\"] = max_customer_sk + 1 + np.arange(len(version_stg))\n    \n    # Expire current rows that are being replaced\n    dim_customer_updated = dim_customer.copy()\n    \n    for stg_idx, stg_row in version_stg.iterrows():\n        cid = stg_row[\"customer_id\"]\n        update_date = stg_row[\"update_date\"]\n        \n        # Find and expire the current row for this customer\n        current_mask = (dim_customer_updated[\"customer_id\"] == cid) & (dim_customer_updated[\"is_current\"] == 1)\n        if current_mask.any():\n            dim_customer_updated.loc[current_mask, \"eff_end_date\"] = update_date\n            dim_customer_updated.loc[current_mask, \"is_current\"] = 0\n    \n    # Insert new version rows\n    new_rows = []\n    for stg_idx, stg_row in version_stg.iterrows():\n        new_sk = stg_row[\"new_customer_sk\"]\n        new_row = {\n            \"customer_sk\": new_sk,\n            \"customer_id\": stg_row[\"customer_id\"],\n            \"segment\": stg_row[\"segment\"],\n            \"eff_start_date\": stg_row[\"update_date\"],\n            \"eff_end_date\": pd.NaT,\n            \"is_current\": 1\n        }\n        new_rows.append(new_row)\n    \n    if new_rows:\n        new_df = pd.DataFrame(new_rows)\n        dim_customer_updated = pd.concat([dim_customer_updated, new_df], ignore_index=True)\n    \n    dim_customer_out = dim_customer_updated.copy()\n    \n    # =========================================================================\n    # STEP 2: Key the facts\n    # =========================================================================\n    \n    fact_txn_keyed = fact_txn.copy()\n    fact_txn_keyed[\"customer_sk\"] = -1\n    \n    for fact_idx, fact_row in fact_txn_keyed.iterrows():\n        cid = fact_row[\"customer_id\"]\n        txn_date = fact_row[\"txn_date\"]\n        \n        # Find version of this customer that covers txn_date\n        # A version covers [eff_start_date, eff_end_date) with eff_end_date NULL meaning open\n        matching_versions = dim_customer_out[\n            dim_customer_out[\"customer_id\"] == cid\n        ]\n        \n        found_sk = -1\n        for ver_idx, ver_row in matching_versions.iterrows():\n            start = ver_row[\"eff_start_date\"]\n            end = ver_row[\"eff_end_date\"]\n            \n            # Check if txn_date is in [start, end)\n            if txn_date >= start:\n                if pd.isna(end) or txn_date < end:\n                    found_sk = ver_row[\"customer_sk\"]\n                    break\n        \n        fact_txn_keyed.loc[fact_idx, \"customer_sk\"] = found_sk\n    \n    # Ensure customer_sk is int64\n    fact_txn_keyed[\"customer_sk\"] = fact_txn_keyed[\"customer_sk\"].astype(\"int64\")\n    \n    # Keep only needed columns in fact_txn_keyed\n    fact_txn_keyed = fact_txn_keyed[[\"txn_id\", \"customer_sk\", \"amount\"]]\n    \n    return {\n        \"dim_customer_out\": dim_customer_out,\n        \"fact_txn_keyed\": fact_txn_keyed\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 977,
+   "tokens_out": 1899,
+   "usd": 0.010472,
+   "wall_s": 11.359679937362671,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3639,
+  "tokens_out": 1878,
+  "usd": 0.013029,
+  "wall_s": 12.446056127548218
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

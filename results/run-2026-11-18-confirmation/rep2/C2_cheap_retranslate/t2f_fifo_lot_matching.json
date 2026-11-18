@@ -1,0 +1,63 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 2,
+ "task": "t2f_fifo_lot_matching",
+ "category": "T2",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 3,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    trades = inputs[\"trades\"].copy()\n    \n    # Sort by account_id, symbol, then trade_ts, then trade_id (for deterministic processing)\n    trades = trades.sort_values(\n        by=['account_id', 'symbol', 'trade_ts', 'trade_id'],\n        ignore_index=True\n    )\n    \n    # Track open lots and sell results\n    open_lots_list = []  # list of dicts: {lot_trade_id, account_id, symbol, remaining_qty, price}\n    sell_results_list = []  # list of dicts: {trade_id, matched_qty, short_qty, realized_pnl}\n    \n    # Process trades sequentially per (account_id, symbol)\n    for (acct_id, symbol), group in trades.groupby(['account_id', 'symbol'], sort=False):\n        # Within each account/symbol group, process in order\n        group = group.sort_values(by=['trade_ts', 'trade_id'], ignore_index=True)\n        \n        # Lots open for this (account_id, symbol)\n        lots = []  # list of dicts: {lot_trade_id, remaining_qty, price, open_index}\n        \n        for _, trade in group.iterrows():\n            trade_id = int(trade['trade_id'])\n            side = trade['side']\n            qty = int(trade['qty'])\n            price = float(trade['price'])\n            \n            if side == 'BUY':\n                # Open a new lot\n                lots.append({\n                    'lot_trade_id': trade_id,\n                    'remaining_qty': qty,\n                    'price': price,\n                    'open_index': len(lots)  # Track order of opening\n                })\n            elif side == 'SELL':\n                # Match SELL against lots in FIFO order (oldest first)\n                still_to_sell = qty\n                matched_qty = 0\n                realized_pnl = 0.0\n                \n                # Sort lots by open_index to maintain FIFO order\n                lots.sort(key=lambda x: x['open_index'])\n                \n                # Consume lots from oldest to newest\n                for lot in lots:\n                    if still_to_sell == 0:\n                        break\n                    \n                    if lot['remaining_qty'] > 0:\n                        take = min(lot['remaining_qty'], still_to_sell)\n                        realized_pnl += take * (price - lot['price'])\n                        lot['remaining_qty'] -= take\n                        matched_qty += take\n                        still_to_sell -= take\n                \n                short_qty = max(0, qty - matched_qty)\n                \n                sell_results_list.append({\n                    'trade_id': trade_id,\n                    'matched_qty': matched_qty,\n                    'short_qty': short_qty,\n                    'realized_pnl': realized_pnl\n                })\n        \n        # Add remaining open lots (with remaining_qty > 0) to output\n        for lot in lots:\n            if lot['remaining_qty'] > 0:\n                open_lots_list.append({\n                    'lot_trade_id': lot['lot_trade_id'],\n                    'account_id': acct_id,\n                    'symbol': symbol,\n                    'remaining_qty': lot['remaining_qty'],\n                    'price': lot['price']\n                })\n    \n    # Build output DataFrames\n    if sell_results_list:\n        sell_results_df = pd.DataFrame(sell_results_list)\n        sell_results_df = sell_results_df[['trade_id', 'matched_qty', 'short_qty', 'realized_pnl']]\n    else:\n        sell_results_df = pd.DataFrame(\n            columns=['trade_id', 'matched_qty', 'short_qty', 'realized_pnl']\n        )\n        sell_results_df = sell_results_df.astype({\n            'trade_id': 'int64',\n            'matched_qty': 'int64',\n            'short_qty': 'int64',\n            'realized_pnl': 'float64'\n        })\n    \n    if open_lots_list:\n        open_lots_df = pd.DataFrame(open_lots_list)\n        open_lots_df = open_lots_df[['lot_trade_id', 'account_id', 'symbol', 'remaining_qty', 'price']]\n    else:\n        open_lots_df = pd.DataFrame(\n            columns=['lot_trade_id', 'account_id', 'symbol', 'remaining_qty', 'price']\n        )\n        open_lots_df = open_lots_df.astype({\n            'lot_trade_id': 'int64',\n            'account_id': 'int64',\n            'symbol': 'str',\n            'remaining_qty': 'int64',\n            'price': 'float64'\n        })\n    \n    return {\n        'sell_results': sell_results_df,\n        'open_lots': open_lots_df\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 686,
+   "tokens_out": 1226,
+   "usd": 0.006816,
+   "wall_s": 7.3105974197387695,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2058,
+  "tokens_out": 4081,
+  "usd": 0.022463,
+  "wall_s": 23.258387804031372
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

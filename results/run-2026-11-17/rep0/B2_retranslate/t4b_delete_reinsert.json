@@ -1,0 +1,66 @@
+{
+ "config": "B2_retranslate",
+ "rep": 0,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    inbound = inputs['inbound']\n    target_snapshot = inputs.get('target_snapshot')\n\n    if target_snapshot is None:\n        target_snapshot = pd.DataFrame(columns=['product_id', 'batch_date', 'total_qty', 'max_unit_cost'])\n\n    # Step 1: build STG_NEW\n    filtered = inbound[inbound['qty'] > 0]\n\n    stg_new = (\n        filtered.groupby(['product_id', 'batch_date'], dropna=False, as_index=False)\n        .agg(total_qty=('qty', 'sum'), max_unit_cost=('unit_cost', 'max'))\n    )\n\n    # Step 2: DELETE FROM TARGET_SNAPSHOT WHERE batch_date IN (SELECT DISTINCT batch_date FROM STG_NEW)\n    arriving_dates = stg_new['batch_date'].unique().tolist()\n\n    # Need to treat NaN matching consistently with SQL NULL semantics (NULL IN (...) wouldn't match normally,\n    # but since we're using pandas isin, NaN won't match NaN by default with isin - need special handling)\n    has_nan = any(pd.isna(d) for d in arriving_dates)\n    non_nan_dates = [d for d in arriving_dates if not pd.isna(d)]\n\n    if has_nan:\n        mask_delete = target_snapshot['batch_date'].isin(non_nan_dates) | target_snapshot['batch_date'].isna()\n    else:\n        mask_delete = target_snapshot['batch_date'].isin(non_nan_dates)\n\n    remaining = target_snapshot[~mask_delete]\n\n    # Step 3: INSERT INTO TARGET_SNAPSHOT SELECT * FROM STG_NEW\n    result = pd.concat([remaining, stg_new], ignore_index=True, sort=False)\n\n    result = result[['product_id', 'batch_date', 'total_qty', 'max_unit_cost']]\n\n    return {'target_snapshot': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 444,
+   "usd": 0.002618,
+   "wall_s": 2.825465440750122
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2624,
+  "tokens_out": 3579,
+  "usd": 0.061557,
+  "wall_s": 31.078887701034546
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

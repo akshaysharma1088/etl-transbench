@@ -1,0 +1,53 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 3,
+ "task": "t6f_cross_device_session_merge",
+ "category": "T6",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    device_sessions = inputs[\"device_sessions\"].copy()\n    \n    # Sort by user_id, start_ts, end_ts, session_id as per legacy semantics\n    device_sessions = device_sessions.sort_values(\n        by=['user_id', 'start_ts', 'end_ts', 'session_id'],\n        ignore_index=False\n    )\n    \n    merged_sessions_list = []\n    \n    # Group by user_id and process each user's sessions\n    for user_id, user_group in device_sessions.groupby('user_id', sort=False):\n        user_sessions = user_group.reset_index(drop=True)\n        \n        # Initialize tracking for groups\n        groups = []  # List of groups, each group is a list of session indices\n        current_group = [0]  # Start with first session\n        group_end = user_sessions.loc[0, 'end_ts']\n        \n        # Process each session starting from the second one\n        for idx in range(1, len(user_sessions)):\n            session_start = user_sessions.loc[idx, 'start_ts']\n            session_end = user_sessions.loc[idx, 'end_ts']\n            \n            # Check if this session should join the current group\n            # Condition: start_ts <= group_end + 5 minutes\n            five_minutes = pd.Timedelta(minutes=5)\n            if session_start <= group_end + five_minutes:\n                # Join the group\n                current_group.append(idx)\n                # Update group_end to GREATEST(group_end, session_end)\n                group_end = max(group_end, session_end)\n            else:\n                # Close current group and start new one\n                groups.append(current_group)\n                current_group = [idx]\n                group_end = session_end\n        \n        # Don't forget to close the last group\n        groups.append(current_group)\n        \n        # Process each group to create output rows\n        for merged_num, group_indices in enumerate(groups, start=1):\n            group_sessions = user_sessions.loc[group_indices]\n            \n            # Extract values\n            start_ts = group_sessions['start_ts'].min()\n            end_ts = group_end if merged_num == len(groups) else group_sessions['end_ts'].max()\n            # For non-final groups, recalculate end_ts based on actual group processing\n            if merged_num < len(groups):\n                # Recalculate group_end for this specific group\n                temp_group_end = group_sessions.loc[group_indices[0], 'end_ts']\n                for i in range(1, len(group_indices)):\n                    temp_session_end = group_sessions.loc[group_indices[i], 'end_ts']\n                    temp_group_end = max(temp_group_end, temp_session_end)\n                end_ts = temp_group_end\n            else:\n                # For the last group, use the final group_end\n                temp_group_end = group_sessions.loc[group_indices[0], 'end_ts']\n                for i in range(1, len(group_indices)):\n                    temp_session_end = group_sessions.loc[group_indices[i], 'end_ts']\n                    temp_group_end = max(temp_group_end, temp_session_end)\n                end_ts = temp_group_end\n            \n            device_count = group_sessions['device_id'].nunique()\n            source_count = len(group_indices)\n            \n            merged_sessions_list.append({\n                'user_id': user_id,\n                'merged_num': merged_num,\n                'start_ts': start_ts,\n                'end_ts': end_ts,\n                'device_count': device_count,\n                'source_count': source_count\n            })\n    \n    merged_sessions = pd.DataFrame(merged_sessions_list)\n    \n    # Ensure correct dtypes\n    if len(merged_sessions) > 0:\n        merged_sessions['user_id'] = merged_sessions['user_id'].astype('int64')\n        merged_sessions['merged_num'] = merged_sessions['merged_num'].astype('int64')\n        merged_sessions['start_ts'] = merged_sessions['start_ts'].astype('datetime64[us]')\n        merged_sessions['end_ts'] = merged_sessions['end_ts'].astype('datetime64[us]')\n        merged_sessions['device_count'] = merged_sessions['device_count'].astype('int64')\n        merged_sessions['source_count'] = merged_sessions['source_count'].astype('int64')\n    else:\n        merged_sessions = pd.DataFrame(columns=[\n            'user_id', 'merged_num', 'start_ts', 'end_ts', 'device_count', 'source_count'\n        ])\n        merged_sessions = merged_sessions.astype({\n            'user_id': 'int64',\n            'merged_num': 'int64',\n            'start_ts': 'datetime64[us]',\n            'end_ts': 'datetime64[us]',\n            'device_count': 'int64',\n            'source_count': 'int64'\n        })\n    \n    return {'merged_sessions': merged_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 575,
+   "tokens_out": 728,
+   "usd": 0.004215,
+   "wall_s": 4.410585880279541,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 575,
+  "tokens_out": 1352,
+  "usd": 0.007335,
+  "wall_s": 8.074198961257935
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

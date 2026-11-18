@@ -1,0 +1,48 @@
+{
+ "config": "C5_cheap_counterexample",
+ "rep": 2,
+ "task": "t8h_inventory_movements",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom typing import Dict\n\ndef run(inputs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:\n    stock_balance = inputs[\"stock_balance\"].copy()\n    applied_movements = inputs[\"applied_movements\"].copy()\n    movements = inputs[\"movements\"].copy()\n    \n    # Initialize balance dict: {(sku, warehouse) -> on_hand}\n    balance = {}\n    for _, row in stock_balance.iterrows():\n        balance[(row['sku'], row['warehouse'])] = row['on_hand']\n    \n    # Initialize applied set with already-applied movement_ids\n    applied_set = set(applied_movements['movement_id'].values) if len(applied_movements) > 0 else set()\n    \n    # Track rejects\n    rejects = []\n    \n    # Sort movements by movement_ts, then by line_no for deterministic processing\n    movements_sorted = movements.sort_values(by=['movement_ts', 'line_no']).reset_index(drop=True)\n    \n    # Process each line\n    for _, row in movements_sorted.iterrows():\n        line_no = row['line_no']\n        movement_id = row['movement_id']\n        sku = row['sku']\n        warehouse = row['warehouse']\n        qty = row['qty']\n        \n        # Rule 1: Skip if already applied\n        if movement_id in applied_set:\n            continue\n        \n        # Get current balance (default 0 if key doesn't exist)\n        key = (sku, warehouse)\n        current_on_hand = balance.get(key, 0)\n        \n        # Rule 2: Check if movement would cause overdraw\n        new_on_hand = current_on_hand + qty\n        if new_on_hand < 0:\n            # Reject: balance unchanged, movement_id NOT marked as applied\n            rejects.append({'line_no': line_no, 'reason': 'INSUFFICIENT_STOCK'})\n        else:\n            # Apply movement\n            balance[key] = new_on_hand\n            applied_set.add(movement_id)\n    \n    # Build new_balance output: all keys from stock_balance + any new keys from applied movements\n    all_keys = set(balance.keys())\n    new_balance_rows = []\n    for sku, warehouse in all_keys:\n        new_balance_rows.append({\n            'sku': sku,\n            'warehouse': warehouse,\n            'on_hand': balance[(sku, warehouse)]\n        })\n    \n    new_balance_df = pd.DataFrame(new_balance_rows) if new_balance_rows else pd.DataFrame(columns=['sku', 'warehouse', 'on_hand'])\n    new_balance_df = new_balance_df.astype({'sku': 'object', 'warehouse': 'object', 'on_hand': 'int64'})\n    \n    # Build applied_out: original applied_movements + newly applied ones\n    all_applied = sorted(list(applied_set))\n    applied_out_df = pd.DataFrame({'movement_id': all_applied}) if all_applied else pd.DataFrame(columns=['movement_id'])\n    applied_out_df = applied_out_df.astype({'movement_id': 'object'})\n    \n    # Build movement_rejects output\n    movement_rejects_df = pd.DataFrame(rejects) if rejects else pd.DataFrame(columns=['line_no', 'reason'])\n    if len(movement_rejects_df) > 0:\n        movement_rejects_df = movement_rejects_df.astype({'line_no': 'int64', 'reason': 'object'})\n    \n    return {\n        'new_balance': new_balance_df,\n        'applied_out': applied_out_df,\n        'movement_rejects': movement_rejects_df\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 780,
+   "tokens_out": 947,
+   "usd": 0.005515,
+   "wall_s": 5.855679273605347,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

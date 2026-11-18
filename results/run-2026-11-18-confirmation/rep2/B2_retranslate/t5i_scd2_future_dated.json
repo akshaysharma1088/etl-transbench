@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 2,
+ "task": "t5i_scd2_future_dated",
+ "category": "T5",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim_price = inputs[\"dim_price\"].copy()\n    stg_price = inputs[\"stg_price\"].copy()\n    batch_date = inputs[\"batch_control\"][\"batch_date\"].iloc[0]\n\n    # Build per-product version lists from existing DIM_PRICE\n    versions = {}  # product_id -> list of dicts: list_price, eff_start_date, eff_end_date\n    for _, row in dim_price.iterrows():\n        pid = row[\"product_id\"]\n        versions.setdefault(pid, []).append({\n            \"list_price\": row[\"list_price\"],\n            \"eff_start_date\": row[\"eff_start_date\"],\n            \"eff_end_date\": row[\"eff_end_date\"],\n        })\n\n    # Determine current \"tail\" (version with latest eff_start_date) per product\n    tails = {}\n    for pid, vlist in versions.items():\n        vlist.sort(key=lambda v: v[\"eff_start_date\"])\n        tails[pid] = vlist[-1] if vlist else None\n\n    # Process staged rows: group by product, order by effective_date ascending\n    stg_sorted = stg_price.sort_values([\"product_id\", \"effective_date\"], kind=\"mergesort\")\n\n    for _, s in stg_sorted.iterrows():\n        pid = s[\"product_id\"]\n        tail = tails.get(pid)\n\n        if tail is not None and tail[\"list_price\"] == s[\"list_price\"]:\n            # unchanged -> no new version\n            continue\n\n        if tail is not None:\n            tail[\"eff_end_date\"] = s[\"effective_date\"]\n\n        new_v = {\n            \"list_price\": s[\"list_price\"],\n            \"eff_start_date\": s[\"effective_date\"],\n            \"eff_end_date\": None,\n        }\n        versions.setdefault(pid, []).append(new_v)\n        tails[pid] = new_v\n\n    # Recompute is_current for every version of every product based on batch_date\n    rows = []\n    for pid, vlist in versions.items():\n        for v in vlist:\n            start = v[\"eff_start_date\"]\n            end = v[\"eff_end_date\"]\n            if pd.isna(end):\n                is_current = 1 if start <= batch_date else 0\n            else:\n                is_current = 1 if (start <= batch_date < end) else 0\n            rows.append({\n                \"product_id\": pid,\n                \"list_price\": v[\"list_price\"],\n                \"eff_start_date\": start,\n                \"eff_end_date\": end,\n                \"is_current\": is_current,\n            })\n\n    out = pd.DataFrame(\n        rows,\n        columns=[\"product_id\", \"list_price\", \"eff_start_date\", \"eff_end_date\", \"is_current\"],\n    )\n\n    if not out.empty:\n        out = out.sort_values([\"product_id\", \"eff_start_date\"], kind=\"mergesort\").reset_index(drop=True)\n\n    out[\"product_id\"] = out[\"product_id\"].astype(\"int64\")\n    out[\"list_price\"] = out[\"list_price\"].astype(\"float64\")\n    out[\"eff_start_date\"] = pd.to_datetime(out[\"eff_start_date\"])\n    out[\"eff_end_date\"] = pd.to_datetime(out[\"eff_end_date\"])\n    out[\"is_current\"] = out[\"is_current\"].astype(\"int64\")\n\n    return {\"dim_price_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1236,
+   "tokens_out": 2978,
+   "usd": 0.048378,
+   "wall_s": 23.190808534622192,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

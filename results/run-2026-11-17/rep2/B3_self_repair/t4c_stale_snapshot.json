@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t4c_stale_snapshot",
+ "category": "T4",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    score_feed = inputs[\"score_feed\"]\n    score_snapshot = inputs[\"score_snapshot\"]\n\n    # Step 1: STG_CURR = SELECT account_id, AVG(score) AS avg_score\n    #          FROM score_feed GROUP BY account_id\n    # SQL GROUP BY treats NULL account_id as its own group, and AVG()\n    # ignores NULL score values (pandas .mean() does the same by default).\n    stg_curr = (\n        score_feed.groupby(\"account_id\", dropna=False, as_index=False)[\"score\"]\n        .mean()\n        .rename(columns={\"score\": \"avg_score\"})\n    )\n\n    # Step 2: DELTA computed against the PRE-UPDATE snapshot (score_snapshot\n    # as passed in, before any Step-3 update is applied).\n    delta_merge = stg_curr.merge(\n        score_snapshot,\n        on=\"account_id\",\n        how=\"left\",\n        suffixes=(\"\", \"_p\"),\n    )\n\n    # COALESCE(p.avg_score, 0)\n    prev_avg = delta_merge[\"avg_score_p\"] if \"avg_score_p\" in delta_merge.columns else pd.Series(\n        [None] * len(delta_merge), index=delta_merge.index\n    )\n    prev_avg = prev_avg.fillna(0)\n\n    delta_merge[\"score_delta\"] = delta_merge[\"avg_score\"] - prev_avg\n\n    delta = delta_merge[[\"account_id\", \"score_delta\"]].copy()\n\n    # Step 3: SCORE_SNAPSHOT is fully replaced with STG_CURR contents\n    # (post-update state).\n    score_snapshot_out = stg_curr[[\"account_id\", \"avg_score\"]].copy()\n\n    return {\n        \"delta\": delta,\n        \"score_snapshot\": score_snapshot_out,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 421,
+   "tokens_out": 693,
+   "usd": 0.003886,
+   "wall_s": 4.298382520675659
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4463,
+  "tokens_out": 8672,
+  "usd": 0.143469,
+  "wall_s": 83.96748280525208
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

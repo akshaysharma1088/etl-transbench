@@ -1,0 +1,17 @@
+{
+ "task": "t3_dataflow_orders",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    # Step 1: Source - orders table\n    orders = inputs[\"orders\"].copy()\n    \n    # Step 2: Filter - status == 'SHIPPED'\n    filtered = orders[orders[\"status\"] == \"SHIPPED\"].copy()\n    \n    # Step 3: Lookup - join with customers on customer_id, select region\n    # on_miss: if no match, region = \"UNKNOWN\"\n    customers = inputs[\"customers\"].copy()\n    \n    # Left join to preserve all filtered orders\n    looked_up = filtered.merge(\n        customers[[\"customer_id\", \"region\"]],\n        on=\"customer_id\",\n        how=\"left\"\n    )\n    \n    # Fill missing region values with \"UNKNOWN\"\n    looked_up[\"region\"] = looked_up[\"region\"].fillna(\"UNKNOWN\")\n    \n    # Step 4: Reformat - compute net_amount = qty * unit_price * (1 - discount)\n    # NULL discount treated as 0\n    looked_up[\"discount\"] = looked_up[\"discount\"].fillna(0)\n    looked_up[\"net_amount\"] = (\n        looked_up[\"qty\"] * looked_up[\"unit_price\"] * (1 - looked_up[\"discount\"])\n    )\n    \n    # Step 5: Output - select specified columns\n    output_columns = [\"order_id\", \"customer_id\", \"region\", \"qty\", \"unit_price\", \"net_amount\"]\n    result = looked_up[output_columns].copy()\n    \n    return {\"shipped_orders_enriched\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 525,
+   "tokens_out": 409,
+   "usd": 0.00257,
+   "wall_s": 3.1049773693084717,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

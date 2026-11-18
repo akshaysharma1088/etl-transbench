@@ -1,0 +1,53 @@
+{
+ "config": "L3_summary_patch_then_fresh",
+ "rep": 0,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n\n    # Sort by user_id, event_ts, event_id\n    events = events.sort_values(\n        by=[\"user_id\", \"event_ts\", \"event_id\"],\n        ignore_index=True\n    )\n\n    # Extract date (calendar date in server local timezone, assumed to be naive)\n    events[\"event_date\"] = events[\"event_ts\"].dt.date\n\n    # Determine new-session flag per row\n    prev_user = events[\"user_id\"].shift(1)\n    prev_ts = events[\"event_ts\"].shift(1)\n    prev_date = events[\"event_date\"].shift(1)\n\n    same_user = events[\"user_id\"] == prev_user\n    same_date = events[\"event_date\"] == prev_date\n\n    gap_minutes = (events[\"event_ts\"] - prev_ts).dt.total_seconds() / 60.0\n\n    new_session = (\n        (~same_user) |\n        (same_user & ~same_date) |\n        (same_user & same_date & (gap_minutes > 45))\n    )\n    # first row overall is always a new session (NaN comparisons -> True via ~same_user)\n    new_session.iloc[0] = True\n\n    # Session number resets per user: cumulative count of new_session flags within each user group\n    events[\"_new_session_flag\"] = new_session.astype(int)\n    events[\"session_num\"] = events.groupby(\"user_id\")[\"_new_session_flag\"].cumsum()\n\n    # Group by user_id and session_num to aggregate\n    user_sessions = events.groupby(\n        [\"user_id\", \"session_num\"],\n        as_index=False\n    ).agg(\n        session_date=(\"event_date\", \"first\"),\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    )\n\n    # Ensure columns are in the correct order\n    user_sessions = user_sessions[\n        [\"user_id\", \"session_num\", \"session_date\", \"session_start\", \"session_end\", \"event_count\"]\n    ]\n\n    return {\"user_sessions\": user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 672,
+   "usd": 0.00374,
+   "wall_s": 5.713581323623657,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1952,
+  "tokens_out": 848,
+  "usd": 0.018576,
+  "wall_s": 7.103247165679932
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

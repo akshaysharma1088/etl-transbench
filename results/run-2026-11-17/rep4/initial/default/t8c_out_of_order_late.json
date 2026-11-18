@@ -1,0 +1,16 @@
+{
+ "task": "t8c_out_of_order_late",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n\n    # Build watermark map from target_snapshot: device_id -> (reading, applied_event_ts)\n    watermark = {}\n    for _, row in target_snapshot.iterrows():\n        watermark[row[\"device_id\"]] = {\n            \"reading\": row[\"reading\"],\n            \"applied_event_ts\": row[\"applied_event_ts\"],\n        }\n\n    # Group cdc_events by device_id\n    result = dict(watermark)  # start with carry-forward semantics\n\n    if not cdc_events.empty:\n        for device_id, group in cdc_events.groupby(\"device_id\"):\n            if device_id in watermark:\n                current_ts = watermark[device_id][\"applied_event_ts\"]\n                # filter: event_ts > current_ts (strictly greater survives)\n                surviving = group[group[\"event_ts\"] > current_ts]\n            else:\n                # new device: no watermark, all events qualify\n                surviving = group\n\n            if surviving.empty:\n                # no surviving events: carry forward existing snapshot (already in result if existed)\n                continue\n\n            # pick latest by (event_ts, event_seq) descending\n            surviving_sorted = surviving.sort_values(\n                by=[\"event_ts\", \"event_seq\"], ascending=[False, False]\n            )\n            winner = surviving_sorted.iloc[0]\n\n            result[device_id] = {\n                \"reading\": winner[\"reading\"],\n                \"applied_event_ts\": winner[\"event_ts\"],\n            }\n\n    rows = []\n    for device_id, data in result.items():\n        rows.append(\n            {\n                \"device_id\": device_id,\n                \"reading\": data[\"reading\"],\n                \"applied_event_ts\": data[\"applied_event_ts\"],\n            }\n        )\n\n    new_snapshot = pd.DataFrame(rows, columns=[\"device_id\", \"reading\", \"applied_event_ts\"])\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 749,
+   "tokens_out": 1097,
+   "usd": 0.018702,
+   "wall_s": 9.817246198654175
+  }
+ ]
+}

@@ -1,0 +1,51 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    # Resolve the ledger input key robustly (case-insensitive lookup)\n    ledger_key = None\n    for k in inputs.keys():\n        if k.lower() == \"ledger\":\n            ledger_key = k\n            break\n    if ledger_key is None:\n        # fallback: if there's exactly one input, use it\n        if len(inputs) == 1:\n            ledger_key = next(iter(inputs.keys()))\n        else:\n            raise KeyError(\"LEDGER\")\n\n    ledger = inputs[ledger_key].copy()\n\n    # Sort per cursor ORDER BY account_id, entry_date, row_seq\n    ledger = ledger.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        kind=\"mergesort\"  # stable sort to preserve deterministic tie-breaking\n    ).reset_index(drop=True)\n\n    account_ids = []\n    row_seqs = []\n    entry_dates = []\n    entry_types = []\n    amounts = []\n    cycle_nos = []\n    cycle_balances = []\n\n    prev_acct = None\n    bal = 0.0\n    cyc = 1\n\n    for r in ledger.itertuples(index=False):\n        acct = r.account_id\n        row_seq = r.row_seq\n        entry_date = r.entry_date\n        entry_type = r.entry_type\n        amount = r.amount\n\n        if acct != prev_acct:\n            bal = 0.0\n            cyc = 1\n            prev_acct = acct\n\n        if entry_type == \"STMT\":\n            bal = 0.0\n            cyc = cyc + 1\n\n        amt = 0.0 if pd.isna(amount) else amount\n        bal = bal + amt\n\n        account_ids.append(acct)\n        row_seqs.append(row_seq)\n        entry_dates.append(entry_date)\n        entry_types.append(entry_type)\n        amounts.append(amount)\n        cycle_nos.append(cyc)\n        cycle_balances.append(bal)\n\n    result = pd.DataFrame({\n        \"account_id\": account_ids,\n        \"row_seq\": row_seqs,\n        \"entry_date\": entry_dates,\n        \"entry_type\": entry_types,\n        \"amount\": amounts,\n        \"cycle_no\": cycle_nos,\n        \"cycle_balance\": cycle_balances,\n    })\n\n    return {\"cycle_balances\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 710,
+   "tokens_out": 826,
+   "usd": 0.01452,
+   "wall_s": 6.96994423866272
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1731,
+  "tokens_out": 840,
+  "usd": 0.017793,
+  "wall_s": 6.305225133895874
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

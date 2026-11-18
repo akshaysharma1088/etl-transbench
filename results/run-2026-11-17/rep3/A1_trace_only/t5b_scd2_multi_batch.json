@@ -1,0 +1,51 @@
+{
+ "config": "A1_trace_only",
+ "rep": 3,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_null(v):\n    try:\n        return pd.isna(v)\n    except (TypeError, ValueError):\n        return v is None\n\n\ndef _attrs_equal(a, b):\n    a_null = _is_null(a)\n    b_null = _is_null(b)\n    if a_null and b_null:\n        return True\n    if a_null != b_null:\n        return False\n    return a == b\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    # Try exact match first\n    if name in inputs:\n        return inputs[name]\n    # Try case-insensitive match\n    lower_name = name.lower()\n    for k, v in inputs.items():\n        if k.lower() == lower_name:\n            return v\n    raise KeyError(f\"Could not find input relation matching '{name}' in inputs keys: {list(inputs.keys())}\")\n\n\ndef run(inputs: dict) -> dict:\n    dim_df = _get_input(inputs, \"DIM_PRODUCT\").copy()\n    stg_df = _get_input(inputs, \"STG_PRODUCT\").copy()\n\n    # Build working list of dict records from existing DIM_PRODUCT\n    records = dim_df.to_dict(\"records\")\n\n    # Map product_id -> reference to the current (is_current==1) row dict\n    current_map = {}\n    for rec in records:\n        if rec.get(\"is_current\") == 1:\n            pid = rec.get(\"product_id\")\n            current_map[pid] = rec\n\n    # Sort staged rows by product_id, update_date ascending (not deduplicated)\n    stg_sorted = stg_df.sort_values(\n        by=[\"product_id\", \"update_date\"],\n        ascending=[True, True],\n        kind=\"mergesort\",  # stable sort to preserve original relative order on ties\n    )\n\n    for _, s in stg_sorted.iterrows():\n        pid = s[\"product_id\"]\n        s_category = s[\"category\"]\n        s_price_band = s[\"price_band\"]\n        s_update_date = s[\"update_date\"]\n\n        current = current_map.get(pid)\n\n        if current is None:\n            new_row = {\n                \"product_id\": pid,\n                \"category\": s_category,\n                \"price_band\": s_price_band,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": None,\n                \"is_current\": 1,\n            }\n            records.append(new_row)\n            current_map[pid] = new_row\n        else:\n            cat_changed = not _attrs_equal(current.get(\"category\"), s_category)\n            pb_changed = not _attrs_equal(current.get(\"price_band\"), s_price_band)\n            if cat_changed or pb_changed:\n                current[\"eff_end_date\"] = s_update_date\n                current[\"is_current\"] = 0\n\n                new_row = {\n                    \"product_id\": pid,\n                    \"category\": s_category,\n                    \"price_band\": s_price_band,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": None,\n                    \"is_current\": 1,\n                }\n                records.append(new_row)\n                current_map[pid] = new_row\n            # else: no-op, unchanged record does not create a version\n\n    out_cols = [\n        \"product_id\",\n        \"category\",\n        \"price_band\",\n        \"eff_start_date\",\n        \"eff_end_date\",\n        \"is_current\",\n    ]\n\n    if records:\n        out_df = pd.DataFrame(records, columns=out_cols)\n    else:\n        out_df = pd.DataFrame(columns=out_cols)\n\n    # Preserve dtypes as closely as possible to the original DIM_PRODUCT schema\n    if \"product_id\" in dim_df.columns:\n        out_df[\"product_id\"] = out_df[\"product_id\"].astype(dim_df[\"product_id\"].dtype)\n    if \"is_current\" in dim_df.columns:\n        out_df[\"is_current\"] = out_df[\"is_current\"].astype(dim_df[\"is_current\"].dtype)\n\n    return {\"dim_product_out\": out_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 833,
+   "tokens_out": 2089,
+   "usd": 0.033834,
+   "wall_s": 18.311525344848633
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2341,
+  "tokens_out": 1356,
+  "usd": 0.027363,
+  "wall_s": 10.012719631195068
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

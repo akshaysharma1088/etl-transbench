@@ -1,0 +1,52 @@
+{
+ "config": "B3_self_repair",
+ "rep": 4,
+ "task": "t3e_effective_lookup_route",
+ "category": "T3",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _norm_sku(s):\n    if pd.isna(s):\n        return np.nan\n    return str(s).strip().upper()\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    price_list = inputs[\"price_list\"].copy()\n\n    orders = orders.reset_index(drop=True)\n    orders[\"_row_id\"] = orders.index\n    orders[\"sku_norm\"] = orders[\"sku\"].apply(_norm_sku)\n\n    price_list = price_list.copy()\n    price_list[\"_sku_norm_lkp\"] = price_list[\"sku\"].apply(_norm_sku)\n\n    # ---- lookup ----\n    valid_orders = orders[orders[\"sku_norm\"].notna()]\n\n    if len(valid_orders) > 0 and len(price_list) > 0:\n        merged = valid_orders.merge(\n            price_list,\n            left_on=\"sku_norm\",\n            right_on=\"_sku_norm_lkp\",\n            suffixes=(\"\", \"_pl\"),\n        )\n        merged = merged[merged[\"valid_from\"] <= merged[\"order_date\"]]\n\n        if len(merged) > 0:\n            merged = merged.sort_values(\n                [\"_row_id\", \"valid_from\", \"list_id\"],\n                ascending=[True, False, True],\n                kind=\"mergesort\",\n            )\n            best = merged.drop_duplicates(subset=\"_row_id\", keep=\"first\")\n            best = best[[\"_row_id\", \"unit_price\"]]\n        else:\n            best = pd.DataFrame(columns=[\"_row_id\", \"unit_price\"])\n    else:\n        best = pd.DataFrame(columns=[\"_row_id\", \"unit_price\"])\n\n    result = orders.merge(best, on=\"_row_id\", how=\"left\", suffixes=(\"\", \"_lkp\"))\n\n    result[\"price_flag\"] = np.where(result[\"unit_price\"].notna(), \"OK\", \"NO_PRICE\")\n    result[\"unit_price\"] = result[\"unit_price\"].fillna(0)\n\n    # ---- expression: ext_amount = qty * unit_price (NULL qty -> NULL ext_amount) ----\n    qty = result[\"qty\"]\n    unit_price = result[\"unit_price\"]\n    ext_amount = qty * unit_price\n    # ensure NaN propagates when qty is NaN even if unit_price is 0\n    ext_amount = ext_amount.where(qty.notna(), np.nan)\n    result[\"ext_amount\"] = ext_amount\n\n    # ---- router ----\n    qty_notna = result[\"qty\"].notna()\n    qty_ge_100 = result[\"qty\"].notna() & (result[\"qty\"] >= 100)\n    qty_isnull = result[\"qty\"].isna()\n\n    review_pred = (result[\"price_flag\"] == \"NO_PRICE\") | qty_isnull | qty_ge_100\n\n    bulk_pred = result[\"ext_amount\"].notna() & (result[\"ext_amount\"] >= 1000)\n\n    small_pred = result[\"ext_amount\"].notna() & (result[\"ext_amount\"] < 50)\n\n    route = pd.Series(\"STANDARD\", index=result.index, dtype=object)\n\n    # apply in reverse priority order so higher priority overwrites\n    route = np.where(small_pred, \"SMALL\", route)\n    route = np.where(bulk_pred, \"BULK\", route)\n    route = np.where(review_pred, \"REVIEW\", route)\n\n    result[\"route\"] = route\n\n    # ---- output1: order_enriched ----\n    order_enriched = result[[\"order_id\", \"sku_norm\", \"unit_price\", \"route\"]].copy()\n\n    # ---- aggregator: route_daily ----\n    agg_src = result[[\"route\", \"order_date\", \"ext_amount\"]].copy()\n\n    grouped = agg_src.groupby([\"route\", \"order_date\"], dropna=False)\n\n    order_count = grouped.size().rename(\"order_count\")\n    total_ext = grouped[\"ext_amount\"].sum(min_count=0).rename(\"total_ext\")\n    # sum with skipna=True already returns 0.0 for all-NaN groups (min_count=0)\n    total_ext = total_ext.fillna(0)\n\n    route_daily = pd.concat([order_count, total_ext], axis=1).reset_index()\n    route_daily = route_daily[[\"route\", \"order_date\", \"order_count\", \"total_ext\"]]\n\n    return {\n        \"order_enriched\": order_enriched,\n        \"route_daily\": route_daily,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1407,
+   "tokens_out": 4000,
+   "usd": 0.064221,
+   "wall_s": 34.02331352233887
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2388,
+  "tokens_out": 2333,
+  "usd": 0.042159,
+  "wall_s": 19.84068465232849
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

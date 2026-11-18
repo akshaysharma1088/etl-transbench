@@ -1,0 +1,68 @@
+{
+ "config": "C4_cheap_trace_only",
+ "rep": 1,
+ "task": "t8d_soft_delete_tombstone",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\nfrom datetime import timedelta\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n    \n    # Extract high_ts from watermark (single row)\n    high_ts = watermark[\"high_ts\"].iloc[0]\n    \n    # Filter events with event_ts > high_ts\n    new_events = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n    \n    # If no new events, return current snapshot\n    if len(new_events) == 0:\n        return {\"new_snapshot\": target_snapshot[[\"user_id\", \"email\", \"status\", \"status_ts\"]]}\n    \n    # Sort events by user_id, then event_ts, then event_seq for deterministic processing\n    new_events = new_events.sort_values(by=[\"user_id\", \"event_ts\", \"event_seq\"]).reset_index(drop=True)\n    \n    # Create a dictionary to track the latest state per user\n    # Key: user_id, Value: {email, status, status_ts}\n    user_state = {}\n    \n    # Initialize user_state from target_snapshot\n    for _, row in target_snapshot.iterrows():\n        user_id = row[\"user_id\"]\n        user_state[user_id] = {\n            \"email\": row[\"email\"],\n            \"status\": row[\"status\"],\n            \"status_ts\": row[\"status_ts\"]\n        }\n    \n    # Process events sequentially per user\n    for _, event in new_events.iterrows():\n        user_id = event[\"user_id\"]\n        event_ts = event[\"event_ts\"]\n        op = event[\"op\"]\n        email = event[\"email\"]\n        \n        # Get current state for this user (or initialize if new)\n        if user_id not in user_state:\n            user_state[user_id] = {\n                \"email\": None,\n                \"status\": None,\n                \"status_ts\": None\n            }\n        \n        current = user_state[user_id]\n        \n        if op == \"U\":\n            # Update operation\n            if current[\"status\"] == \"DELETED\":\n                # Check if update arrives strictly more than 7 days after deletion\n                if current[\"status_ts\"] is not None:\n                    days_since_deletion = (event_ts - current[\"status_ts\"]) / pd.Timedelta(days=1)\n                    if days_since_deletion > 7:\n                        # Resurrection allowed\n                        user_state[user_id] = {\n                            \"email\": email,\n                            \"status\": \"ACTIVE\",\n                            \"status_ts\": event_ts\n                        }\n                    # else: discard the update (deletion is sticky)\n                else:\n                    # Edge case: status is DELETED but status_ts is None (shouldn't happen)\n                    user_state[user_id] = {\n                        \"email\": email,\n                        \"status\": \"ACTIVE\",\n                        \"status_ts\": event_ts\n                    }\n            else:\n                # Update on ACTIVE or new user\n                user_state[user_id] = {\n                    \"email\": email,\n                    \"status\": \"ACTIVE\",\n                    \"status_ts\": event_ts\n                }\n        elif op == \"D\":\n            # Soft delete operation\n            user_state[user_id] = {\n                \"email\": email,\n                \"status\": \"DELETED\",\n                \"status_ts\": event_ts\n            }\n    \n    # Build new_snapshot from user_state\n    result_rows = []\n    for user_id, state in sorted(user_state.items()):\n        result_rows.append({\n            \"user_id\": user_id,\n            \"email\": state[\"email\"],\n            \"status\": state[\"status\"],\n            \"status_ts\": state[\"status_ts\"]\n        })\n    \n    new_snapshot = pd.DataFrame(result_rows)\n    \n    # Ensure correct dtypes\n    if len(new_snapshot) > 0:\n        new_snapshot[\"user_id\"] = new_snapshot[\"user_id\"].astype(\"int64\")\n        new_snapshot[\"email\"] = new_snapshot[\"email\"].astype(\"object\")\n        new_snapshot[\"status\"] = new_snapshot[\"status\"].astype(\"object\")\n        new_snapshot[\"status_ts\"] = pd.to_datetime(new_snapshot[\"status_ts\"], utc=False)\n    else:\n        new_snapshot = pd.DataFrame({\n            \"user_id\": pd.Series([], dtype=\"int64\"),\n            \"email\": pd.Series([], dtype=\"object\"),\n            \"status\": pd.Series([], dtype=\"object\"),\n            \"status_ts\": pd.Series([], dtype=\"datetime64[us]\")\n        })\n    \n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 616,
+   "tokens_out": 1151,
+   "usd": 0.006371,
+   "wall_s": 7.100132703781128,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4992,
+  "tokens_out": 5429,
+  "usd": 0.032137,
+  "wall_s": 34.919575214385986
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

@@ -1,0 +1,30 @@
+{
+  "task_id": "t8g_partial_update_sentinel",
+  "relations": [
+    {
+      "name": "new_profile",
+      "key_columns": [
+        "customer_id"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "email",
+          "kind": "string"
+        },
+        {
+          "name": "phone",
+          "kind": "string"
+        },
+        {
+          "name": "tier",
+          "kind": "string"
+        },
+        {
+          "name": "updated_seq",
+          "kind": "int"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+ "task": "t6c_midnight_split",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\nfrom datetime import datetime, timedelta\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize events with gap rule (>45 minutes) and forced midnight split.\n    Sessions never cross calendar dates.\n    \"\"\"\n    \n    # Assume the input table is 'events' with columns: user_id, event_ts, event_id\n    events = inputs['events'].copy()\n    \n    # Ensure event_ts is datetime\n    if not pd.api.types.is_datetime64_any_dtype(events['event_ts']):\n        events['event_ts'] = pd.to_datetime(events['event_ts'])\n    \n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(by=['user_id', 'event_ts', 'event_id']).reset_index(drop=True)\n    \n    # Initialize session tracking columns\n    events['session_num'] = 0\n    \n    session_num = 0\n    current_user = None\n    current_session_start = None\n    current_session_date = None\n    \n    for idx, row in events.iterrows():\n        user_id = row['user_id']\n        event_ts = row['event_ts']\n        event_date = event_ts.date()\n        \n        # Start a new session if:\n        # 1. First event of a user\n        # 2. Different user\n        # 3. Different calendar date\n        # 4. Gap > 45 minutes from previous event\n        \n        if current_user is None or current_user != user_id:\n            # New user\n            session_num += 1\n            current_user = user_id\n            current_session_start = event_ts\n            current_session_date = event_date\n        elif event_date != current_session_date:\n            # Different calendar date - force new session\n            session_num += 1\n            current_session_start = event_ts\n            current_session_date = event_date\n        else:\n            # Same user, same date - check gap\n            prev_event_ts = events.loc[idx - 1, 'event_ts']\n            gap_minutes = (event_ts - prev_event_ts).total_seconds() / 60.0\n            if gap_minutes > 45:\n                # Gap exceeds 45 minutes - new session\n                session_num += 1\n                current_session_start = event_ts\n                current_session_date = event_date\n        \n        events.loc[idx, 'session_num'] = session_num\n    \n    # Build user_sessions output\n    user_sessions = events.groupby(['user_id', 'session_num']).agg(\n        session_start=('event_ts', 'min'),\n        session_end=('event_ts', 'max'),\n        event_count=('event_id', 'count')\n    ).reset_index()\n    \n    # Extract session_date from session_start\n    user_sessions['session_date'] = user_sessions['session_start'].dt.date\n    \n    # Reorder columns\n    user_sessions = user_sessions[['user_id', 'session_num', 'session_date', 'session_start', 'session_end', 'event_count']]\n    \n    return {'user_sessions': user_sessions}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 332,
+   "tokens_out": 835,
+   "usd": 0.004507,
+   "wall_s": 5.293508291244507
+  }
+ ]
+}

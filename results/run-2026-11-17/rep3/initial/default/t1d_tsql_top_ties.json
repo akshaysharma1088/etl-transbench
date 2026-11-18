@@ -1,0 +1,16 @@
+{
+ "task": "t1d_tsql_top_ties",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicates T-SQL TOP (5) WITH TIES semantics with NULL-propagating concatenation.\n    \n    Key behaviors:\n    1. Filter active = 1\n    2. Order by score DESC\n    3. Assign rank using RANK() (handles ties correctly for WITH TIES)\n    4. Keep all rows where rank <= 5 (WITH TIES keeps tied rows at cutoff)\n    5. ISNULL(manager, 'UNASSIGNED') replaces NULL manager with default\n    6. branch_code + '-' + region_code: NULL in either column makes result NULL\n    \"\"\"\n    \n    df = inputs['branch_scores'].copy()\n    \n    # Filter: WHERE active = 1\n    df = df[df['active'] == 1].copy()\n    \n    # Sort by score DESC for ranking\n    df = df.sort_values('score', ascending=False, na_position='last').reset_index(drop=True)\n    \n    # Compute RANK() window function (1-indexed, handles ties)\n    # Same rank for equal scores, next rank skips\n    df['_rank'] = df['score'].rank(method='min', ascending=False)\n    \n    # TOP (5) WITH TIES: keep all rows where rank <= 5\n    df = df[df['_rank'] <= 5].copy()\n    \n    # ISNULL(manager, 'UNASSIGNED')\n    df['manager_norm'] = df['manager'].fillna('UNASSIGNED')\n    \n    # NULL-propagating string concatenation: branch_code + '-' + region_code\n    # Result is NULL if either operand is NULL\n    def null_concat(row):\n        if pd.isna(row['branch_code']) or pd.isna(row['region_code']):\n            return np.nan\n        return str(row['branch_code']) + '-' + str(row['region_code'])\n    \n    df['branch_label'] = df.apply(null_concat, axis=1)\n    \n    # Select output columns in order\n    result = df[['branch_id', 'manager_norm', 'branch_label', 'score']].copy()\n    \n    # Reset index for clean output\n    result = result.reset_index(drop=True)\n    \n    return {'top_branches': result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 364,
+   "tokens_out": 601,
+   "usd": 0.003369,
+   "wall_s": 4.602542400360107
+  }
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "task": "t5d_asof_reconstruction",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    hist = inputs[\"dim_emp_hist\"].copy()\n    queries = inputs[\"asof_queries\"].copy()\n\n    # Coerce types to match legacy semantics\n    hist[\"emp_id\"] = hist[\"emp_id\"]\n    hist[\"eff_start_date\"] = pd.to_datetime(hist[\"eff_start_date\"])\n    hist[\"eff_end_date\"] = pd.to_datetime(hist[\"eff_end_date\"])\n\n    queries[\"emp_id\"] = queries[\"emp_id\"]\n    queries[\"as_of_date\"] = pd.to_datetime(queries[\"as_of_date\"])\n\n    # Join on emp_id (inner join on key)\n    merged = queries.merge(hist, on=\"emp_id\", how=\"inner\", suffixes=(\"\", \"_h\"))\n\n    # Apply interval conditions: start inclusive, end exclusive (NULL end = open-ended)\n    start_ok = merged[\"as_of_date\"] >= merged[\"eff_start_date\"]\n    end_ok = merged[\"eff_end_date\"].isna() | (merged[\"as_of_date\"] < merged[\"eff_end_date\"])\n\n    result = merged.loc[start_ok & end_ok, [\"query_id\", \"emp_id\", \"dept\", \"grade\"]]\n\n    result = result.reset_index(drop=True)\n\n    return {\"asof_result\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 683,
+   "tokens_out": 880,
+   "usd": 0.015249,
+   "wall_s": 8.434752225875854
+  }
+ ]
+}

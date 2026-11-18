@@ -1,0 +1,48 @@
+{
+ "config": "C0_cheap_single",
+ "rep": 0,
+ "task": "t7b_multi_reason_collect",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    invoices = inputs[\"invoices\"].copy()\n    \n    # Initialize reason_codes column as empty strings\n    reason_codes = [\"\"] * len(invoices)\n    \n    # R1: amount IS NULL OR amount < 0 -> 'AMT_BAD'\n    r1_fail = invoices[\"amount\"].isna() | (invoices[\"amount\"] < 0)\n    reason_codes = [\n        (codes + \"|AMT_BAD\" if codes else \"AMT_BAD\") if fail else codes\n        for codes, fail in zip(reason_codes, r1_fail)\n    ]\n    \n    # R2: tax IS NULL OR tax < 0 -> 'TAX_BAD'\n    r2_fail = invoices[\"tax\"].isna() | (invoices[\"tax\"] < 0)\n    reason_codes = [\n        (codes + \"|TAX_BAD\" if codes else \"TAX_BAD\") if fail else codes\n        for codes, fail in zip(reason_codes, r2_fail)\n    ]\n    \n    # R3: tax > amount * 0.5 -> 'TAX_EXCESS'\n    # NULL-safe: skip if amount or tax is NULL\n    r3_fail = (\n        ~invoices[\"amount\"].isna() & \n        ~invoices[\"tax\"].isna() & \n        (invoices[\"tax\"] > invoices[\"amount\"] * 0.5)\n    )\n    reason_codes = [\n        (codes + \"|TAX_EXCESS\" if codes else \"TAX_EXCESS\") if fail else codes\n        for codes, fail in zip(reason_codes, r3_fail)\n    ]\n    \n    # R4: due_date IS NULL -> 'DUE_NULL'\n    r4_fail = invoices[\"due_date\"].isna()\n    reason_codes = [\n        (codes + \"|DUE_NULL\" if codes else \"DUE_NULL\") if fail else codes\n        for codes, fail in zip(reason_codes, r4_fail)\n    ]\n    \n    # R5: customer_ref IS NULL OR TRIM(customer_ref) = '' -> 'REF_EMPTY'\n    r5_fail = invoices[\"customer_ref\"].isna() | (invoices[\"customer_ref\"].str.strip() == \"\")\n    reason_codes = [\n        (codes + \"|REF_EMPTY\" if codes else \"REF_EMPTY\") if fail else codes\n        for codes, fail in zip(reason_codes, r5_fail)\n    ]\n    \n    # Add reason_codes column\n    invoices[\"reason_codes\"] = reason_codes\n    \n    # Separate clean and reject records\n    invoices_clean = invoices[invoices[\"reason_codes\"] == \"\"].drop(columns=[\"reason_codes\"])\n    invoices_rejects = invoices[invoices[\"reason_codes\"] != \"\"]\n    \n    return {\n        \"invoices_clean\": invoices_clean,\n        \"invoices_rejects\": invoices_rejects\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 507,
+   "tokens_out": 779,
+   "usd": 0.004402,
+   "wall_s": 4.597809791564941,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

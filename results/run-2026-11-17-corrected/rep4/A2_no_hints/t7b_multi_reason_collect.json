@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 4,
+ "task": "t7b_multi_reason_collect",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"invoices\"].copy()\n\n    amount = df[\"amount\"]\n    tax = df[\"tax\"]\n    due_date = df[\"due_date\"]\n    customer_ref = df[\"customer_ref\"]\n\n    r1 = amount.isna() | (amount < 0)\n    r2 = tax.isna() | (tax < 0)\n    r3 = (~amount.isna()) & (~tax.isna()) & (tax > amount * 0.5)\n    r4 = due_date.isna()\n    r5 = customer_ref.isna() | (customer_ref.astype(str).str.strip() == \"\")\n\n    def build_codes(row_idx):\n        codes = []\n        if r1.iloc[row_idx]:\n            codes.append(\"AMT_BAD\")\n        if r2.iloc[row_idx]:\n            codes.append(\"TAX_BAD\")\n        if r3.iloc[row_idx]:\n            codes.append(\"TAX_EXCESS\")\n        if r4.iloc[row_idx]:\n            codes.append(\"DUE_NULL\")\n        if r5.iloc[row_idx]:\n            codes.append(\"REF_EMPTY\")\n        return \"|\".join(codes)\n\n    reason_codes = [build_codes(i) for i in range(len(df))]\n    df[\"reason_codes\"] = reason_codes\n\n    is_clean = df[\"reason_codes\"] == \"\"\n\n    invoices_clean = df[is_clean].drop(columns=[\"reason_codes\"]).reset_index(drop=True)\n    invoices_rejects = df[~is_clean].reset_index(drop=True)\n\n    return {\n        \"invoices_clean\": invoices_clean,\n        \"invoices_rejects\": invoices_rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 747,
+   "tokens_out": 843,
+   "usd": 0.014886,
+   "wall_s": 7.085128307342529,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

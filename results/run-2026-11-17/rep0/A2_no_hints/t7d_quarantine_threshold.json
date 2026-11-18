@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t7d_quarantine_threshold",
+ "category": "T7",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    df = inputs[\"readings\"].copy()\n\n    cols = [\"batch_id\", \"reading_id\", \"sensor\", \"value\"]\n\n    is_bad = df[\"value\"].isnull() | (df[\"value\"] < 0) | (df[\"value\"] > 1000)\n    df[\"_is_bad\"] = is_bad\n\n    grp = df.groupby(\"batch_id\")[\"_is_bad\"].agg(total_rows=\"size\", bad_row_count=\"sum\").reset_index()\n    grp[\"bad_row_count\"] = grp[\"bad_row_count\"].astype(int)\n    grp[\"quarantined\"] = grp[\"bad_row_count\"] * 100 > grp[\"total_rows\"] * 20\n    grp[\"batch_reject_pct\"] = (grp[\"bad_row_count\"] * 100.0 / grp[\"total_rows\"]).round(2)\n\n    df = df.merge(grp[[\"batch_id\", \"quarantined\", \"batch_reject_pct\"]], on=\"batch_id\", how=\"left\")\n\n    quarantine_mask = df[\"quarantined\"]\n\n    readings_quarantine = df.loc[quarantine_mask, cols + [\"batch_reject_pct\"]].copy()\n\n    non_q = df.loc[~quarantine_mask]\n    readings_clean = non_q.loc[~non_q[\"_is_bad\"], cols].copy()\n    readings_rejects = non_q.loc[non_q[\"_is_bad\"], cols].copy()\n\n    return {\n        \"readings_clean\": readings_clean.reset_index(drop=True),\n        \"readings_rejects\": readings_rejects.reset_index(drop=True),\n        \"readings_quarantine\": readings_quarantine.reset_index(drop=True),\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 558,
+   "tokens_out": 844,
+   "usd": 0.014334,
+   "wall_s": 7.121579170227051
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

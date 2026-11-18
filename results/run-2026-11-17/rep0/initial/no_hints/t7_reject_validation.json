@@ -1,0 +1,16 @@
+{
+ "task": "t7_reject_validation",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    df = inputs['payments'].copy()\n\n    idx = df.index\n    reason = pd.Series([None] * len(df), index=idx, dtype=object)\n    unclassified = pd.Series(True, index=idx)\n\n    valid_currencies = ['USD', 'EUR', 'GBP']\n\n    # R1: amount IS NULL -> AMT_NULL\n    cond = df['amount'].isna() & unclassified\n    reason[cond] = 'AMT_NULL'\n    unclassified &= ~cond\n\n    # R2: amount <= 0 -> AMT_NONPOS\n    cond = (df['amount'] <= 0) & unclassified\n    reason[cond] = 'AMT_NONPOS'\n    unclassified &= ~cond\n\n    # R3: currency NOT IN ('USD','EUR','GBP') -> CCY_INVALID\n    cond = (~df['currency'].isin(valid_currencies)) & unclassified\n    reason[cond] = 'CCY_INVALID'\n    unclassified &= ~cond\n\n    # R4: country IS NULL -> CTRY_NULL\n    cond = df['country'].isna() & unclassified\n    reason[cond] = 'CTRY_NULL'\n    unclassified &= ~cond\n\n    rejects_mask = reason.notna()\n    clean_mask = ~rejects_mask\n\n    payments_clean = df.loc[clean_mask].copy()\n    payments_clean['amount'] = payments_clean['amount'].round(2)\n\n    payments_rejects = df.loc[rejects_mask].copy()\n    payments_rejects['reason_code'] = reason.loc[rejects_mask]\n\n    payments_clean = payments_clean.reset_index(drop=True)\n    payments_rejects = payments_rejects.reset_index(drop=True)\n\n    return {\n        'payments_clean': payments_clean,\n        'payments_rejects': payments_rejects,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 554,
+   "tokens_out": 1616,
+   "usd": 0.025902,
+   "wall_s": 12.898242473602295
+  }
+ ]
+}

@@ -1,0 +1,46 @@
+{
+ "config": "B2_retranslate",
+ "rep": 4,
+ "task": "t1d_tsql_top_ties",
+ "category": "T1",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicates T-SQL TOP (5) WITH TIES semantics with NULL-propagating concatenation.\n    \n    Key behaviors:\n    1. Filter active = 1\n    2. Rank by score DESC (using method='min' for ties)\n    3. Keep all rows where rank <= 5 (WITH TIES expansion)\n    4. ISNULL(manager, 'UNASSIGNED') - coalesce NULL to 'UNASSIGNED'\n    5. branch_code + '-' + region_code with NULL propagation (NULL + x = NULL)\n    6. Order by score DESC in output\n    \"\"\"\n    df = inputs['branch_scores'].copy()\n    \n    # Filter active = 1\n    df = df[df['active'] == 1].copy()\n    \n    # Compute rank by score DESC using method='min' for SQL Server semantics\n    # (ties get same rank, next rank skips)\n    df['_rank'] = df['score'].rank(method='min', ascending=False)\n    \n    # Keep rows where rank <= 5 (WITH TIES includes all ties at cutoff)\n    df = df[df['_rank'] <= 5].copy()\n    \n    # ISNULL(manager, 'UNASSIGNED')\n    df['manager_norm'] = df['manager'].fillna('UNASSIGNED')\n    \n    # branch_code + '-' + region_code with NULL propagation\n    # NULL + x = NULL (not like CONCAT which ignores NULLs)\n    def null_propagating_concat(row):\n        code = row['branch_code']\n        region = row['region_code']\n        # If either is NULL, result is NULL\n        if pd.isna(code) or pd.isna(region):\n            return np.nan\n        return str(code) + '-' + str(region)\n    \n    df['branch_label'] = df.apply(null_propagating_concat, axis=1)\n    \n    # Select and order output\n    result = df[['branch_id', 'manager_norm', 'branch_label', 'score']].copy()\n    result = result.sort_values('score', ascending=False, na_position='last').reset_index(drop=True)\n    \n    return {'top_branches': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 364,
+   "tokens_out": 597,
+   "usd": 0.003349,
+   "wall_s": 4.33872127532959
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

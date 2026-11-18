@@ -1,0 +1,16 @@
+{
+ "task": "t8c_out_of_order_late",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n\n    if target.empty:\n        target = pd.DataFrame(columns=[\"device_id\", \"reading\", \"applied_event_ts\"])\n\n    # Attach each device's current watermark (applied_event_ts) to every event.\n    merged = cdc.merge(\n        target[[\"device_id\", \"applied_event_ts\"]],\n        on=\"device_id\",\n        how=\"left\",\n        suffixes=(\"\", \"_wm\"),\n    )\n\n    # Survival rule:\n    #   - device unknown to target (no watermark) -> event survives\n    #   - event_ts strictly greater than watermark -> event survives\n    #   - event_ts == watermark (replay) or < watermark (late) -> discarded\n    survive_mask = merged[\"applied_event_ts\"].isna() | (\n        merged[\"event_ts\"] > merged[\"applied_event_ts\"]\n    )\n    survivors = merged.loc[survive_mask].copy()\n\n    if not survivors.empty:\n        # Pick the winner per device: max by (event_ts, event_seq)\n        survivors_sorted = survivors.sort_values(\n            by=[\"device_id\", \"event_ts\", \"event_seq\"],\n            ascending=[True, False, False],\n        )\n        winners = survivors_sorted.drop_duplicates(subset=\"device_id\", keep=\"first\")\n        winners = winners[[\"device_id\", \"reading\", \"event_ts\"]].rename(\n            columns={\"event_ts\": \"applied_event_ts\"}\n        )\n    else:\n        winners = pd.DataFrame(columns=[\"device_id\", \"reading\", \"applied_event_ts\"])\n\n    # Base result starts as a carry-forward of the existing snapshot.\n    result = target.set_index(\"device_id\")\n    winners_idx = winners.set_index(\"device_id\")\n\n    # Update devices that have a winning event (overwrite reading + watermark).\n    if not winners_idx.empty:\n        common_cols = [\"reading\", \"applied_event_ts\"]\n        result.update(winners_idx[common_cols])\n\n        # Add brand-new devices that weren't present in target_snapshot.\n        new_devices = winners_idx.loc[~winners_idx.index.isin(result.index)]\n        if not new_devices.empty:\n            result = pd.concat([result, new_devices[common_cols]], axis=0)\n\n    result = result.reset_index()[[\"device_id\", \"reading\", \"applied_event_ts\"]]\n\n    return {\"new_snapshot\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 698,
+   "tokens_out": 2526,
+   "usd": 0.039984,
+   "wall_s": 22.459908723831177
+  }
+ ]
+}

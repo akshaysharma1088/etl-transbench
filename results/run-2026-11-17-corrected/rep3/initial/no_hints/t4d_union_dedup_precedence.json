@@ -1,0 +1,17 @@
+{
+ "task": "t4d_union_dedup_precedence",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    crm_feed = inputs[\"crm_feed\"].copy()\n    web_feed = inputs[\"web_feed\"].copy()\n    \n    # Step 1: Create STG_COMBINED with source rank\n    crm_feed[\"src_rank\"] = 1\n    web_feed[\"src_rank\"] = 2\n    \n    stg_combined = pd.concat([crm_feed, web_feed], ignore_index=True)\n    \n    # Step 2: Apply ROW_NUMBER window function with ordering\n    # Partition by customer_id, order by src_rank ASC, updated_at DESC, email ASC\n    stg_combined = stg_combined.sort_values(\n        by=[\"customer_id\", \"src_rank\", \"updated_at\", \"email\"],\n        ascending=[True, True, False, True],\n        na_position=\"last\"\n    )\n    \n    stg_combined[\"rn\"] = stg_combined.groupby(\"customer_id\", dropna=False).cumcount() + 1\n    \n    # Step 3: Filter to keep only rn = 1\n    golden = stg_combined[stg_combined[\"rn\"] == 1].copy()\n    \n    # Select only the required output columns\n    golden = golden[[\"customer_id\", \"email\", \"updated_at\"]].reset_index(drop=True)\n    \n    return {\"golden\": golden}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 494,
+   "tokens_out": 369,
+   "usd": 0.002339,
+   "wall_s": 3.6153364181518555,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

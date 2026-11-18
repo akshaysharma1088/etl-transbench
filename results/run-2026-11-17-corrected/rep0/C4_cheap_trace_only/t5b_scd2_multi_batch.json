@@ -1,0 +1,63 @@
+{
+ "config": "C4_cheap_trace_only",
+ "rep": 0,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 3,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import datetime\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_product = inputs[\"dim_product\"].copy()\n    stg_product = inputs[\"stg_product\"].copy()\n    \n    # Sort staged records by product_id, then update_date (ascending)\n    stg_product = stg_product.sort_values(\n        by=[\"product_id\", \"update_date\"],\n        ascending=[True, True]\n    ).reset_index(drop=True)\n    \n    # Initialize output with current dimension\n    dim_out = dim_product.copy()\n    \n    # Process each staged record in order\n    for idx, stg_row in stg_product.iterrows():\n        prod_id = stg_row[\"product_id\"]\n        stg_category = stg_row[\"category\"]\n        stg_price_band = stg_row[\"price_band\"]\n        stg_update_date = stg_row[\"update_date\"]\n        \n        # Find current row for this product\n        current_rows = dim_out[\n            (dim_out[\"product_id\"] == prod_id) & \n            (dim_out[\"is_current\"] == 1)\n        ]\n        \n        if len(current_rows) == 0:\n            # No current row exists; insert new current version\n            new_row = pd.DataFrame({\n                \"product_id\": [prod_id],\n                \"category\": [stg_category],\n                \"price_band\": [stg_price_band],\n                \"eff_start_date\": [stg_update_date],\n                \"eff_end_date\": [pd.NaT],\n                \"is_current\": [1]\n            })\n            dim_out = pd.concat([dim_out, new_row], ignore_index=True)\n        else:\n            # Current row exists\n            current_row = current_rows.iloc[0]\n            current_idx = current_rows.index[0]\n            \n            # Compare tracked attributes (category, price_band)\n            # NULL vs NULL is not a change; NULL vs non-NULL is a change\n            cat_changed = _attributes_differ(current_row[\"category\"], stg_category)\n            price_changed = _attributes_differ(current_row[\"price_band\"], stg_price_band)\n            \n            if cat_changed or price_changed:\n                # Attributes changed: expire current and insert new version\n                dim_out.at[current_idx, \"is_current\"] = 0\n                dim_out.at[current_idx, \"eff_end_date\"] = stg_update_date\n                \n                new_row = pd.DataFrame({\n                    \"product_id\": [prod_id],\n                    \"category\": [stg_category],\n                    \"price_band\": [stg_price_band],\n                    \"eff_start_date\": [stg_update_date],\n                    \"eff_end_date\": [pd.NaT],\n                    \"is_current\": [1]\n                })\n                dim_out = pd.concat([dim_out, new_row], ignore_index=True)\n            # else: no change, no-op\n    \n    return {\"dim_product_out\": dim_out}\n\n\ndef _attributes_differ(val1, val2):\n    \"\"\"\n    Compare two attribute values considering NULL semantics.\n    NULL vs NULL is not a change.\n    NULL vs non-NULL (or different non-NULLs) is a change.\n    \"\"\"\n    # Check if both are null-like\n    is_null_1 = pd.isna(val1) if isinstance(val1, float) else (val1 is None or (isinstance(val1, str) and val1 == \"\"))\n    is_null_2 = pd.isna(val2) if isinstance(val2, float) else (val2 is None or (isinstance(val2, str) and val2 == \"\"))\n    \n    # For pandas string columns, pd.isna handles None and NaN\n    if pd.isna(val1):\n        is_null_1 = True\n    if pd.isna(val2):\n        is_null_2 = True\n    \n    # Both null: no change\n    if is_null_1 and is_null_2:\n        return False\n    \n    # One null, one not: change\n    if is_null_1 or is_null_2:\n        return True\n    \n    # Both non-null: compare values\n    return val1 != val2\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 674,
+   "tokens_out": 2981,
+   "usd": 0.015579,
+   "wall_s": 21.00071430206299,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5532,
+  "tokens_out": 4783,
+  "usd": 0.029447,
+  "wall_s": 39.61289119720459
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

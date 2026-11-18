@@ -1,0 +1,48 @@
+{
+ "config": "L2_cx_patch_then_fresh",
+ "rep": 2,
+ "task": "t8_cdc_merge",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n\n    # Determine watermark timestamp\n    high_ts = watermark[\"high_ts\"].iloc[0]\n\n    # Step 1: keep only events strictly after the watermark\n    filtered = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n\n    if not filtered.empty:\n        # Step 2: latest event per product_id by (event_ts, event_seq)\n        filtered = filtered.sort_values([\"event_ts\", \"event_seq\"])\n        latest = filtered.groupby(\"product_id\", as_index=False).last()\n    else:\n        latest = filtered  # empty frame with same columns\n\n    # Build a working dict keyed by product_id from the target snapshot\n    target_indexed = target_snapshot.set_index(\"product_id\", drop=False)\n\n    for _, row in latest.iterrows():\n        pid = row[\"product_id\"]\n        op = row[\"op\"]\n        if op == \"D\":\n            if pid in target_indexed.index:\n                target_indexed = target_indexed.drop(index=pid)\n        else:\n            new_row = {\n                \"product_id\": pid,\n                \"name\": row[\"name\"],\n                \"price\": row[\"price\"],\n                \"last_event_ts\": row[\"event_ts\"],\n            }\n            target_indexed.loc[pid] = new_row\n\n    new_snapshot = target_indexed.reset_index(drop=True)\n\n    # Ensure column order matches target_snapshot schema\n    new_snapshot = new_snapshot[[\"product_id\", \"name\", \"price\", \"last_event_ts\"]]\n\n    # Preserve dtypes as close as possible to original schema\n    new_snapshot[\"product_id\"] = new_snapshot[\"product_id\"].astype(\"int64\")\n    new_snapshot[\"price\"] = new_snapshot[\"price\"].astype(\"float64\")\n    new_snapshot[\"last_event_ts\"] = pd.to_datetime(new_snapshot[\"last_event_ts\"]).astype(\"datetime64[us]\")\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 795,
+   "tokens_out": 1458,
+   "usd": 0.024255,
+   "wall_s": 13.04105257987976,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

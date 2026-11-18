@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t8_cdc_merge",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n\n    # Determine watermark high_ts (single row expected)\n    if len(watermark) > 0:\n        high_ts = watermark[\"high_ts\"].iloc[0]\n    else:\n        high_ts = pd.NaT\n\n    # Step 1: keep only events strictly newer than watermark\n    if pd.notna(high_ts):\n        filtered = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n    else:\n        filtered = cdc_events.copy()\n\n    # Step 2: per product_id, pick the latest event by (event_ts, event_seq)\n    if not filtered.empty:\n        filtered = filtered.sort_values(\n            by=[\"event_ts\", \"event_seq\"], ascending=[True, True]\n        )\n        latest_events = filtered.groupby(\"product_id\", as_index=False).tail(1)\n    else:\n        latest_events = filtered\n\n    # Build dict of current snapshot state keyed by product_id\n    snapshot_dict = {}\n    for row in target_snapshot.itertuples(index=False):\n        snapshot_dict[row.product_id] = (row.name, row.price, row.last_event_ts)\n\n    # Step 3 & 4: apply surviving latest events\n    for row in latest_events.itertuples(index=False):\n        pid = row.product_id\n        if row.op == \"D\":\n            snapshot_dict.pop(pid, None)\n        else:\n            snapshot_dict[pid] = (row.name, row.price, row.event_ts)\n\n    # Reconstruct new_snapshot DataFrame\n    if snapshot_dict:\n        pids = sorted(snapshot_dict.keys())\n        records = [\n            {\n                \"product_id\": pid,\n                \"name\": snapshot_dict[pid][0],\n                \"price\": snapshot_dict[pid][1],\n                \"last_event_ts\": snapshot_dict[pid][2],\n            }\n            for pid in pids\n        ]\n        new_snapshot = pd.DataFrame.from_records(records)\n    else:\n        new_snapshot = pd.DataFrame(\n            columns=[\"product_id\", \"name\", \"price\", \"last_event_ts\"]\n        )\n\n    # Enforce dtypes\n    new_snapshot[\"product_id\"] = new_snapshot[\"product_id\"].astype(\"int64\")\n    new_snapshot[\"name\"] = new_snapshot[\"name\"].astype(object)\n    new_snapshot[\"price\"] = new_snapshot[\"price\"].astype(\"float64\")\n    new_snapshot[\"last_event_ts\"] = pd.to_datetime(\n        new_snapshot[\"last_event_ts\"]\n    ).astype(\"datetime64[us]\")\n\n    new_snapshot = new_snapshot.reset_index(drop=True)\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 744,
+   "tokens_out": 2108,
+   "usd": 0.033852,
+   "wall_s": 18.033390760421753,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_store\"].copy()\n    stg = inputs[\"stg_store_full\"].copy()\n    batch = inputs[\"batch_control\"]\n\n    b = batch[\"batch_date\"].iloc[0]\n\n    # Step 0: distinct store_id, region, format from the snapshot feed\n    S = stg.drop_duplicates(subset=[\"store_id\", \"region\", \"format\"]).copy()\n    S_store_ids = set(S[\"store_id\"])\n\n    # Current rows in dim_store\n    current_mask = dim[\"is_current\"] == 1\n    current = dim[current_mask]\n\n    current_map = {}\n    current_idx_map = {}\n    for idx, row in current.iterrows():\n        current_map[row[\"store_id\"]] = (row[\"region\"], row[\"format\"])\n        current_idx_map[row[\"store_id\"]] = idx\n\n    def differs(a, b_):\n        a_na = pd.isna(a)\n        b_na = pd.isna(b_)\n        if a_na and b_na:\n            return False\n        if a_na != b_na:\n            return True\n        return a != b_\n\n    new_rows = []\n    close_idx = set()\n\n    for _, s in S.iterrows():\n        sid = s[\"store_id\"]\n        if sid in current_map:\n            c_region, c_format = current_map[sid]\n            if differs(c_region, s[\"region\"]) or differs(c_format, s[\"format\"]):\n                close_idx.add(current_idx_map[sid])\n                new_rows.append(\n                    {\n                        \"store_id\": sid,\n                        \"region\": s[\"region\"],\n                        \"format\": s[\"format\"],\n                        \"eff_start_date\": b,\n                        \"eff_end_date\": pd.NaT,\n                        \"is_current\": 1,\n                    }\n                )\n            # else: attributes match current -> no-op\n        else:\n            # brand-new store, or a reactivated store with no current row\n            new_rows.append(\n                {\n                    \"store_id\": sid,\n                    \"region\": s[\"region\"],\n                    \"format\": s[\"format\"],\n                    \"eff_start_date\": b,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            )\n\n    # Step 2: close current rows whose store_id no longer appears in S\n    for sid, idx in current_idx_map.items():\n        if sid not in S_store_ids:\n            close_idx.add(idx)\n\n    if close_idx:\n        idx_list = list(close_idx)\n        dim.loc[idx_list, \"eff_end_date\"] = b\n        dim.loc[idx_list, \"is_current\"] = 0\n\n    if new_rows:\n        new_df = pd.DataFrame(\n            new_rows,\n            columns=[\n                \"store_id\",\n                \"region\",\n                \"format\",\n                \"eff_start_date\",\n                \"eff_end_date\",\n                \"is_current\",\n            ],\n        )\n        out = pd.concat([dim, new_df], ignore_index=True)\n    else:\n        out = dim\n\n    out = out[\n        [\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    ].reset_index(drop=True)\n\n    out[\"store_id\"] = out[\"store_id\"].astype(\"int64\")\n    out[\"eff_start_date\"] = pd.to_datetime(out[\"eff_start_date\"])\n    out[\"eff_end_date\"] = pd.to_datetime(out[\"eff_end_date\"])\n    out[\"is_current\"] = out[\"is_current\"].astype(\"int64\")\n\n    return {\"dim_store_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1186,
+   "tokens_out": 3041,
+   "usd": 0.049173,
+   "wall_s": 25.267967700958252,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

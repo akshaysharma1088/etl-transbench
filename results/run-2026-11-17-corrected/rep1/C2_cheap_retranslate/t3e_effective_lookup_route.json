@@ -1,0 +1,48 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 1,
+ "task": "t3e_effective_lookup_route",
+ "category": "T3",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    orders = inputs[\"orders\"].copy()\n    price_list = inputs[\"price_list\"].copy()\n    \n    # exp: normalize sku\n    orders[\"sku_norm\"] = orders[\"sku\"].apply(\n        lambda x: x.upper().strip() if pd.notna(x) else np.nan\n    )\n    \n    # lkp: lookup with effective-dated tie-break\n    def lookup_price(row):\n        sku_norm = row[\"sku_norm\"]\n        order_date = row[\"order_date\"]\n        \n        # NULL sku_norm never matches\n        if pd.isna(sku_norm):\n            return {\"unit_price\": 0, \"price_flag\": \"NO_PRICE\"}\n        \n        # Filter price_list: normalized sku matches and valid_from <= order_date\n        pl_norm = price_list.copy()\n        pl_norm[\"pl_sku_norm\"] = pl_norm[\"sku\"].apply(\n            lambda x: x.upper().strip() if pd.notna(x) else np.nan\n        )\n        \n        matches = pl_norm[\n            (pl_norm[\"pl_sku_norm\"] == sku_norm) & \n            (pl_norm[\"valid_from\"] <= order_date)\n        ]\n        \n        if len(matches) == 0:\n            return {\"unit_price\": 0, \"price_flag\": \"NO_PRICE\"}\n        \n        # Tie-break: GREATEST valid_from, then LOWEST list_id\n        matches = matches.sort_values(\n            by=[\"valid_from\", \"list_id\"],\n            ascending=[False, True]\n        )\n        best_match = matches.iloc[0]\n        \n        return {\"unit_price\": best_match[\"unit_price\"], \"price_flag\": \"OK\"}\n    \n    lookup_results = orders.apply(lookup_price, axis=1, result_type=\"expand\")\n    orders[\"unit_price\"] = lookup_results[\"unit_price\"]\n    orders[\"price_flag\"] = lookup_results[\"price_flag\"]\n    \n    # ext: extend with ext_amount\n    orders[\"ext_amount\"] = orders[\"qty\"] * orders[\"unit_price\"]\n    \n    # rtr: router with ordered rules\n    def route_row(row):\n        price_flag = row[\"price_flag\"]\n        qty = row[\"qty\"]\n        ext_amount = row[\"ext_amount\"]\n        \n        # Rule 1: price_flag == 'NO_PRICE' or qty is NULL or qty >= 100\n        rule1 = (price_flag == \"NO_PRICE\") or pd.isna(qty) or (qty >= 100)\n        if rule1:\n            return \"REVIEW\"\n        \n        # Rule 2: ext_amount >= 1000\n        rule2 = pd.notna(ext_amount) and (ext_amount >= 1000)\n        if rule2:\n            return \"BULK\"\n        \n        # Rule 3: ext_amount < 50\n        rule3 = pd.notna(ext_amount) and (ext_amount < 50)\n        if rule3:\n            return \"SMALL\"\n        \n        # Default\n        return \"STANDARD\"\n    \n    orders[\"route\"] = orders.apply(route_row, axis=1)\n    \n    # out1: order_enriched\n    order_enriched = orders[[\"order_id\", \"sku_norm\", \"unit_price\", \"route\"]].copy()\n    \n    # out2: route_daily aggregation\n    agg_data = orders.groupby([\"route\", \"order_date\"]).agg(\n        order_count=(\"order_id\", \"count\"),\n        total_ext=(\"ext_amount\", \"sum\")\n    ).reset_index()\n    \n    # SUM ignores NULLs, so groups with all NULL ext_amount get 0\n    agg_data[\"total_ext\"] = agg_data[\"total_ext\"].fillna(0)\n    \n    route_daily = agg_data[[\"route\", \"order_date\", \"order_count\", \"total_ext\"]].copy()\n    \n    return {\n        \"order_enriched\": order_enriched,\n        \"route_daily\": route_daily\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 1225,
+   "tokens_out": 1072,
+   "usd": 0.006585,
+   "wall_s": 6.77461314201355,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

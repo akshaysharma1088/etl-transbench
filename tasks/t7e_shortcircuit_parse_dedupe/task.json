@@ -1,0 +1,9 @@
+{
+  "id": "t7e_shortcircuit_parse_dedupe",
+  "category": "T7",
+  "tier": 3,
+  "description": "Validation with short-circuit rule order, a strict legacy number and date parser, and duplicate rejection among surviving rows",
+  "legacy_artifact": "legacy_artifact.txt",
+  "target": "pandas (PySpark in full benchmark)",
+  "set": "extension"
+}

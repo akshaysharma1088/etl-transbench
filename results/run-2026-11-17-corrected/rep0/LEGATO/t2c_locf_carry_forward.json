@@ -1,0 +1,48 @@
+{
+ "config": "LEGATO",
+ "rep": 0,
+ "task": "t2c_locf_carry_forward",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"rate_feed\"].copy()\n\n    df = df.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    df[\"rate_filled\"] = df.groupby(\"account_id\")[\"rate\"].ffill()\n\n    was_carried = (df[\"rate\"].isna()) & (df[\"rate_filled\"].notna())\n    df[\"was_carried\"] = was_carried.astype(\"int64\")\n\n    result = df[[\"account_id\", \"obs_seq\", \"obs_date\", \"rate_filled\", \"was_carried\"]]\n\n    return {\"rate_filled\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 850,
+   "tokens_out": 438,
+   "usd": 0.00912,
+   "wall_s": 5.320000648498535,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

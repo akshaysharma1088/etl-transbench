@@ -1,0 +1,17 @@
+{
+ "task": "t6d_channel_interleave",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by (user_id, channel, event_ts, event_id) to establish order\n    events = events.sort_values(\n        by=[\"user_id\", \"channel\", \"event_ts\", \"event_id\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Group by (user_id, channel) and apply sessionization\n    def sessionize_group(group):\n        \"\"\"\n        Within a (user_id, channel) group, assign session numbers based on\n        25-minute gaps. Order is already established by sort above.\n        \"\"\"\n        group = group.reset_index(drop=True)\n        \n        if len(group) == 0:\n            return group\n        \n        # Calculate time differences between consecutive events\n        time_diffs = group[\"event_ts\"].diff()\n        \n        # A new session starts if:\n        # - it's the first event (NaT diff)\n        # - the gap is >= 25 minutes\n        gap_threshold = pd.Timedelta(minutes=25)\n        new_session = (time_diffs.isna()) | (time_diffs >= gap_threshold)\n        \n        # Assign session numbers (cumsum of new_session flags)\n        group[\"session_num\"] = new_session.cumsum()\n        \n        return group\n    \n    # Apply sessionization per (user_id, channel)\n    events = events.groupby([\"user_id\", \"channel\"], group_keys=False).apply(\n        sessionize_group\n    )\n    \n    # Aggregate to get channel_sessions\n    channel_sessions = events.groupby(\n        [\"user_id\", \"channel\", \"session_num\"],\n        as_index=False\n    ).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    )\n    \n    # Make session_num 1-based per (user_id, channel) pair\n    # It should already be 1-based due to cumsum starting at 1, but ensure it\n    channel_sessions = channel_sessions.sort_values(\n        by=[\"user_id\", \"channel\", \"session_start\"]\n    ).reset_index(drop=True)\n    \n    # Renumber sessions to be strictly 1-based per user+channel\n    channel_sessions[\"session_num\"] = channel_sessions.groupby(\n        [\"user_id\", \"channel\"]\n    ).cumcount() + 1\n    \n    # Reorder columns to match expected output\n    channel_sessions = channel_sessions[\n        [\"user_id\", \"channel\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]\n    ]\n    \n    return {\"channel_sessions\": channel_sessions}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 351,
+   "tokens_out": 730,
+   "usd": 0.004001,
+   "wall_s": 5.204728364944458,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

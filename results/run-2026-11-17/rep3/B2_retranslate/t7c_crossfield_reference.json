@@ -1,0 +1,46 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t7c_crossfield_reference",
+ "category": "T7",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    ref_customers = inputs[\"ref_customers\"].copy()\n    ref_skus = inputs[\"ref_skus\"].copy()\n\n    # Preserve original row order\n    orders = orders.reset_index(drop=True)\n    orders[\"_orig_order\"] = orders.index\n\n    # Guard against duplicate keys in reference tables: keep first occurrence\n    ref_customers = ref_customers.drop_duplicates(subset=\"customer_id\", keep=\"first\")\n    ref_skus = ref_skus.drop_duplicates(subset=\"sku\", keep=\"first\")\n\n    # Merge with indicators to detect presence/absence of reference rows\n    merged = orders.merge(\n        ref_customers[[\"customer_id\", \"status\"]],\n        on=\"customer_id\",\n        how=\"left\",\n        indicator=\"_cust_ind\",\n    )\n    merged = merged.merge(\n        ref_skus[[\"sku\", \"discontinued\", \"allowed_countries\"]],\n        on=\"sku\",\n        how=\"left\",\n        indicator=\"_sku_ind\",\n    )\n\n    def country_blocked(allowed_countries, ship_country):\n        if pd.isna(allowed_countries):\n            return False\n        text = str(allowed_countries).strip()\n        if text == \"\":\n            return False\n        members = [m.strip() for m in text.split(\",\")]\n        return ship_country not in members\n\n    def classify(row):\n        # R1: customer unknown\n        if row[\"_cust_ind\"] == \"left_only\":\n            return \"CUST_UNKNOWN\"\n        # R2: customer status not ACTIVE\n        status = row[\"status\"]\n        if pd.isna(status) or status != \"ACTIVE\":\n            return \"CUST_INACTIVE\"\n        # R3: sku unknown\n        if row[\"_sku_ind\"] == \"left_only\":\n            return \"SKU_UNKNOWN\"\n        # R4: sku discontinued\n        disc = row[\"discontinued\"]\n        try:\n            disc_flag = int(disc) if not pd.isna(disc) else 0\n        except (ValueError, TypeError):\n            disc_flag = 0\n        if disc_flag == 1:\n            return \"SKU_DISC\"\n        # R5: country blocked\n        if country_blocked(row[\"allowed_countries\"], row[\"ship_country\"]):\n            return \"CTRY_BLOCKED\"\n        return None\n\n    merged[\"reason_code\"] = merged.apply(classify, axis=1)\n\n    orig_cols = [c for c in orders.columns if c != \"_orig_order\"]\n\n    clean_mask = merged[\"reason_code\"].isna()\n    rejects_mask = ~clean_mask\n\n    orders_clean = (\n        merged.loc[clean_mask, [\"_orig_order\"] + orig_cols]\n        .sort_values(\"_orig_order\")\n        .drop(columns=\"_orig_order\")\n        .reset_index(drop=True)\n    )\n\n    orders_rejects = (\n        merged.loc[rejects_mask, [\"_orig_order\"] + orig_cols + [\"reason_code\"]]\n        .sort_values(\"_orig_order\")\n        .drop(columns=\"_orig_order\")\n        .reset_index(drop=True)\n    )\n\n    return {\n        \"orders_clean\": orders_clean,\n        \"orders_rejects\": orders_rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 704,
+   "tokens_out": 2508,
+   "usd": 0.039732,
+   "wall_s": 21.293477773666382
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

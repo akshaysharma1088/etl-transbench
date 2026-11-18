@@ -1,0 +1,16 @@
+{
+ "task": "t7_reject_validation",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    payments = inputs[\"payments\"].copy()\n\n    def classify(row):\n        amount = row[\"amount\"]\n        if pd.isna(amount):\n            return \"AMT_NULL\"\n        if amount <= 0:\n            return \"AMT_NONPOS\"\n        currency = row[\"currency\"]\n        if pd.notna(currency) and currency not in (\"USD\", \"EUR\", \"GBP\"):\n            return \"CCY_INVALID\"\n        if pd.isna(row[\"country\"]):\n            return \"CTRY_NULL\"\n        return None\n\n    reason_codes = payments.apply(classify, axis=1)\n\n    is_rejected = reason_codes.notna()\n\n    clean = payments.loc[~is_rejected].copy()\n    clean[\"amount\"] = clean[\"amount\"].round(2)\n\n    rejects = payments.loc[is_rejected].copy()\n    rejects[\"reason_code\"] = reason_codes.loc[is_rejected]\n\n    clean = clean.reset_index(drop=True)\n    rejects = rejects.reset_index(drop=True)\n\n    return {\n        \"payments_clean\": clean,\n        \"payments_rejects\": rejects,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 554,
+   "tokens_out": 1039,
+   "usd": 0.017247,
+   "wall_s": 10.189923286437988
+  }
+ ]
+}

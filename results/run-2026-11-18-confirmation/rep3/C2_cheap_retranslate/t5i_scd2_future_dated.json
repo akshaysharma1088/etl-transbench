@@ -1,0 +1,48 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 3,
+ "task": "t5i_scd2_future_dated",
+ "category": "T5",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_price = inputs[\"dim_price\"].copy()\n    stg_price = inputs[\"stg_price\"].copy()\n    batch_control = inputs[\"batch_control\"].copy()\n    \n    # Get the batch date (single row)\n    batch_date = batch_control[\"batch_date\"].iloc[0]\n    \n    # Process each product in stg_price\n    stg_price_sorted = stg_price.sort_values([\"product_id\", \"effective_date\"]).reset_index(drop=True)\n    \n    # We'll track which records to delete and insert\n    rows_to_delete = []\n    rows_to_insert = []\n    \n    for product_id in stg_price_sorted[\"product_id\"].unique():\n        stg_rows = stg_price_sorted[stg_price_sorted[\"product_id\"] == product_id].reset_index(drop=True)\n        \n        # Get current versions of this product from dim_price\n        dim_product = dim_price[dim_price[\"product_id\"] == product_id].copy()\n        \n        for idx, stg_row in stg_rows.iterrows():\n            # Find the tail: version with latest eff_start_date (could be from dim_price or inserted earlier in this loop)\n            if len(rows_to_insert) > 0:\n                inserted_for_product = [r for r in rows_to_insert if r[\"product_id\"] == product_id]\n                if inserted_for_product:\n                    tail = max(inserted_for_product, key=lambda x: x[\"eff_start_date\"])\n                else:\n                    tail = None\n            else:\n                tail = None\n            \n            if len(dim_product) > 0:\n                latest_dim = dim_product.loc[dim_product[\"eff_start_date\"].idxmax()]\n                if tail is None or pd.Timestamp(tail[\"eff_start_date\"]) < latest_dim[\"eff_start_date\"]:\n                    tail = latest_dim\n            \n            # Check if we need to create a new version\n            if tail is not None and tail[\"list_price\"] == stg_row[\"list_price\"]:\n                # No change, skip\n                continue\n            else:\n                # Close the tail version\n                if tail is not None:\n                    # Find and update the tail record\n                    if isinstance(tail, pd.Series):\n                        # It's from dim_price\n                        dim_price.loc[(dim_price[\"product_id\"] == product_id) & \n                                     (dim_price[\"eff_start_date\"] == tail[\"eff_start_date\"]), \"eff_end_date\"] = stg_row[\"effective_date\"]\n                    else:\n                        # It's from rows_to_insert\n                        for r in rows_to_insert:\n                            if (r[\"product_id\"] == product_id and \n                                r[\"eff_start_date\"] == tail[\"eff_start_date\"]):\n                                r[\"eff_end_date\"] = stg_row[\"effective_date\"]\n                \n                # Insert new version\n                new_row = {\n                    \"product_id\": stg_row[\"product_id\"],\n                    \"list_price\": stg_row[\"list_price\"],\n                    \"eff_start_date\": stg_row[\"effective_date\"],\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 0  # Will be set after all versions are created\n                }\n                rows_to_insert.append(new_row)\n                dim_product = pd.concat([dim_product, pd.DataFrame([new_row])], ignore_index=True)\n    \n    # Add inserted rows to dim_price\n    if rows_to_insert:\n        dim_price = pd.concat([dim_price, pd.DataFrame(rows_to_insert)], ignore_index=True)\n    \n    # Reset is_current for all rows based on batch_date\n    # is_current = 1 if eff_start_date <= batch_date < eff_end_date (or eff_end_date is NULL)\n    dim_price[\"is_current\"] = 0\n    \n    for idx, row in dim_price.iterrows():\n        start = row[\"eff_start_date\"]\n        end = row[\"eff_end_date\"]\n        \n        # Check if batch_date falls within this version's range\n        if start <= batch_date:\n            if pd.isna(end) or batch_date < end:\n                dim_price.at[idx, \"is_current\"] = 1\n    \n    # Ensure correct data types\n    dim_price[\"product_id\"] = dim_price[\"product_id\"].astype(\"int64\")\n    dim_price[\"list_price\"] = dim_price[\"list_price\"].astype(\"float64\")\n    dim_price[\"eff_start_date\"] = pd.to_datetime(dim_price[\"eff_start_date\"])\n    dim_price[\"eff_end_date\"] = pd.to_datetime(dim_price[\"eff_end_date\"])\n    dim_price[\"is_current\"] = dim_price[\"is_current\"].astype(\"int64\")\n    \n    dim_price = dim_price[[\"product_id\", \"list_price\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]].reset_index(drop=True)\n    \n    return {\"dim_price_out\": dim_price}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 915,
+   "tokens_out": 1382,
+   "usd": 0.007825,
+   "wall_s": 8.834197521209717,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

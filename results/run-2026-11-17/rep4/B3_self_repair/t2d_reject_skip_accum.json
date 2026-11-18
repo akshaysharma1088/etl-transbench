@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 4,
+ "task": "t2d_reject_skip_accum",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 4,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    postings = inputs[\"postings\"].copy()\n\n    # Reproduce cursor order: ORDER BY account_id, post_date, post_seq\n    postings_sorted = postings.sort_values(\n        [\"account_id\", \"post_date\", \"post_seq\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    qty = postings_sorted[\"qty\"]\n    price = postings_sorted[\"unit_price\"]\n\n    # Validity predicate matching the TRY block condition\n    valid = qty.notna() & (qty > 0) & price.notna() & (price >= 0)\n\n    postings_sorted[\"valid\"] = valid\n    postings_sorted[\"post_value\"] = qty * price\n\n    # Only valid rows are posted; running total accumulates per account\n    # only over valid rows, in the cursor's row order.\n    valid_rows = postings_sorted[postings_sorted[\"valid\"]].copy()\n    valid_rows[\"running_total\"] = valid_rows.groupby(\"account_id\")[\"post_value\"].cumsum()\n\n    posted_totals = valid_rows[\n        [\"account_id\", \"post_seq\", \"post_date\", \"post_value\", \"running_total\"]\n    ].reset_index(drop=True)\n\n    # Reject counts: every account encountered gets a row, including 0 rejects.\n    reject_counts = (\n        postings_sorted.groupby(\"account_id\", sort=True)[\"valid\"]\n        .apply(lambda s: int((~s).sum()))\n        .reset_index()\n    )\n    reject_counts.columns = [\"account_id\", \"reject_count\"]\n    reject_counts[\"reject_count\"] = reject_counts[\"reject_count\"].astype(int)\n\n    return {\n        \"posted_totals\": posted_totals,\n        \"reject_counts\": reject_counts,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 975,
+   "tokens_out": 1024,
+   "usd": 0.018285,
+   "wall_s": 9.701078414916992
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4899,
+  "tokens_out": 8652,
+  "usd": 0.144477,
+  "wall_s": 88.72546529769897
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

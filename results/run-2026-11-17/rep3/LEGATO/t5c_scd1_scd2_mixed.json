@@ -1,0 +1,51 @@
+{
+ "config": "LEGATO",
+ "rep": 3,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_diff(a, b):\n    \"\"\"NULL-aware inequality: NULL vs NULL -> not different; NULL vs non-NULL -> different.\"\"\"\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    \"\"\"Case-insensitive / flexible lookup of input relation by name.\"\"\"\n    if name in inputs:\n        return inputs[name]\n    lname = name.lower()\n    for k in inputs:\n        if k.lower() == lname:\n            return inputs[k]\n    raise KeyError(name)\n\n\ndef run(inputs: dict) -> dict:\n    dim_acct = _get_input(inputs, \"DIM_ACCT\").copy()\n    stg_acct = _get_input(inputs, \"STG_ACCT\").copy()\n\n    # Ensure expected columns exist\n    dim_cols = [\"acct_id\", \"email\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    for c in dim_cols:\n        if c not in dim_acct.columns:\n            dim_acct[c] = None\n    dim_acct = dim_acct[dim_cols]\n\n    stg_cols = [\"acct_id\", \"email\", \"tier\", \"update_date\"]\n    for c in stg_cols:\n        if c not in stg_acct.columns:\n            stg_acct[c] = None\n    stg_acct = stg_acct[stg_cols]\n\n    # ---- Step 1: Dedup STG_ACCT to latest per acct_id by update_date,\n    #      ties broken by greater (email, tier) lexicographic pair. ----\n    if len(stg_acct) > 0:\n        stg_sorted = stg_acct.sort_values(\n            by=[\"acct_id\", \"update_date\", \"email\", \"tier\"],\n            ascending=[True, True, True, True],\n            na_position=\"last\",\n            kind=\"mergesort\",\n        )\n        stg_dedup = stg_sorted.groupby(\"acct_id\", as_index=False, sort=False).tail(1)\n    else:\n        stg_dedup = stg_acct.copy()\n\n    # ---- Step 2: process staged records against current dim rows ----\n    rows = dim_acct.to_dict(\"records\")\n\n    def get_current_idx(acct_id):\n        for i, r in enumerate(rows):\n            if r[\"acct_id\"] == acct_id and r[\"is_current\"] == 1:\n                return i\n        return None\n\n    for s in stg_dedup.itertuples(index=False):\n        acct_id = s.acct_id\n        s_email = s.email\n        s_tier = s.tier\n        s_update_date = s.update_date\n\n        idx = get_current_idx(acct_id)\n\n        if idx is None:\n            # No current row exists: insert new current version.\n            new_row = {\n                \"acct_id\": acct_id,\n                \"email\": s_email,\n                \"tier\": s_tier,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": None,\n                \"is_current\": 1,\n            }\n            rows.append(new_row)\n        else:\n            c = rows[idx]\n            old_email = c[\"email\"]\n            old_tier = c[\"tier\"]\n\n            tier_changed = _is_diff(old_tier, s_tier)\n\n            if tier_changed:\n                # Expire the current row and insert a new current version.\n                rows[idx][\"eff_end_date\"] = s_update_date\n                rows[idx][\"is_current\"] = 0\n\n                new_row = {\n                    \"acct_id\": acct_id,\n                    \"email\": s_email,\n                    \"tier\": s_tier,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": None,\n                    \"is_current\": 1,\n                }\n                rows.append(new_row)\n\n            email_changed = _is_diff(old_email, s_email)\n\n            if email_changed:\n                # Retro-overwrite email across ALL rows (history + current,\n                # including any just-inserted new version) for this acct_id.\n                for r in rows:\n                    if r[\"acct_id\"] == acct_id:\n                        r[\"email\"] = s_email\n\n    out = pd.DataFrame(rows, columns=dim_cols)\n\n    return {\"dim_acct_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 983,
+   "tokens_out": 3564,
+   "usd": 0.056409,
+   "wall_s": 32.1282160282135
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2654,
+  "tokens_out": 1583,
+  "usd": 0.031707,
+  "wall_s": 11.529827117919922
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

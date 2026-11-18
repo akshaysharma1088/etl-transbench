@@ -1,0 +1,67 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t5e_scd2_late_arriving",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_ACCOUNT\"].copy()\n    stg = inputs[\"STG_ACCOUNT\"].copy()\n\n    # Materialize existing dimension rows as mutable dicts.\n    rows = dim.to_dict(\"records\")\n\n    def plan_eq(a, b):\n        a_na = pd.isna(a)\n        b_na = pd.isna(b)\n        if a_na and b_na:\n            return True\n        if a_na != b_na:\n            return False\n        return a == b\n\n    # Process staged rows in (account_id, update_date) ascending order;\n    # each record must see the effects of previously processed ones.\n    stg_sorted = stg.sort_values(\n        [\"account_id\", \"update_date\"], kind=\"mergesort\"\n    )\n\n    for _, s in stg_sorted.iterrows():\n        acct_id = s[\"account_id\"]\n        plan = s[\"plan\"]\n        upd = s[\"update_date\"]\n\n        acct_rows = [r for r in rows if r[\"account_id\"] == acct_id]\n\n        if not acct_rows:\n            rows.append(\n                {\n                    \"account_id\": acct_id,\n                    \"plan\": plan,\n                    \"eff_start_date\": upd,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            )\n            continue\n\n        # Find the version covering upd: start <= upd < end (end NULL = open).\n        covering = None\n        for r in acct_rows:\n            start = r[\"eff_start_date\"]\n            end = r[\"eff_end_date\"]\n            if start <= upd and (pd.isna(end) or upd < end):\n                covering = r\n                break\n\n        if covering is None:\n            # upd is earlier than the account's earliest version.\n            earliest = min(acct_rows, key=lambda r: r[\"eff_start_date\"])\n            rows.append(\n                {\n                    \"account_id\": acct_id,\n                    \"plan\": plan,\n                    \"eff_start_date\": upd,\n                    \"eff_end_date\": earliest[\"eff_start_date\"],\n                    \"is_current\": 0,\n                }\n            )\n            continue\n\n        if plan_eq(covering[\"plan\"], plan):\n            # Unchanged attribute -> no-op, no new version.\n            continue\n\n        if upd == covering[\"eff_start_date\"]:\n            # Same-day correction: update in place, no new version.\n            covering[\"plan\"] = plan\n            continue\n\n        # Split the covering version at upd.\n        new_end = covering[\"eff_end_date\"]\n        new_is_current = covering[\"is_current\"]\n\n        rows.append(\n            {\n                \"account_id\": acct_id,\n                \"plan\": plan,\n                \"eff_start_date\": upd,\n                \"eff_end_date\": new_end,\n                \"is_current\": new_is_current,\n            }\n        )\n\n        covering[\"eff_end_date\"] = upd\n        covering[\"is_current\"] = 0\n\n    out = pd.DataFrame(\n        rows,\n        columns=[\n            \"account_id\",\n            \"plan\",\n            \"eff_start_date\",\n            \"eff_end_date\",\n            \"is_current\",\n        ],\n    )\n\n    return {\"dim_account_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1165,
+   "tokens_out": 3629,
+   "usd": 0.05793,
+   "wall_s": 29.23691725730896
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4660,
+  "tokens_out": 14509,
+  "usd": 0.231615,
+  "wall_s": 127.91136026382446
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

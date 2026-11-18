@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _attrs_differ(a, b):\n    \"\"\"NULL-aware inequality: NaN vs NaN -> no change, NaN vs value -> change.\"\"\"\n    a_is_na = pd.isna(a)\n    b_is_na = pd.isna(b)\n    if a_is_na and b_is_na:\n        return False\n    if a_is_na or b_is_na:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim_customer = inputs[\"dim_customer\"].copy()\n    stg_customer = inputs[\"stg_customer\"].copy()\n\n    # Ensure proper dtypes for output columns\n    if \"eff_start_date\" in dim_customer.columns:\n        dim_customer[\"eff_start_date\"] = pd.to_datetime(dim_customer[\"eff_start_date\"])\n    if \"eff_end_date\" in dim_customer.columns:\n        dim_customer[\"eff_end_date\"] = pd.to_datetime(dim_customer[\"eff_end_date\"])\n\n    # Step 1: Deduplicate staging to latest record per customer_id by update_date,\n    # tie-break by greater (name, segment) lexicographically (DESC).\n    stg_sorted = stg_customer.sort_values(\n        by=[\"customer_id\", \"update_date\", \"name\", \"segment\"],\n        ascending=[True, False, False, False],\n        kind=\"mergesort\",\n    )\n    stg_dedup = stg_sorted.drop_duplicates(subset=[\"customer_id\"], keep=\"first\").reset_index(drop=True)\n\n    # Working copy of dim_customer as list of dicts (preserve original rows),\n    # we will mutate in place and append new versioned rows.\n    dim_working = dim_customer.copy()\n    dim_working = dim_working.reset_index(drop=True)\n\n    new_rows = []\n\n    for s in stg_dedup.itertuples(index=False):\n        s_customer_id = s.customer_id\n        s_name = s.name\n        s_segment = s.segment\n        s_update_date = s.update_date\n\n        mask_current = (dim_working[\"customer_id\"] == s_customer_id) & (dim_working[\"is_current\"] == 1)\n        matching_idx = dim_working.index[mask_current]\n\n        if len(matching_idx) == 0:\n            # No current row exists -> insert new\n            new_rows.append({\n                \"customer_id\": s_customer_id,\n                \"name\": s_name,\n                \"segment\": s_segment,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n        else:\n            idx = matching_idx[0]\n            c_name = dim_working.at[idx, \"name\"]\n            c_segment = dim_working.at[idx, \"segment\"]\n\n            changed = _attrs_differ(c_name, s_name) or _attrs_differ(c_segment, s_segment)\n\n            if changed:\n                # Expire current row\n                dim_working.at[idx, \"eff_end_date\"] = s_update_date\n                dim_working.at[idx, \"is_current\"] = 0\n\n                # Insert new current version\n                new_rows.append({\n                    \"customer_id\": s_customer_id,\n                    \"name\": s_name,\n                    \"segment\": s_segment,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            # else: no change, do nothing\n\n    if new_rows:\n        new_rows_df = pd.DataFrame(new_rows, columns=[\n            \"customer_id\", \"name\", \"segment\", \"eff_start_date\", \"eff_end_date\", \"is_current\"\n        ])\n        result = pd.concat([dim_working, new_rows_df], ignore_index=True)\n    else:\n        result = dim_working\n\n    # Ensure correct dtypes on output\n    result[\"customer_id\"] = result[\"customer_id\"].astype(\"int64\")\n    result[\"is_current\"] = result[\"is_current\"].astype(\"int64\")\n    result[\"eff_start_date\"] = pd.to_datetime(result[\"eff_start_date\"])\n    result[\"eff_end_date\"] = pd.to_datetime(result[\"eff_end_date\"])\n\n    return {\"dim_customer_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1099,
+   "tokens_out": 2351,
+   "usd": 0.038562,
+   "wall_s": 19.762864112854004,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

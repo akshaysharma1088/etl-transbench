@@ -1,0 +1,17 @@
+{
+ "task": "t7c_crossfield_reference",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    ref_customers = inputs[\"ref_customers\"].copy()\n    ref_skus = inputs[\"ref_skus\"].copy()\n\n    # Reference tables may contain duplicate keys; legacy lookup semantics\n    # effectively resolve to a single matching row per key -- keep the\n    # first occurrence (stable, deterministic) for each key.\n    ref_customers = ref_customers.drop_duplicates(subset=\"customer_id\", keep=\"first\")\n    ref_skus = ref_skus.drop_duplicates(subset=\"sku\", keep=\"first\")\n\n    merged = orders.merge(\n        ref_customers, on=\"customer_id\", how=\"left\", suffixes=(\"\", \"_cust\")\n    )\n    merged = merged.merge(\n        ref_skus, on=\"sku\", how=\"left\", suffixes=(\"\", \"_sku\")\n    )\n\n    def classify(row):\n        # R1: customer unknown\n        if pd.isna(row[\"status\"]):\n            return \"CUST_UNKNOWN\"\n        # R2: customer not active\n        if row[\"status\"] != \"ACTIVE\":\n            return \"CUST_INACTIVE\"\n        # R3: sku unknown\n        if pd.isna(row[\"discontinued\"]):\n            return \"SKU_UNKNOWN\"\n        # R4: sku discontinued\n        if row[\"discontinued\"] == 1:\n            return \"SKU_DISC\"\n        # R5: country whitelist check (trimmed members); empty/NULL = allow all\n        allowed = row[\"allowed_countries\"]\n        if pd.notna(allowed) and str(allowed).strip() != \"\":\n            members = [m.strip() for m in str(allowed).split(\",\")]\n            ship_country = row[\"ship_country\"]\n            if ship_country not in members:\n                return \"CTRY_BLOCKED\"\n        return None\n\n    merged[\"reason_code\"] = merged.apply(classify, axis=1)\n\n    out_cols = [\"order_id\", \"customer_id\", \"sku\", \"qty\", \"ship_country\"]\n\n    orders_clean = (\n        merged.loc[merged[\"reason_code\"].isna(), out_cols]\n        .reset_index(drop=True)\n    )\n\n    orders_rejects = (\n        merged.loc[merged[\"reason_code\"].notna(), out_cols + [\"reason_code\"]]\n        .reset_index(drop=True)\n    )\n\n    return {\n        \"orders_clean\": orders_clean,\n        \"orders_rejects\": orders_rejects,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 837,
+   "tokens_out": 2286,
+   "usd": 0.036801,
+   "wall_s": 19.455078840255737,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

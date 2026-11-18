@@ -1,0 +1,16 @@
+{
+ "task": "t5f_scd2_hash_detect",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_MEMBER'].copy()\n    stg = inputs['STG_MEMBER'].copy()\n\n    # Work with a list of dict records so we can mutate \"in place\" the same\n    # way the legacy procedure updates rows and appends new ones, while\n    # preserving original row order for untouched rows.\n    records = dim.to_dict('records')\n\n    def clean(x):\n        # COALESCE(x, '') then RTRIM (trailing spaces only)\n        if x is None or (isinstance(x, float) and pd.isna(x)) or pd.isna(x):\n            return ''\n        return str(x).rstrip(' ')\n\n    def sig(city, tier):\n        return clean(city) + '|' + clean(tier)\n\n    def is_true_current(flag):\n        try:\n            return int(flag) == 1\n        except (TypeError, ValueError):\n            return False\n\n    def start_key(sd):\n        if sd is None or (isinstance(sd, float) and pd.isna(sd)) or pd.isna(sd):\n            return pd.Timestamp.min\n        try:\n            return pd.Timestamp(sd)\n        except Exception:\n            return pd.Timestamp.min\n\n    # Process staged records in original order (at most one per member_id).\n    for _, s in stg.iterrows():\n        mid = s['member_id']\n\n        candidates = [\n            (idx, rec) for idx, rec in enumerate(records)\n            if rec.get('member_id') == mid and is_true_current(rec.get('is_current'))\n        ]\n\n        if not candidates:\n            c_idx = None\n        else:\n            # Tie-break among multiple \"current\" rows for same member:\n            # prefer the latest eff_start_date, then earliest original\n            # position, to deterministically pick a single \"current\" row.\n            def sort_key(item):\n                i, r = item\n                sk = start_key(r.get('eff_start_date'))\n                return (-sk.value, i)\n\n            candidates.sort(key=sort_key)\n            c_idx = candidates[0][0]\n\n        if c_idx is None:\n            records.append({\n                'member_id': mid,\n                'city': s['city'],\n                'tier': s['tier'],\n                'eff_start_date': s['update_date'],\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            })\n        else:\n            c = records[c_idx]\n            if sig(s['city'], s['tier']) != sig(c.get('city'), c.get('tier')):\n                records[c_idx]['eff_end_date'] = s['update_date']\n                records[c_idx]['is_current'] = 0\n                records.append({\n                    'member_id': mid,\n                    'city': s['city'],\n                    'tier': s['tier'],\n                    'eff_start_date': s['update_date'],\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                })\n            # else: no-op, keep existing stored city/tier exactly as they were\n\n    out_cols = ['member_id', 'city', 'tier', 'eff_start_date', 'eff_end_date', 'is_current']\n    out = pd.DataFrame(records, columns=out_cols)\n\n    return {'dim_member_out': out}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1059,
+   "tokens_out": 3422,
+   "usd": 0.054507,
+   "wall_s": 30.838900566101074
+  }
+ ]
+}

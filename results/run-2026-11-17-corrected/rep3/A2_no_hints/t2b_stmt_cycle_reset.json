@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    ledger = inputs[\"ledger\"].copy()\n\n    # Sort per cursor ORDER BY account_id, entry_date, row_seq\n    ledger = ledger.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        kind=\"mergesort\"  # stable sort to preserve deterministic tie-breaking\n    ).reset_index(drop=True)\n\n    prev_acct = None\n    bal = 0.0\n    cyc = 1\n\n    account_ids = []\n    row_seqs = []\n    entry_dates = []\n    entry_types = []\n    amounts = []\n    cycle_nos = []\n    cycle_balances = []\n\n    for row in ledger.itertuples(index=False):\n        acct = row.account_id\n        rseq = row.row_seq\n        edate = row.entry_date\n        etype = row.entry_type\n        amt = row.amount\n\n        if acct != prev_acct:\n            bal = 0.0\n            cyc = 1\n            prev_acct = acct\n\n        if etype == 'STMT':\n            bal = 0.0\n            cyc = cyc + 1\n\n        amt_coalesced = 0.0 if pd.isna(amt) else amt\n        bal = bal + amt_coalesced\n\n        account_ids.append(acct)\n        row_seqs.append(rseq)\n        entry_dates.append(edate)\n        entry_types.append(etype)\n        amounts.append(amt)\n        cycle_nos.append(cyc)\n        cycle_balances.append(bal)\n\n    result = pd.DataFrame({\n        \"account_id\": account_ids,\n        \"row_seq\": row_seqs,\n        \"entry_date\": entry_dates,\n        \"entry_type\": entry_types,\n        \"amount\": amounts,\n        \"cycle_no\": cycle_nos,\n        \"cycle_balance\": cycle_balances,\n    })\n\n    return {\"cycle_balances\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 790,
+   "tokens_out": 815,
+   "usd": 0.014595,
+   "wall_s": 7.0132811069488525,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

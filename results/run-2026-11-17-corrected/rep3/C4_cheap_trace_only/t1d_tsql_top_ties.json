@@ -1,0 +1,48 @@
+{
+ "config": "C4_cheap_trace_only",
+ "rep": 3,
+ "task": "t1d_tsql_top_ties",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    df = inputs[\"branch_scores\"].copy()\n    \n    # Filter for active = 1\n    df = df[df[\"active\"] == 1].copy()\n    \n    # Sort by score descending to establish ranking\n    df = df.sort_values(by=\"score\", ascending=False, na_position=\"last\").reset_index(drop=True)\n    \n    # Assign rank using method='min' to handle ties (same as SQL ROW_NUMBER for ties)\n    # We need dense_rank or rank that shows ties at same rank\n    df[\"rank\"] = df[\"score\"].rank(method=\"min\", ascending=False)\n    \n    # TOP (5) WITH TIES: include all rows where rank <= 5\n    # This naturally includes tied rows at the cutoff\n    df = df[df[\"rank\"] <= 5].copy()\n    \n    # Create manager_norm: ISNULL(manager, 'UNASSIGNED')\n    df[\"manager_norm\"] = df[\"manager\"].fillna(\"UNASSIGNED\")\n    \n    # Create branch_label: branch_code + '-' + region_code\n    # In T-SQL, '+' propagates NULL: NULL + anything = NULL\n    # So if either operand is NULL, result is NULL\n    df[\"branch_label\"] = df.apply(\n        lambda row: (\n            row[\"branch_code\"] + \"-\" + row[\"region_code\"]\n            if pd.notna(row[\"branch_code\"]) and pd.notna(row[\"region_code\"])\n            else np.nan\n        ),\n        axis=1\n    )\n    \n    # Select final columns in order\n    result = df[[\"branch_id\", \"manager_norm\", \"branch_label\", \"score\"]].copy()\n    \n    # Remove the rank column (it was helper for filtering)\n    result = result.drop(columns=[\"rank\"], errors=\"ignore\")\n    \n    # Reset index for clean output\n    result = result.reset_index(drop=True)\n    \n    return {\"top_branches\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 424,
+   "tokens_out": 522,
+   "usd": 0.003034,
+   "wall_s": 4.198432207107544,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

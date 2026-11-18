@@ -1,0 +1,46 @@
+{
+ "config": "A1_trace_only",
+ "rep": 3,
+ "task": "t3c_router_first_match",
+ "category": "T3",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Router component that directs claims to three output ports based on ordered rules.\n    Rules are evaluated in order; a row goes to the FIRST matching port only.\n    Unmatched rows go to the default port (standard).\n    \"\"\"\n    claims = inputs['claims'].copy()\n    \n    # Initialize output dataframes\n    claims_fast_track = pd.DataFrame(columns=['claim_id', 'amount', 'photos_attached'])\n    claims_high_value = pd.DataFrame(columns=['claim_id', 'amount', 'photos_attached'])\n    claims_manual_review = pd.DataFrame(columns=['claim_id', 'amount', 'photos_attached'])\n    claims_standard = pd.DataFrame(columns=['claim_id', 'amount', 'photos_attached'])\n    \n    # Track which rows have been matched\n    matched = pd.Series(False, index=claims.index)\n    \n    # Rule 1: amount <= 500 and photos_attached == 1 \u2192 fast_track\n    mask1 = (claims['amount'] <= 500) & (claims['photos_attached'] == 1)\n    rule1_rows = claims[mask1 & ~matched]\n    if len(rule1_rows) > 0:\n        claims_fast_track = pd.concat([claims_fast_track, rule1_rows[['claim_id', 'amount', 'photos_attached']]], ignore_index=True)\n        matched = matched | mask1\n    \n    # Rule 2: amount > 10000 \u2192 high_value\n    mask2 = claims['amount'] > 10000\n    rule2_rows = claims[mask2 & ~matched]\n    if len(rule2_rows) > 0:\n        claims_high_value = pd.concat([claims_high_value, rule2_rows[['claim_id', 'amount', 'photos_attached']]], ignore_index=True)\n        matched = matched | mask2\n    \n    # Rule 3: photos_attached == 0 or amount > 500 \u2192 manual_review\n    mask3 = (claims['photos_attached'] == 0) | (claims['amount'] > 500)\n    rule3_rows = claims[mask3 & ~matched]\n    if len(rule3_rows) > 0:\n        claims_manual_review = pd.concat([claims_manual_review, rule3_rows[['claim_id', 'amount', 'photos_attached']]], ignore_index=True)\n        matched = matched | mask3\n    \n    # Unmatched rows go to default port (standard)\n    unmatched_rows = claims[~matched]\n    if len(unmatched_rows) > 0:\n        claims_standard = pd.concat([claims_standard, unmatched_rows[['claim_id', 'amount', 'photos_attached']]], ignore_index=True)\n    \n    return {\n        'claims_fast_track': claims_fast_track,\n        'claims_high_value': claims_high_value,\n        'claims_manual_review': claims_manual_review\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 549,
+   "tokens_out": 776,
+   "usd": 0.004429,
+   "wall_s": 4.32017970085144
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

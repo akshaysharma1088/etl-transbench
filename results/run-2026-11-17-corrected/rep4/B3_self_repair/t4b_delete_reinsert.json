@@ -1,0 +1,48 @@
+{
+ "config": "B3_self_repair",
+ "rep": 4,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Multi-step partition refresh: DELETE whole arriving partitions then INSERT.\n    \n    Step 1: Create staging table with aggregated inbound data\n    Step 2: Delete rows from target_snapshot for partitions in staging\n    Step 3: Insert staging rows into target_snapshot\n    \"\"\"\n    \n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    inbound = inputs[\"inbound\"].copy()\n    \n    # Step 1: Create STG_NEW by filtering qty > 0 and aggregating\n    stg_new = inbound[inbound[\"qty\"] > 0].groupby([\"product_id\", \"batch_date\"], as_index=False).agg({\n        \"qty\": \"sum\",\n        \"unit_cost\": \"max\"\n    }).rename(columns={\"qty\": \"total_qty\", \"unit_cost\": \"max_unit_cost\"})\n    \n    # Step 2: Get distinct batch_dates from STG_NEW\n    arriving_dates = stg_new[\"batch_date\"].unique()\n    \n    # Delete rows from target_snapshot where batch_date is in arriving_dates\n    target_snapshot = target_snapshot[~target_snapshot[\"batch_date\"].isin(arriving_dates)].copy()\n    \n    # Step 3: Insert (concatenate) STG_NEW rows into target_snapshot\n    target_snapshot = pd.concat([target_snapshot, stg_new], ignore_index=True)\n    \n    return {\n        \"target_snapshot\": target_snapshot\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 493,
+   "tokens_out": 395,
+   "usd": 0.002468,
+   "wall_s": 3.4492404460906982,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

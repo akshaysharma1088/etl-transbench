@@ -1,0 +1,51 @@
+{
+ "config": "A1_trace_only",
+ "rep": 4,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_null(v):\n    try:\n        return bool(pd.isna(v))\n    except (TypeError, ValueError):\n        return v is None\n\n\ndef _values_equal(a, b):\n    a_null = _is_null(a)\n    b_null = _is_null(b)\n    if a_null and b_null:\n        return True\n    if a_null != b_null:\n        return False\n    return a == b\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    if name in inputs:\n        return inputs[name]\n    lname = name.lower()\n    uname = name.upper()\n    if lname in inputs:\n        return inputs[lname]\n    if uname in inputs:\n        return inputs[uname]\n    # fallback: case-insensitive search\n    for k, v in inputs.items():\n        if k.lower() == lname:\n            return v\n    raise KeyError(name)\n\n\ndef run(inputs: dict) -> dict:\n    dim_product = _get_input(inputs, \"DIM_PRODUCT\")\n    stg_product = _get_input(inputs, \"STG_PRODUCT\")\n\n    cols = [\"product_id\", \"category\", \"price_band\",\n            \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n\n    rows = []\n    for rec in dim_product.to_dict(\"records\"):\n        rows.append({c: rec.get(c) for c in cols})\n\n    # Map product_id -> index of its current row (is_current == 1)\n    current_map = {}\n    for idx, r in enumerate(rows):\n        if not _is_null(r.get(\"is_current\")) and int(r.get(\"is_current\")) == 1:\n            current_map[r[\"product_id\"]] = idx\n\n    # Stable sort by product_id, update_date ascending (preserves original\n    # order for ties, though staged dates are unique per product per batch)\n    stg_sorted = stg_product.sort_values(\n        by=[\"product_id\", \"update_date\"], kind=\"stable\"\n    )\n\n    for s in stg_sorted.itertuples(index=False):\n        pid = s.product_id\n        s_category = s.category\n        s_price_band = s.price_band\n        s_update_date = s.update_date\n\n        cur_idx = current_map.get(pid)\n\n        if cur_idx is None:\n            new_row = {\n                \"product_id\": pid,\n                \"category\": s_category,\n                \"price_band\": s_price_band,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": None,\n                \"is_current\": 1,\n            }\n            rows.append(new_row)\n            current_map[pid] = len(rows) - 1\n        else:\n            c = rows[cur_idx]\n            changed = (\n                not _values_equal(c.get(\"category\"), s_category)\n                or not _values_equal(c.get(\"price_band\"), s_price_band)\n            )\n            if changed:\n                c[\"eff_end_date\"] = s_update_date\n                c[\"is_current\"] = 0\n\n                new_row = {\n                    \"product_id\": pid,\n                    \"category\": s_category,\n                    \"price_band\": s_price_band,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": None,\n                    \"is_current\": 1,\n                }\n                rows.append(new_row)\n                current_map[pid] = len(rows) - 1\n            # else: no-op, unchanged record does not create a new version\n\n    result = pd.DataFrame(rows, columns=cols)\n\n    return {\"dim_product_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 833,
+   "tokens_out": 2530,
+   "usd": 0.040449,
+   "wall_s": 22.489020824432373
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2162,
+  "tokens_out": 1353,
+  "usd": 0.026781,
+  "wall_s": 10.427269458770752
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

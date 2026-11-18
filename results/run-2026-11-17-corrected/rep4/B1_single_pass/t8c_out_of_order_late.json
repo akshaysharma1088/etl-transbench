@@ -1,0 +1,48 @@
+{
+ "config": "B1_single_pass",
+ "rep": 4,
+ "task": "t8c_out_of_order_late",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    events = inputs[\"cdc_events\"].copy()\n\n    # Build watermark lookup per device\n    watermark = target.set_index(\"device_id\")[\"applied_event_ts\"].to_dict()\n\n    def survives(row):\n        wm = watermark.get(row[\"device_id\"], None)\n        if wm is None:\n            return True\n        return row[\"event_ts\"] > wm\n\n    if len(events) > 0:\n        mask = events.apply(survives, axis=1)\n        surviving = events[mask].copy()\n    else:\n        surviving = events.copy()\n\n    if len(surviving) > 0:\n        surviving = surviving.sort_values(\n            by=[\"event_ts\", \"event_seq\"], ascending=[True, True]\n        )\n        winners = surviving.groupby(\"device_id\", as_index=False).tail(1)\n    else:\n        winners = surviving.copy()\n\n    winners_map = winners.set_index(\"device_id\")[[\"reading\", \"event_ts\"]].to_dict(\"index\")\n\n    result_rows = []\n\n    # Update existing devices\n    for _, row in target.iterrows():\n        dev = row[\"device_id\"]\n        if dev in winners_map:\n            w = winners_map[dev]\n            result_rows.append({\n                \"device_id\": dev,\n                \"reading\": w[\"reading\"],\n                \"applied_event_ts\": w[\"event_ts\"],\n            })\n        else:\n            result_rows.append({\n                \"device_id\": dev,\n                \"reading\": row[\"reading\"],\n                \"applied_event_ts\": row[\"applied_event_ts\"],\n            })\n\n    existing_devices = set(target[\"device_id\"].tolist())\n\n    # New devices\n    for dev, w in winners_map.items():\n        if dev not in existing_devices:\n            result_rows.append({\n                \"device_id\": dev,\n                \"reading\": w[\"reading\"],\n                \"applied_event_ts\": w[\"event_ts\"],\n            })\n\n    new_snapshot = pd.DataFrame(\n        result_rows, columns=[\"device_id\", \"reading\", \"applied_event_ts\"]\n    )\n\n    new_snapshot[\"device_id\"] = new_snapshot[\"device_id\"].astype(\"int64\")\n    new_snapshot[\"reading\"] = new_snapshot[\"reading\"].astype(\"float64\")\n    new_snapshot[\"applied_event_ts\"] = pd.to_datetime(\n        new_snapshot[\"applied_event_ts\"]\n    ).astype(\"datetime64[us]\")\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 867,
+   "tokens_out": 1029,
+   "usd": 0.018036,
+   "wall_s": 8.394287347793579,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

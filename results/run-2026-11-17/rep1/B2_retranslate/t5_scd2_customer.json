@@ -1,0 +1,66 @@
+{
+ "config": "B2_retranslate",
+ "rep": 1,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _attrs_equal(a, b):\n    \"\"\"Return True if two attribute values are considered equal under\n    legacy NULL semantics: NULL vs NULL -> equal, NULL vs non-null -> not\n    equal, non-null vs non-null -> compare by equality.\"\"\"\n    a_is_null = pd.isna(a)\n    b_is_null = pd.isna(b)\n    if a_is_null and b_is_null:\n        return True\n    if a_is_null or b_is_null:\n        return False\n    return a == b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_CUSTOMER\"].copy()\n    stg = inputs[\"STG_CUSTOMER\"].copy()\n\n    dim_cols = list(dim.columns)\n\n    # --- Step 1: Deduplicate STG_CUSTOMER -------------------------------\n    # Keep the latest record per customer_id by update_date; on ties keep\n    # the record with the greater (name, segment) pair lexicographically.\n    if len(stg) > 0:\n        stg_sorted = stg.sort_values(\n            by=[\"customer_id\", \"update_date\", \"name\", \"segment\"],\n            ascending=[True, False, False, False],\n            kind=\"mergesort\",\n        )\n        stg_dedup = stg_sorted.drop_duplicates(subset=\"customer_id\", keep=\"first\")\n    else:\n        stg_dedup = stg.copy()\n\n    # Working copy of dim rows as a list of dicts for easy mutation.\n    dim_records = dim.to_dict(\"records\")\n\n    # Build an index: customer_id -> list of positions in dim_records that\n    # are currently marked is_current == 1 (there should be at most one,\n    # but handle generically).\n    current_index = {}\n    for pos, rec in enumerate(dim_records):\n        if rec.get(\"is_current\") == 1:\n            current_index.setdefault(rec[\"customer_id\"], []).append(pos)\n\n    new_rows = []\n\n    for _, s in stg_dedup.iterrows():\n        cust_id = s[\"customer_id\"]\n        s_name = s[\"name\"]\n        s_segment = s[\"segment\"]\n        update_date = s[\"update_date\"]\n\n        current_positions = current_index.get(cust_id, [])\n\n        if not current_positions:\n            # No current row exists -> insert a new version.\n            new_rows.append(\n                {\n                    \"customer_id\": cust_id,\n                    \"name\": s_name,\n                    \"segment\": s_segment,\n                    \"eff_start_date\": update_date,\n                    \"eff_end_date\": None,\n                    \"is_current\": 1,\n                }\n            )\n        else:\n            # There should be exactly one current row per customer_id,\n            # but process all defensively.\n            changed_any = False\n            for pos in current_positions:\n                c = dim_records[pos]\n                if not _attrs_equal(c.get(\"name\"), s_name) or not _attrs_equal(\n                    c.get(\"segment\"), s_segment\n                ):\n                    # Tracked-attribute change: expire current row.\n                    dim_records[pos][\"eff_end_date\"] = update_date\n                    dim_records[pos][\"is_current\"] = 0\n                    changed_any = True\n\n            if changed_any:\n                new_rows.append(\n                    {\n                        \"customer_id\": cust_id,\n                        \"name\": s_name,\n                        \"segment\": s_segment,\n                        \"eff_start_date\": update_date,\n                        \"eff_end_date\": None,\n                        \"is_current\": 1,\n                    }\n                )\n            # else: no change -> do nothing, no new version created.\n\n    result_df = pd.DataFrame(dim_records, columns=dim_cols)\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=dim_cols)\n        result_df = pd.concat([result_df, new_df], ignore_index=True)\n\n    return {\"dim_customer_out\": result_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1017,
+   "tokens_out": 2848,
+   "usd": 0.045771,
+   "wall_s": 23.597105979919434
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4068,
+  "tokens_out": 11260,
+  "usd": 0.181104,
+  "wall_s": 99.7343111038208
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

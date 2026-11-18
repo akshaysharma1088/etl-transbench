@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs['LEDGER'].copy()\n\n    # Order exactly as the cursor: account_id, entry_date, row_seq\n    df = df.sort_values(\n        ['account_id', 'entry_date', 'row_seq'], kind='mergesort'\n    ).reset_index(drop=True)\n\n    results = []\n    prev_acct = None\n    bal = 0.0\n    cyc = 1\n\n    for row in df.itertuples(index=False):\n        acct = row.account_id\n\n        if acct != prev_acct:\n            bal = 0.0\n            cyc = 1\n            prev_acct = acct\n\n        if row.entry_type == 'STMT':\n            bal = 0.0\n            cyc += 1\n\n        amt = row.amount\n        if pd.isna(amt):\n            amt = 0.0\n        bal = bal + amt\n\n        results.append((\n            row.account_id,\n            row.row_seq,\n            row.entry_date,\n            row.entry_type,\n            row.amount,\n            cyc,\n            bal,\n        ))\n\n    out = pd.DataFrame(\n        results,\n        columns=[\n            'account_id', 'row_seq', 'entry_date', 'entry_type',\n            'amount', 'cycle_no', 'cycle_balance'\n        ],\n    )\n\n    return {'cycle_balances': out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 750,
+   "tokens_out": 1272,
+   "usd": 0.02133,
+   "wall_s": 12.871676683425903
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3972,
+  "tokens_out": 8089,
+  "usd": 0.133251,
+  "wall_s": 85.15370225906372
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

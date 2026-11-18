@@ -1,0 +1,16 @@
+{
+ "task": "t2c_locf_carry_forward",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs['RATE_FEED'].copy()\n\n    # Preserve cursor ordering: ORDER BY account_id, obs_date, obs_seq\n    df = df.sort_values(\n        by=['account_id', 'obs_date', 'obs_seq'],\n        kind='mergesort'\n    ).reset_index(drop=True)\n\n    # Carry-forward last non-null rate within each account only\n    grouped = df.groupby('account_id', sort=False)['rate']\n    carried_rate = grouped.ffill()\n\n    rate_is_null = df['rate'].isna()\n    carried_available = carried_rate.notna()\n\n    was_carried = (rate_is_null & carried_available).astype('int64')\n\n    rate_filled = df['rate'].where(~rate_is_null, carried_rate)\n\n    result = pd.DataFrame({\n        'account_id': df['account_id'],\n        'obs_seq': df['obs_seq'],\n        'obs_date': df['obs_date'],\n        'rate_filled': rate_filled,\n        'was_carried': was_carried,\n    })\n\n    return {'rate_filled': result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 774,
+   "tokens_out": 661,
+   "usd": 0.012237,
+   "wall_s": 7.606861114501953
+  }
+ ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "t8g_partial_update_sentinel",
+  "category": "T8",
+  "tier": 3,
+  "description": "Partial-update merge: NULL means unchanged, a sentinel means set to NULL, and no-op changes do not advance the watermark",
+  "legacy_artifact": "legacy_artifact.txt",
+  "target": "pandas (PySpark in full benchmark)",
+  "set": "confirmation",
+  "replay": {
+    "new_profile": "customer_profile"
+  }
+}

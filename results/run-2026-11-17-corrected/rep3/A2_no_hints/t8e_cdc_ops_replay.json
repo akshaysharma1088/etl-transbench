@@ -1,0 +1,68 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 4,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_state = inputs[\"target_state\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n\n    # 1. Distinct by seq (at-least-once delivery -> apply once)\n    events = cdc_events.drop_duplicates(subset=\"seq\", keep=\"first\")\n\n    # Build lookup of original target_state rows keyed by order_id\n    target_map = {}\n    for _, row in target_state.iterrows():\n        target_map[row[\"order_id\"]] = {\n            \"status\": row[\"status\"],\n            \"amount\": row[\"amount\"],\n            \"last_seq\": row[\"last_seq\"],\n        }\n\n    new_state_rows = []\n    tombstone_rows = []\n    processed_orders = set()\n\n    if not events.empty:\n        groups = events.groupby(\"order_id\")\n    else:\n        groups = []\n\n    for order_id, grp in (groups if not events.empty else []):\n        processed_orders.add(order_id)\n        grp_sorted = grp.sort_values(\"seq\")\n\n        orig = target_map.get(order_id)\n\n        # 2. Replay guard based on ORIGINAL target_state row only\n        if orig is not None:\n            guard_seq = orig[\"last_seq\"]\n            grp_sorted = grp_sorted[grp_sorted[\"seq\"] > guard_seq]\n\n        # current working state for this order\n        if orig is not None:\n            exists = True\n            status = orig[\"status\"]\n            amount = orig[\"amount\"]\n            last_seq = orig[\"last_seq\"]\n        else:\n            exists = False\n            status = None\n            amount = None\n            last_seq = None\n\n        had_row_ever = exists\n        last_eff_op = None\n        last_eff_seq = None\n\n        # 3. Apply remaining events in seq order\n        for _, ev in grp_sorted.iterrows():\n            op = ev[\"op\"]\n            seq = ev[\"seq\"]\n\n            if op in (\"I\", \"U\"):\n                if exists:\n                    status = ev[\"status\"]\n                    if op == \"U\" and pd.isna(ev[\"amount\"]):\n                        # keep existing amount unchanged\n                        pass\n                    else:\n                        amount = ev[\"amount\"]\n                else:\n                    status = ev[\"status\"]\n                    amount = ev[\"amount\"]\n                    exists = True\n                last_seq = seq\n                had_row_ever = True\n                last_eff_op = op\n                last_eff_seq = seq\n            elif op == \"D\":\n                if exists:\n                    exists = False\n                    last_seq = seq\n                    last_eff_op = \"D\"\n                    last_eff_seq = seq\n                # D on a missing order: no-op, no effect at all\n\n        if exists:\n            new_state_rows.append(\n                {\n                    \"order_id\": order_id,\n                    \"status\": status,\n                    \"amount\": amount,\n                    \"last_seq\": last_seq,\n                }\n            )\n\n        if had_row_ever and last_eff_op == \"D\":\n            tombstone_rows.append(\n                {\"order_id\": order_id, \"deleted_seq\": last_eff_seq}\n            )\n\n    # 4. Carry forward orders untouched by any applied event\n    for order_id, info in target_map.items():\n        if order_id not in processed_orders:\n            new_state_rows.append(\n                {\n                    \"order_id\": order_id,\n                    \"status\": info[\"status\"],\n                    \"amount\": info[\"amount\"],\n                    \"last_seq\": info[\"last_seq\"],\n                }\n            )\n\n    new_state_df = pd.DataFrame(\n        new_state_rows, columns=[\"order_id\", \"status\", \"amount\", \"last_seq\"]\n    )\n    tombstones_df = pd.DataFrame(\n        tombstone_rows, columns=[\"order_id\", \"deleted_seq\"]\n    )\n\n    if not new_state_df.empty:\n        new_state_df[\"order_id\"] = new_state_df[\"order_id\"].astype(\"int64\")\n        new_state_df[\"last_seq\"] = new_state_df[\"last_seq\"].astype(\"int64\")\n        new_state_df[\"amount\"] = new_state_df[\"amount\"].astype(\"float64\")\n        new_state_df[\"status\"] = new_state_df[\"status\"].astype(object)\n    else:\n        new_state_df = pd.DataFrame(\n            {\n                \"order_id\": pd.Series(dtype=\"int64\"),\n                \"status\": pd.Series(dtype=object),\n                \"amount\": pd.Series(dtype=\"float64\"),\n                \"last_seq\": pd.Series(dtype=\"int64\"),\n            }\n        )\n\n    if not tombstones_df.empty:\n        tombstones_df[\"order_id\"] = tombstones_df[\"order_id\"].astype(\"int64\")\n        tombstones_df[\"deleted_seq\"] = tombstones_df[\"deleted_seq\"].astype(\"int64\")\n    else:\n        tombstones_df = pd.DataFrame(\n            {\n                \"order_id\": pd.Series(dtype=\"int64\"),\n                \"deleted_seq\": pd.Series(dtype=\"int64\"),\n            }\n        )\n\n    return {\"new_state\": new_state_df, \"tombstones\": tombstones_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1215,
+   "tokens_out": 6894,
+   "usd": 0.107055,
+   "wall_s": 65.20239543914795,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 8524,
+  "tokens_out": 35551,
+  "usd": 0.558837,
+  "wall_s": 373.53516912460327
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

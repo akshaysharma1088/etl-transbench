@@ -1,0 +1,48 @@
+{
+ "config": "C0_cheap_single",
+ "rep": 2,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(by=[\"user_id\", \"event_ts\", \"event_id\"]).reset_index(drop=True)\n    \n    # Extract the local date (calendar date) from event_ts\n    events[\"event_date\"] = events[\"event_ts\"].dt.date\n    \n    # Initialize session tracking columns\n    events[\"session_num\"] = np.nan\n    events[\"is_new_session\"] = False\n    \n    session_counter = 0\n    \n    for i in range(len(events)):\n        if i == 0:\n            # First event is always a new session\n            events.at[i, \"is_new_session\"] = True\n            session_counter = 1\n            events.at[i, \"session_num\"] = session_counter\n        else:\n            current_user = events.at[i, \"user_id\"]\n            prev_user = events.at[i - 1, \"user_id\"]\n            \n            if current_user != prev_user:\n                # Different user, always start a new session\n                events.at[i, \"is_new_session\"] = True\n                session_counter = 1\n                events.at[i, \"session_num\"] = session_counter\n            else:\n                # Same user, check gap and date\n                current_ts = events.at[i, \"event_ts\"]\n                prev_ts = events.at[i - 1, \"event_ts\"]\n                current_date = events.at[i, \"event_date\"]\n                prev_date = events.at[i - 1, \"event_date\"]\n                \n                # Calculate gap in minutes\n                gap_minutes = (current_ts - prev_ts).total_seconds() / 60.0\n                \n                # New session if: gap > 45 minutes OR different calendar date\n                if gap_minutes > 45 or current_date != prev_date:\n                    events.at[i, \"is_new_session\"] = True\n                    session_counter += 1\n                    events.at[i, \"session_num\"] = session_counter\n                else:\n                    events.at[i, \"is_new_session\"] = False\n                    events.at[i, \"session_num\"] = session_counter\n    \n    # Forward-fill session_num for all events within a user\n    events[\"session_num\"] = events.groupby(\"user_id\")[\"session_num\"].fillna(method=\"ffill\")\n    \n    # Group by user_id and session_num to aggregate\n    user_sessions = events.groupby([\"user_id\", \"session_num\"], as_index=False).agg({\n        \"event_date\": \"first\",  # All events in a session have the same date\n        \"event_ts\": [\"min\", \"max\"],  # session_start and session_end\n        \"event_id\": \"count\"  # event_count\n    })\n    \n    # Flatten column names\n    user_sessions.columns = [\"user_id\", \"session_num\", \"session_date\", \"session_start\", \"session_end\", \"event_count\"]\n    \n    # Ensure correct data types\n    user_sessions[\"user_id\"] = user_sessions[\"user_id\"].astype(\"int64\")\n    user_sessions[\"session_num\"] = user_sessions[\"session_num\"].astype(\"int64\")\n    user_sessions[\"session_date\"] = pd.to_datetime(user_sessions[\"session_date\"]).dt.date\n    user_sessions[\"event_count\"] = user_sessions[\"event_count\"].astype(\"int64\")\n    \n    return {\"user_sessions\": user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 938,
+   "usd": 0.00507,
+   "wall_s": 7.779923439025879,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

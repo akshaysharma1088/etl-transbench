@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 0,
+ "task": "t8g_partial_update_sentinel",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _norm(v):\n    \"\"\"Normalize a value for NULL-safe comparison: NaN/None -> None.\"\"\"\n    if v is None:\n        return None\n    try:\n        if pd.isna(v):\n            return None\n    except (TypeError, ValueError):\n        pass\n    return v\n\n\ndef _norm_eq(a, b):\n    return _norm(a) == _norm(b)\n\n\ndef _apply_field(current, change_val, is_email=False):\n    \"\"\"Apply the change-field rule: NaN -> unchanged, '<<NULL>>' -> NULL,\n    else -> new value (email is lower/trim).\"\"\"\n    if pd.isna(change_val):\n        return current\n    if change_val == '<<NULL>>':\n        return np.nan\n    if is_email:\n        return change_val.strip().lower()\n    return change_val\n\n\ndef _init_field(change_val, is_email=False):\n    \"\"\"Field value when creating a brand-new customer from a change.\"\"\"\n    if pd.isna(change_val):\n        return np.nan\n    if change_val == '<<NULL>>':\n        return np.nan\n    if is_email:\n        return change_val.strip().lower()\n    return change_val\n\n\ndef run(inputs):\n    customer_profile = inputs[\"customer_profile\"]\n    profile_changes = inputs[\"profile_changes\"]\n\n    profiles = {}\n    for row in customer_profile.itertuples(index=False):\n        profiles[row.customer_id] = {\n            'email': row.email,\n            'phone': row.phone,\n            'tier': row.tier,\n            'updated_seq': row.updated_seq,\n        }\n\n    # Deterministic ordering: process changes by customer_id, then by change_seq.\n    changes_sorted = profile_changes.sort_values(['customer_id', 'change_seq'],\n                                                  kind='mergesort')\n\n    for cid, group in changes_sorted.groupby('customer_id', sort=False):\n        for chg in group.itertuples(index=False):\n            change_seq = chg.change_seq\n            email_c = chg.email\n            phone_c = chg.phone\n            tier_c = chg.tier\n\n            if cid not in profiles:\n                # Create a new customer row from this change.\n                profiles[cid] = {\n                    'email': _init_field(email_c, is_email=True),\n                    'phone': _init_field(phone_c),\n                    'tier': _init_field(tier_c),\n                    'updated_seq': change_seq,\n                }\n                continue\n\n            p = profiles[cid]\n\n            if change_seq <= p['updated_seq']:\n                # Stale change, skip.\n                continue\n\n            new_email = _apply_field(p['email'], email_c, is_email=True)\n            new_phone = _apply_field(p['phone'], phone_c)\n            new_tier = _apply_field(p['tier'], tier_c)\n\n            unchanged = (\n                _norm_eq(new_email, p['email']) and\n                _norm_eq(new_phone, p['phone']) and\n                _norm_eq(new_tier, p['tier'])\n            )\n\n            if unchanged:\n                # No-op: watermark does NOT advance, values stay the same.\n                continue\n\n            p['email'] = new_email\n            p['phone'] = new_phone\n            p['tier'] = new_tier\n            p['updated_seq'] = change_seq\n\n    if profiles:\n        out_rows = [\n            {\n                'customer_id': cid,\n                'email': vals['email'],\n                'phone': vals['phone'],\n                'tier': vals['tier'],\n                'updated_seq': vals['updated_seq'],\n            }\n            for cid, vals in profiles.items()\n        ]\n        new_profile = pd.DataFrame(\n            out_rows,\n            columns=['customer_id', 'email', 'phone', 'tier', 'updated_seq']\n        )\n        new_profile = new_profile.sort_values('customer_id', kind='mergesort').reset_index(drop=True)\n        new_profile['customer_id'] = new_profile['customer_id'].astype('int64')\n        new_profile['updated_seq'] = new_profile['updated_seq'].astype('int64')\n    else:\n        new_profile = pd.DataFrame(\n            columns=['customer_id', 'email', 'phone', 'tier', 'updated_seq']\n        )\n        new_profile['customer_id'] = new_profile['customer_id'].astype('int64')\n        new_profile['updated_seq'] = new_profile['updated_seq'].astype('int64')\n\n    return {'new_profile': new_profile}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1049,
+   "tokens_out": 3836,
+   "usd": 0.060687,
+   "wall_s": 34.17747616767883,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

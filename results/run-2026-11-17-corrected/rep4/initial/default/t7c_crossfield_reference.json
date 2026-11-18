@@ -1,0 +1,17 @@
+{
+ "task": "t7c_crossfield_reference",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    ref_customers = inputs[\"ref_customers\"].copy()\n    ref_skus = inputs[\"ref_skus\"].copy()\n\n    # De-duplicate reference tables on their natural keys, keeping first occurrence\n    ref_customers = ref_customers.drop_duplicates(subset=\"customer_id\", keep=\"first\")\n    ref_skus = ref_skus.drop_duplicates(subset=\"sku\", keep=\"first\")\n\n    cust_status_map = ref_customers.set_index(\"customer_id\")[\"status\"]\n    sku_disc_map = ref_skus.set_index(\"sku\")[\"discontinued\"]\n    sku_countries_map = ref_skus.set_index(\"sku\")[\"allowed_countries\"]\n\n    def classify(row):\n        cid = row[\"customer_id\"]\n        if cid not in cust_status_map.index:\n            return \"CUST_UNKNOWN\"\n\n        status = cust_status_map.loc[cid]\n        if status != \"ACTIVE\":\n            return \"CUST_INACTIVE\"\n\n        sku = row[\"sku\"]\n        if sku not in sku_disc_map.index:\n            return \"SKU_UNKNOWN\"\n\n        discontinued = sku_disc_map.loc[sku]\n        if pd.notna(discontinued) and int(discontinued) == 1:\n            return \"SKU_DISC\"\n\n        allowed_raw = sku_countries_map.loc[sku]\n        if pd.isna(allowed_raw):\n            allowed_raw = \"\"\n        allowed_list = [c.strip() for c in str(allowed_raw).split(\",\") if c.strip() != \"\"]\n\n        if len(allowed_list) > 0:\n            ship_country = row[\"ship_country\"]\n            if ship_country not in allowed_list:\n                return \"CTRY_BLOCKED\"\n\n        return None\n\n    orders[\"reason_code\"] = orders.apply(classify, axis=1)\n\n    clean_mask = orders[\"reason_code\"].isna()\n    orders_clean = orders[clean_mask].drop(columns=[\"reason_code\"]).reset_index(drop=True)\n    orders_rejects = orders[~clean_mask].reset_index(drop=True)\n\n    return {\n        \"orders_clean\": orders_clean,\n        \"orders_rejects\": orders_rejects,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 837,
+   "tokens_out": 2225,
+   "usd": 0.035886,
+   "wall_s": 18.56286311149597,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

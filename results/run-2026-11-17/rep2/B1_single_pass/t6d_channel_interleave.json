@@ -1,0 +1,46 @@
+{
+ "config": "B1_single_pass",
+ "rep": 2,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom typing import Optional\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize events per (user_id, channel) independently.\n    A 25-minute gap within the same (user_id, channel) pair creates a new session.\n    Sessions from different channels do not interact.\n    \"\"\"\n    \n    events = inputs['events'].copy()\n    \n    # Ensure necessary columns exist\n    required_cols = ['user_id', 'channel', 'event_ts', 'event_id']\n    for col in required_cols:\n        if col not in events.columns:\n            raise ValueError(f\"Missing required column: {col}\")\n    \n    # Convert event_ts to datetime if not already\n    if not pd.api.types.is_datetime64_any_dtype(events['event_ts']):\n        events['event_ts'] = pd.to_datetime(events['event_ts'])\n    \n    # Sort by (user_id, channel, event_ts, event_id) for deterministic ordering\n    events = events.sort_values(\n        by=['user_id', 'channel', 'event_ts', 'event_id'],\n        na_position='last'\n    ).reset_index(drop=True)\n    \n    # Group by (user_id, channel)\n    grouped = events.groupby(['user_id', 'channel'], sort=False)\n    \n    session_records = []\n    \n    for (user_id, channel), group in grouped:\n        group = group.reset_index(drop=True)\n        \n        # Initialize session tracking\n        session_num = 1\n        session_start = group.iloc[0]['event_ts']\n        session_end = group.iloc[0]['event_ts']\n        event_count = 1\n        \n        # 25 minutes in timedelta\n        gap_threshold = pd.Timedelta(minutes=25)\n        \n        for i in range(1, len(group)):\n            current_ts = group.iloc[i]['event_ts']\n            prev_ts = group.iloc[i-1]['event_ts']\n            \n            # Calculate gap from previous event\n            time_gap = current_ts - prev_ts\n            \n            if time_gap >= gap_threshold:\n                # Gap detected: close current session and start new one\n                session_records.append({\n                    'user_id': user_id,\n                    'channel': channel,\n                    'session_num': session_num,\n                    'session_start': session_start,\n                    'session_end': session_end,\n                    'event_count': event_count\n                })\n                \n                # Start new session\n                session_num += 1\n                session_start = current_ts\n                session_start_ts = current_ts\n                event_count = 1\n            else:\n                # No gap: continue current session\n                event_count += 1\n            \n            session_end = current_ts\n        \n        # Close the last session\n        session_records.append({\n            'user_id': user_id,\n            'channel': channel,\n            'session_num': session_num,\n            'session_start': session_start,\n            'session_end': session_end,\n            'event_count': event_count\n        })\n    \n    # Create output dataframe\n    channel_sessions = pd.DataFrame(session_records)\n    \n    # Ensure columns are in the right order\n    channel_sessions = channel_sessions[[\n        'user_id', 'channel', 'session_num', 'session_start', 'session_end', 'event_count'\n    ]]\n    \n    return {\n        'channel_sessions': channel_sessions\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 299,
+   "tokens_out": 913,
+   "usd": 0.004864,
+   "wall_s": 5.494511842727661
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

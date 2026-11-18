@@ -1,0 +1,66 @@
+{
+ "config": "LEGATO",
+ "rep": 1,
+ "task": "t4c_stale_snapshot",
+ "category": "T4",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict) -> dict:\n    score_feed = inputs['score_feed'].copy()\n    score_snapshot = inputs['score_snapshot'].copy()\n\n    # Step 1: STG_CURR = SELECT account_id, AVG(score) AS avg_score\n    #         FROM score_feed GROUP BY account_id\n    # SQL GROUP BY treats NULL as its own group, and AVG ignores NULLs.\n    stg_curr = (\n        score_feed.groupby('account_id', dropna=False)['score']\n        .mean()\n        .reset_index()\n        .rename(columns={'score': 'avg_score'})\n    )\n\n    # Step 2: DELTA computed against the OLD (pre-update) snapshot.\n    # SQL LEFT JOIN: NULL account_id never matches NULL account_id.\n    curr_null_mask = stg_curr['account_id'].isna()\n    curr_notnull = stg_curr[~curr_null_mask].copy()\n    curr_null = stg_curr[curr_null_mask].copy()\n\n    snap_notnull = score_snapshot[~score_snapshot['account_id'].isna()].copy()\n\n    merged_notnull = curr_notnull.merge(\n        snap_notnull[['account_id', 'avg_score']].rename(columns={'avg_score': 'prev_avg_score'}),\n        on='account_id',\n        how='left'\n    )\n\n    # NULL-keyed rows never match in SQL, so prev_avg_score is always NaN for them.\n    if not curr_null.empty:\n        merged_null = curr_null.copy()\n        merged_null['prev_avg_score'] = np.nan\n        merged = pd.concat([merged_notnull, merged_null], ignore_index=True)\n    else:\n        merged = merged_notnull\n\n    merged['score_delta'] = merged['avg_score'] - merged['prev_avg_score'].fillna(0)\n\n    delta = merged[['account_id', 'score_delta']].copy()\n\n    # Step 3: Replace SCORE_SNAPSHOT with STG_CURR (post-update state)\n    new_score_snapshot = stg_curr[['account_id', 'avg_score']].copy()\n\n    return {\n        'delta': delta,\n        'score_snapshot': new_score_snapshot\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 421,
+   "tokens_out": 676,
+   "usd": 0.003801,
+   "wall_s": 4.434579372406006
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5857,
+  "tokens_out": 7766,
+  "usd": 0.13406099999999999,
+  "wall_s": 72.6654736995697
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

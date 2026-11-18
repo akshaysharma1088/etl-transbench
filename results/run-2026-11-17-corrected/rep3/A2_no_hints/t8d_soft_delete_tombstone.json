@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t8d_soft_delete_tombstone",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import timedelta\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_snapshot = inputs[\"target_snapshot\"]\n    cdc_events = inputs[\"cdc_events\"]\n    watermark = inputs[\"watermark\"]\n\n    # Determine watermark high_ts\n    if len(watermark) == 0:\n        high_ts = pd.Timestamp.min\n    else:\n        high_ts = watermark[\"high_ts\"].iloc[0]\n\n    # Initialize state from target_snapshot (last occurrence wins for duplicate user_id)\n    state = {}\n    for row in target_snapshot.itertuples(index=False):\n        state[row.user_id] = {\n            \"email\": row.email,\n            \"status\": row.status,\n            \"status_ts\": row.status_ts,\n        }\n\n    # Filter events strictly after watermark\n    filtered = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n\n    # Sort per user, sequentially by (event_ts, event_seq)\n    filtered = filtered.sort_values(\n        by=[\"user_id\", \"event_ts\", \"event_seq\"],\n        kind=\"mergesort\"\n    )\n\n    seven_days = timedelta(days=7)\n\n    for row in filtered.itertuples(index=False):\n        uid = row.user_id\n        op = row.op\n        ts = row.event_ts\n        email = row.email\n\n        if uid not in state:\n            if op == \"D\":\n                state[uid] = {\n                    \"email\": email,\n                    \"status\": \"DELETED\",\n                    \"status_ts\": ts,\n                }\n            else:  # 'U'\n                state[uid] = {\n                    \"email\": email,\n                    \"status\": \"ACTIVE\",\n                    \"status_ts\": ts,\n                }\n        else:\n            cur = state[uid]\n            if op == \"D\":\n                cur[\"status\"] = \"DELETED\"\n                cur[\"status_ts\"] = ts\n                # email preserved as of deletion -> no change\n            else:  # 'U'\n                if cur[\"status\"] == \"DELETED\":\n                    if (ts - cur[\"status_ts\"]) > seven_days:\n                        cur[\"email\"] = email\n                        cur[\"status\"] = \"ACTIVE\"\n                        cur[\"status_ts\"] = ts\n                    # else: discard update (sticky deletion window)\n                else:\n                    cur[\"email\"] = email\n                    cur[\"status\"] = \"ACTIVE\"\n                    cur[\"status_ts\"] = ts\n\n    if state:\n        out_rows = [\n            {\n                \"user_id\": uid,\n                \"email\": v[\"email\"],\n                \"status\": v[\"status\"],\n                \"status_ts\": v[\"status_ts\"],\n            }\n            for uid, v in state.items()\n        ]\n        new_snapshot = pd.DataFrame(\n            out_rows, columns=[\"user_id\", \"email\", \"status\", \"status_ts\"]\n        )\n    else:\n        new_snapshot = pd.DataFrame(\n            columns=[\"user_id\", \"email\", \"status\", \"status_ts\"]\n        )\n\n    new_snapshot[\"user_id\"] = new_snapshot[\"user_id\"].astype(\"int64\")\n    new_snapshot[\"email\"] = new_snapshot[\"email\"].astype(\"object\")\n    new_snapshot[\"status\"] = new_snapshot[\"status\"].astype(\"object\")\n    new_snapshot[\"status_ts\"] = pd.to_datetime(new_snapshot[\"status_ts\"])\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 824,
+   "tokens_out": 2355,
+   "usd": 0.037797,
+   "wall_s": 19.286364316940308,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

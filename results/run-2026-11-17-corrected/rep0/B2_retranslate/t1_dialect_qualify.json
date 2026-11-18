@@ -1,0 +1,53 @@
+{
+ "config": "B2_retranslate",
+ "rep": 0,
+ "task": "t1_dialect_qualify",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"acct_txn\"].copy()\n\n    # WHERE amount > 100  (NaN comparisons naturally evaluate to False)\n    df = df[df[\"amount\"] > 100].copy()\n\n    # CASE WHEN amount >= 1000 THEN 'JUMBO'\n    #      WHEN amount >= 500  THEN 'LARGE'\n    #      ELSE 'STANDARD' END AS size_band\n    conditions = [\n        df[\"amount\"] >= 1000,\n        df[\"amount\"] >= 500,\n    ]\n    choices = [\"JUMBO\", \"LARGE\"]\n    df[\"size_band\"] = np.select(conditions, choices, default=\"STANDARD\")\n\n    # Teradata-style NULL ordering: NULLs are treated as the LARGEST value.\n    # For DESC ordering, the largest values come first -> NULLs come first.\n    # pandas' na_position controls NaN placement independent of ascending flag,\n    # so na_position='first' reproduces Teradata DESC NULL-first semantics.\n    df = df.sort_values(\n        by=[\"account_id\", \"txn_ts\", \"txn_id\"],\n        ascending=[True, False, False],\n        na_position=\"first\",\n        kind=\"mergesort\",  # stable sort for deterministic tie-breaking\n    )\n\n    # QUALIFY ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC) = 1\n    df[\"_rn\"] = df.groupby(\"account_id\", sort=False, dropna=False).cumcount() + 1\n    result = df[df[\"_rn\"] == 1].copy()\n\n    result = result[\n        [\"account_id\", \"txn_id\", \"txn_ts\", \"amount\", \"channel\", \"size_band\"]\n    ].reset_index(drop=True)\n\n    # Enforce expected dtypes\n    result[\"account_id\"] = result[\"account_id\"].astype(\"Int64\")\n    result[\"txn_id\"] = result[\"txn_id\"].astype(\"Int64\")\n    result[\"txn_ts\"] = pd.to_datetime(result[\"txn_ts\"])\n    result[\"amount\"] = result[\"amount\"].astype(\"float64\")\n    result[\"channel\"] = result[\"channel\"].astype(\"str\")\n    result[\"size_band\"] = result[\"size_band\"].astype(\"str\")\n\n    return {\"latest_high_value_txn\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 432,
+   "tokens_out": 749,
+   "usd": 0.004177,
+   "wall_s": 6.869381666183472,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 645,
+  "tokens_out": 1933,
+  "usd": 0.03093,
+  "wall_s": 18.488844633102417
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

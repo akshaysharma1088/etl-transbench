@@ -1,0 +1,48 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 0,
+ "task": "t8g_partial_update_sentinel",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    customer_profile = inputs[\"customer_profile\"].copy()\n    profile_changes = inputs[\"profile_changes\"].copy()\n    \n    # Ensure proper types\n    customer_profile[\"customer_id\"] = customer_profile[\"customer_id\"].astype(\"int64\")\n    customer_profile[\"updated_seq\"] = customer_profile[\"updated_seq\"].astype(\"int64\")\n    profile_changes[\"change_seq\"] = profile_changes[\"change_seq\"].astype(\"int64\")\n    profile_changes[\"customer_id\"] = profile_changes[\"customer_id\"].astype(\"int64\")\n    \n    # Create a dictionary to store the current state of each customer\n    # Key: customer_id, Value: {email, phone, tier, updated_seq}\n    customer_state = {}\n    \n    for _, row in customer_profile.iterrows():\n        cid = row[\"customer_id\"]\n        customer_state[cid] = {\n            \"email\": row[\"email\"],\n            \"phone\": row[\"phone\"],\n            \"tier\": row[\"tier\"],\n            \"updated_seq\": row[\"updated_seq\"],\n        }\n    \n    # Sort changes by customer_id and change_seq for deterministic processing\n    profile_changes = profile_changes.sort_values(\n        by=[\"customer_id\", \"change_seq\"], ascending=[True, True]\n    ).reset_index(drop=True)\n    \n    # Process each change\n    for _, change in profile_changes.iterrows():\n        cid = change[\"customer_id\"]\n        change_seq = change[\"change_seq\"]\n        \n        # Determine if customer exists\n        if cid in customer_state:\n            existing = customer_state[cid]\n            # Skip if change_seq <= updated_seq\n            if change_seq <= existing[\"updated_seq\"]:\n                continue\n            \n            # Store old values for comparison\n            old_email = existing[\"email\"]\n            old_phone = existing[\"phone\"]\n            old_tier = existing[\"tier\"]\n            \n            # Apply the change using the three field rules\n            new_email = old_email\n            new_phone = old_phone\n            new_tier = old_tier\n            \n            # Process email\n            change_email = change[\"email\"]\n            if pd.notna(change_email) and change_email != \"\":\n                if change_email == \"<<NULL>>\":\n                    new_email = None\n                else:\n                    new_email = change_email.lower().strip()\n            \n            # Process phone\n            change_phone = change[\"phone\"]\n            if pd.notna(change_phone) and change_phone != \"\":\n                if change_phone == \"<<NULL>>\":\n                    new_phone = None\n                else:\n                    new_phone = change_phone\n            \n            # Process tier\n            change_tier = change[\"tier\"]\n            if pd.notna(change_tier) and change_tier != \"\":\n                if change_tier == \"<<NULL>>\":\n                    new_tier = None\n                else:\n                    new_tier = change_tier\n            \n            # Check if the row is identical (NULL-safe comparison)\n            is_identical = (\n                (old_email == new_email or (pd.isna(old_email) and pd.isna(new_email)))\n                and (old_phone == new_phone or (pd.isna(old_phone) and pd.isna(new_phone)))\n                and (old_tier == new_tier or (pd.isna(old_tier) and pd.isna(new_tier)))\n            )\n            \n            if not is_identical:\n                # Update the state\n                existing[\"email\"] = new_email\n                existing[\"phone\"] = new_phone\n                existing[\"tier\"] = new_tier\n                existing[\"updated_seq\"] = change_seq\n        else:\n            # Customer does not exist; create the row\n            new_email = None\n            new_phone = None\n            new_tier = None\n            \n            # Process email\n            change_email = change[\"email\"]\n            if pd.notna(change_email) and change_email != \"\":\n                if change_email != \"<<NULL>>\":\n                    new_email = change_email.lower().strip()\n            \n            # Process phone\n            change_phone = change[\"phone\"]\n            if pd.notna(change_phone) and change_phone != \"\":\n                if change_phone != \"<<NULL>>\":\n                    new_phone = change_phone\n            \n            # Process tier\n            change_tier = change[\"tier\"]\n            if pd.notna(change_tier) and change_tier != \"\":\n                if change_tier != \"<<NULL>>\":\n                    new_tier = change_tier\n            \n            customer_state[cid] = {\n                \"email\": new_email,\n                \"phone\": new_phone,\n                \"tier\": new_tier,\n                \"updated_seq\": change_seq,\n            }\n    \n    # Build the output DataFrame\n    result_data = []\n    for cid in sorted(customer_state.keys()):\n        state = customer_state[cid]\n        result_data.append({\n            \"customer_id\": cid,\n            \"email\": state[\"email\"],\n            \"phone\": state[\"phone\"],\n            \"tier\": state[\"tier\"],\n            \"updated_seq\": state[\"updated_seq\"],\n        })\n    \n    new_profile = pd.DataFrame(result_data)\n    \n    # Ensure proper types in output\n    if len(new_profile) > 0:\n        new_profile[\"customer_id\"] = new_profile[\"customer_id\"].astype(\"int64\")\n        new_profile[\"updated_seq\"] = new_profile[\"updated_seq\"].astype(\"int64\")\n    else:\n        new_profile = pd.DataFrame(\n            columns=[\"customer_id\", \"email\", \"phone\", \"tier\", \"updated_seq\"]\n        )\n        new_profile[\"customer_id\"] = new_profile[\"customer_id\"].astype(\"int64\")\n        new_profile[\"updated_seq\"] = new_profile[\"updated_seq\"].astype(\"int64\")\n    \n    return {\"new_profile\": new_profile}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 717,
+   "tokens_out": 1511,
+   "usd": 0.008272,
+   "wall_s": 8.359370231628418,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

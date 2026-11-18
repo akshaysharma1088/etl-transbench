@@ -1,0 +1,48 @@
+{
+ "config": "B1_single_pass",
+ "rep": 1,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    dim_customer = inputs[\"dim_customer\"].copy()\n    stg_customer = inputs[\"stg_customer\"].copy()\n    fact_txn = inputs[\"fact_txn\"].copy()\n\n    # ---------- STEP 1: SCD Type 2 load ----------\n    # Determine max existing surrogate key (before load)\n    if len(dim_customer) > 0:\n        max_sk = dim_customer[\"customer_sk\"].max()\n    else:\n        max_sk = 0\n\n    # Current rows lookup: assume at most one current row per customer_id\n    current_rows = dim_customer[dim_customer[\"is_current\"] == 1].copy()\n    current_lookup = current_rows.set_index(\"customer_id\")[[\"segment\"]].to_dict(\"index\")\n\n    def seg_differs(new_seg, old_exists, old_seg):\n        if not old_exists:\n            return True\n        new_is_null = pd.isna(new_seg)\n        old_is_null = pd.isna(old_seg)\n        if new_is_null and old_is_null:\n            return False\n        if new_is_null != old_is_null:\n            return True\n        return new_seg != old_seg\n\n    creates = []\n    for _, row in stg_customer.iterrows():\n        cid = row[\"customer_id\"]\n        new_seg = row[\"segment\"]\n        old_exists = cid in current_lookup\n        old_seg = current_lookup[cid][\"segment\"] if old_exists else None\n        if seg_differs(new_seg, old_exists, old_seg):\n            creates.append({\n                \"customer_id\": cid,\n                \"segment\": new_seg,\n                \"update_date\": row[\"update_date\"],\n                \"had_current\": old_exists,\n            })\n\n    creates_df = pd.DataFrame(creates)\n\n    df = dim_customer.copy()\n\n    if len(creates_df) > 0:\n        # Sort by customer_id for ROW_NUMBER() OVER (ORDER BY customer_id)\n        creates_df = creates_df.sort_values(\n            by=\"customer_id\", kind=\"mergesort\"\n        ).reset_index(drop=True)\n        creates_df[\"rownum\"] = np.arange(1, len(creates_df) + 1)\n        creates_df[\"customer_sk\"] = max_sk + creates_df[\"rownum\"]\n\n        # Expire old current rows for customers that had a current row\n        to_expire = creates_df[creates_df[\"had_current\"]]\n        if len(to_expire) > 0:\n            expire_map = to_expire.set_index(\"customer_id\")[\"update_date\"].to_dict()\n            is_cur_mask = df[\"is_current\"] == 1\n            for cid, upd_date in expire_map.items():\n                mask = is_cur_mask & (df[\"customer_id\"] == cid)\n                df.loc[mask, \"eff_end_date\"] = upd_date\n                df.loc[mask, \"is_current\"] = 0\n\n        # Build new rows\n        new_rows = pd.DataFrame({\n            \"customer_sk\": creates_df[\"customer_sk\"].astype(\"int64\"),\n            \"customer_id\": creates_df[\"customer_id\"].astype(\"int64\"),\n            \"segment\": creates_df[\"segment\"],\n            \"eff_start_date\": creates_df[\"update_date\"],\n            \"eff_end_date\": pd.NaT,\n            \"is_current\": 1,\n        })\n\n        df = pd.concat([df, new_rows], ignore_index=True, sort=False)\n\n    # Ensure correct dtypes\n    df[\"customer_sk\"] = df[\"customer_sk\"].astype(\"int64\")\n    df[\"customer_id\"] = df[\"customer_id\"].astype(\"int64\")\n    df[\"is_current\"] = df[\"is_current\"].astype(\"int64\")\n    df[\"eff_start_date\"] = pd.to_datetime(df[\"eff_start_date\"])\n    df[\"eff_end_date\"] = pd.to_datetime(df[\"eff_end_date\"])\n\n    dim_customer_out = df.reset_index(drop=True)\n\n    # ---------- STEP 2: Key facts against updated dimension ----------\n    fact = fact_txn.copy()\n    fact[\"_fact_idx\"] = np.arange(len(fact))\n\n    merged = fact.merge(\n        dim_customer_out[\n            [\"customer_sk\", \"customer_id\", \"eff_start_date\", \"eff_end_date\"]\n        ],\n        on=\"customer_id\",\n        how=\"left\",\n    )\n\n    start_ok = merged[\"eff_start_date\"] <= merged[\"txn_date\"]\n    end_ok = merged[\"eff_end_date\"].isna() | (merged[\"txn_date\"] < merged[\"eff_end_date\"])\n    valid = start_ok & end_ok & merged[\"customer_sk\"].notna()\n\n    merged[\"_valid_sk\"] = np.where(valid, merged[\"customer_sk\"], np.nan)\n\n    # For each fact row, pick a matching sk if any valid match exists\n    result_sk = (\n        merged[merged[\"_valid_sk\"].notna()]\n        .drop_duplicates(subset=\"_fact_idx\", keep=\"first\")\n        .set_index(\"_fact_idx\")[\"_valid_sk\"]\n    )\n\n    fact[\"customer_sk\"] = fact[\"_fact_idx\"].map(result_sk)\n    fact[\"customer_sk\"] = fact[\"customer_sk\"].fillna(-1).astype(\"int64\")\n\n    fact_txn_keyed = fact[[\"txn_id\", \"customer_sk\", \"amount\"]].copy()\n    fact_txn_keyed[\"txn_id\"] = fact_txn_keyed[\"txn_id\"].astype(\"int64\")\n    fact_txn_keyed[\"amount\"] = fact_txn_keyed[\"amount\"].astype(\"float64\")\n\n    return {\n        \"dim_customer_out\": dim_customer_out,\n        \"fact_txn_keyed\": fact_txn_keyed,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1349,
+   "tokens_out": 2915,
+   "usd": 0.047772,
+   "wall_s": 24.6378755569458,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

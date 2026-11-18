@@ -1,0 +1,66 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t1c_teradata_intdiv",
+ "category": "T1",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import math\n\nimport numpy as np\nimport pandas as pd\n\n\ndef _trunc_div_int(a: pd.Series, b: int) -> pd.Series:\n    \"\"\"Integer division truncating toward zero (Teradata INTEGER/INTEGER).\"\"\"\n    a = a.astype(\"int64\")\n    q = a // b  # floor division (b assumed positive here)\n    r = a - q * b\n    # floor division already matches truncation when a>=0 (since b>0);\n    # when a<0 and there's a nonzero remainder, floor division rounded\n    # away from zero (more negative) -> need to bump up by one toward zero.\n    mask = (r != 0) & (a < 0)\n    q = q.where(~mask, q + 1)\n    return q.astype(\"int64\")\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"acct_balance\"].copy()\n\n    # WHERE acct_type <> 'CLOSED'\n    # SQL three-valued logic: NULL <> 'CLOSED' is UNKNOWN -> excluded.\n    mask = df[\"acct_type\"].notna() & (df[\"acct_type\"] != \"CLOSED\")\n    df = df[mask].copy()\n\n    # ZEROIFNULL(balance_cents)\n    balance_filled = df[\"balance_cents\"].fillna(0).astype(\"int64\")\n\n    # balance_bucket = ZEROIFNULL(balance_cents) / 100, integer division\n    # truncating toward zero.\n    balance_bucket = _trunc_div_int(balance_filled, 100)\n\n    # fx_units = CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER)\n    # fx_rate is not subject to ZEROIFNULL; if fx_rate is NULL the result\n    # of the arithmetic (and thus the final CAST) is NULL.\n    raw = balance_filled.astype(\"float64\") * df[\"fx_rate\"].astype(\"float64\") / 100.0\n\n    fx_units = pd.Series(np.nan, index=df.index, dtype=\"float64\")\n    valid = raw.notna()\n    fx_units.loc[valid] = np.trunc(raw.loc[valid])\n    fx_units = fx_units.astype(\"Int64\")\n\n    out = pd.DataFrame(\n        {\n            \"account_id\": df[\"account_id\"].values,\n            \"balance_bucket\": balance_bucket.values,\n            \"fx_units\": fx_units.values,\n        },\n        index=df.index,\n    )\n\n    out = out.reset_index(drop=True)\n\n    return {\"balance_buckets\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 342,
+   "tokens_out": 500,
+   "usd": 0.002842,
+   "wall_s": 3.5801494121551514
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4394,
+  "tokens_out": 8665,
+  "usd": 0.143157,
+  "wall_s": 82.8174557685852
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

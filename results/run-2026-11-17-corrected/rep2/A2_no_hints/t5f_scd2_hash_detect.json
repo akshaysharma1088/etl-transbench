@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _sig(city, tier):\n    \"\"\"Row signature as computed by the legacy procedure:\n    RTRIM(COALESCE(city,'')) || '|' || RTRIM(COALESCE(tier,''))\n    \"\"\"\n    c = '' if pd.isna(city) else str(city)\n    t = '' if pd.isna(tier) else str(tier)\n    return c.rstrip() + '|' + t.rstrip()\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_member\"].copy()\n    stg = inputs[\"stg_member\"]\n\n    # Work with plain python records so we can mutate \"in place\" like the\n    # procedural UPDATE statements in the legacy code.\n    records = dim.to_dict(\"records\")\n\n    new_records = []\n\n    for _, s in stg.iterrows():\n        mid = s[\"member_id\"]\n\n        # locate current row (is_current = 1) for this member_id\n        cur_idx = None\n        for i, r in enumerate(records):\n            if r[\"member_id\"] == mid and r[\"is_current\"] == 1:\n                cur_idx = i\n                break\n\n        if cur_idx is None:\n            # INSERT new current row, values stored exactly as staged\n            new_records.append({\n                \"member_id\": mid,\n                \"city\": s[\"city\"],\n                \"tier\": s[\"tier\"],\n                \"eff_start_date\": s[\"update_date\"],\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n        else:\n            c = records[cur_idx]\n            if _sig(s[\"city\"], s[\"tier\"]) != _sig(c[\"city\"], c[\"tier\"]):\n                # close out old current row\n                records[cur_idx][\"eff_end_date\"] = s[\"update_date\"]\n                records[cur_idx][\"is_current\"] = 0\n                # insert new current row, values stored exactly as staged\n                new_records.append({\n                    \"member_id\": mid,\n                    \"city\": s[\"city\"],\n                    \"tier\": s[\"tier\"],\n                    \"eff_start_date\": s[\"update_date\"],\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            # else: no-op, existing row (with its original city/tier) stays untouched\n\n    all_records = records + new_records\n\n    out = pd.DataFrame(\n        all_records,\n        columns=[\"member_id\", \"city\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"],\n    )\n\n    if len(out) > 0:\n        out[\"member_id\"] = out[\"member_id\"].astype(\"int64\")\n        out[\"is_current\"] = out[\"is_current\"].astype(\"int64\")\n    out[\"eff_start_date\"] = pd.to_datetime(out[\"eff_start_date\"])\n    out[\"eff_end_date\"] = pd.to_datetime(out[\"eff_end_date\"])\n\n    return {\"dim_member_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1192,
+   "tokens_out": 2418,
+   "usd": 0.039846,
+   "wall_s": 20.701253414154053,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

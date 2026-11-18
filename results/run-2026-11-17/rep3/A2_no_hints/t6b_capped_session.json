@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t6b_capped_session",
+ "category": "T6",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs['events'].copy()\n\n    # Ensure proper dtypes\n    df['event_ts'] = pd.to_datetime(df['event_ts'])\n\n    # Order within user by event_ts then event_id (tie-breaker)\n    df = df.sort_values(by=['user_id', 'event_ts', 'event_id'], kind='mergesort').reset_index(drop=True)\n\n    gap_threshold = pd.Timedelta(minutes=20)\n    cap_threshold = pd.Timedelta(hours=4)\n\n    records = []\n\n    for user_id, group in df.groupby('user_id', sort=False):\n        session_num = 0\n        session_start = None\n        prev_ts = None\n        current_rows = []\n        sessions = []  # list of (session_num, rows)\n\n        for _, row in group.iterrows():\n            ts = row['event_ts']\n\n            if session_start is None:\n                # First event for this user starts session 1\n                session_num = 1\n                session_start = ts\n                current_rows = [row]\n            else:\n                gap = ts - prev_ts\n                cap_exceeded = (ts - session_start) > cap_threshold\n\n                new_session = (gap > gap_threshold) or cap_exceeded\n\n                if new_session:\n                    # close out current session\n                    sessions.append((session_num, current_rows))\n                    session_num += 1\n                    session_start = ts\n                    current_rows = [row]\n                else:\n                    current_rows.append(row)\n\n            prev_ts = ts\n\n        if current_rows:\n            sessions.append((session_num, current_rows))\n\n        for sess_num, rows in sessions:\n            start = rows[0]['event_ts']\n            end = rows[-1]['event_ts']\n            count = len(rows)\n            records.append({\n                'user_id': user_id,\n                'session_num': sess_num,\n                'session_start': start,\n                'session_end': end,\n                'event_count': count\n            })\n\n    result = pd.DataFrame(\n        records,\n        columns=['user_id', 'session_num', 'session_start', 'session_end', 'event_count']\n    )\n\n    return {'user_sessions': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 528,
+   "tokens_out": 1706,
+   "usd": 0.027174,
+   "wall_s": 14.76621127128601
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

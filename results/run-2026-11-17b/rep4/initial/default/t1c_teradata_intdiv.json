@@ -1,0 +1,16 @@
+{
+ "task": "t1c_teradata_intdiv",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicates Teradata-style integer division (truncate-toward-zero) and\n    ZEROIFNULL semantics for balance bucket calculation.\n    \"\"\"\n    acct_balance = inputs['acct_balance'].copy()\n    \n    # Filter out CLOSED accounts\n    acct_balance = acct_balance[acct_balance['acct_type'] != 'CLOSED'].copy()\n    \n    # Apply ZEROIFNULL to balance_cents (NULL becomes 0)\n    balance_cents_filled = acct_balance['balance_cents'].fillna(0)\n    \n    # Calculate balance_bucket: ZEROIFNULL(balance_cents) / 100\n    # Teradata integer division truncates toward zero\n    balance_bucket = np.trunc(balance_cents_filled / 100).astype('Int64')\n    \n    # Calculate fx_units: CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER)\n    # First apply ZEROIFNULL to balance_cents\n    # Then multiply by fx_rate and divide by 100, truncating toward zero\n    fx_product = balance_cents_filled * acct_balance['fx_rate'] / 100\n    fx_units = np.trunc(fx_product).astype('Int64')\n    \n    # Build result dataframe\n    result = pd.DataFrame({\n        'account_id': acct_balance['account_id'],\n        'balance_bucket': balance_bucket,\n        'fx_units': fx_units\n    })\n    \n    # Reset index to avoid index-related issues\n    result = result.reset_index(drop=True)\n    \n    return {'balance_buckets': result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 373,
+   "tokens_out": 456,
+   "usd": 0.002653,
+   "wall_s": 3.171450138092041
+  }
+ ]
+}

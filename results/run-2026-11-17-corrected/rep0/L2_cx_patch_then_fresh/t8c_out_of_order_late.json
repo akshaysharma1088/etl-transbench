@@ -1,0 +1,48 @@
+{
+ "config": "L2_cx_patch_then_fresh",
+ "rep": 0,
+ "task": "t8c_out_of_order_late",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n\n    # Build watermark map: device_id -> applied_event_ts (from target)\n    watermark = dict(zip(target[\"device_id\"], target[\"applied_event_ts\"]))\n\n    # Determine which cdc events survive the per-device watermark check\n    def survives(row):\n        dev = row[\"device_id\"]\n        wm = watermark.get(dev, None)\n        if wm is None:\n            return True\n        return row[\"event_ts\"] > wm\n\n    if len(cdc) > 0:\n        mask = cdc.apply(survives, axis=1)\n        surviving = cdc[mask].copy()\n    else:\n        surviving = cdc.copy()\n\n    # Among surviving events per device, pick the one with max (event_ts, event_seq)\n    winners = {}\n    if len(surviving) > 0:\n        surviving_sorted = surviving.sort_values(\n            by=[\"event_ts\", \"event_seq\"], ascending=[True, True]\n        )\n        # group by device_id, take last (max) row per group\n        grouped = surviving_sorted.groupby(\"device_id\", sort=False)\n        for dev, grp in grouped:\n            last_row = grp.iloc[-1]\n            winners[dev] = (last_row[\"reading\"], last_row[\"event_ts\"])\n\n    # Start building result rows\n    result_rows = []\n\n    # Devices present in target: carry forward or update\n    target_devices = set(target[\"device_id\"])\n    for _, row in target.iterrows():\n        dev = row[\"device_id\"]\n        if dev in winners:\n            reading, applied_ts = winners[dev]\n            result_rows.append({\n                \"device_id\": dev,\n                \"reading\": reading,\n                \"applied_event_ts\": applied_ts\n            })\n        else:\n            result_rows.append({\n                \"device_id\": dev,\n                \"reading\": row[\"reading\"],\n                \"applied_event_ts\": row[\"applied_event_ts\"]\n            })\n\n    # New devices: present in winners but not in target\n    for dev, (reading, applied_ts) in winners.items():\n        if dev not in target_devices:\n            result_rows.append({\n                \"device_id\": dev,\n                \"reading\": reading,\n                \"applied_event_ts\": applied_ts\n            })\n\n    new_snapshot = pd.DataFrame(\n        result_rows,\n        columns=[\"device_id\", \"reading\", \"applied_event_ts\"]\n    )\n\n    # Ensure dtypes match expected output\n    if len(new_snapshot) > 0:\n        new_snapshot[\"device_id\"] = new_snapshot[\"device_id\"].astype(\"int64\")\n        new_snapshot[\"reading\"] = new_snapshot[\"reading\"].astype(\"float64\")\n        new_snapshot[\"applied_event_ts\"] = pd.to_datetime(new_snapshot[\"applied_event_ts\"]).astype(\"datetime64[us]\")\n    else:\n        new_snapshot = pd.DataFrame({\n            \"device_id\": pd.Series(dtype=\"int64\"),\n            \"reading\": pd.Series(dtype=\"float64\"),\n            \"applied_event_ts\": pd.Series(dtype=\"datetime64[us]\")\n        })\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 867,
+   "tokens_out": 1474,
+   "usd": 0.024711,
+   "wall_s": 13.061898946762085,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

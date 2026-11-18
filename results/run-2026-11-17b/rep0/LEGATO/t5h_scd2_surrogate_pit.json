@@ -1,0 +1,52 @@
+{
+ "config": "LEGATO",
+ "rep": 0,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    \"\"\"Case-insensitive lookup for input relation name.\"\"\"\n    if name in inputs:\n        return inputs[name]\n    lname = name.lower()\n    for k, v in inputs.items():\n        if k.lower() == lname:\n            return v\n    raise KeyError(name)\n\n\ndef _seg_differs(seg_s, seg_c):\n    \"\"\"NULL vs NULL -> not different; NULL vs non-NULL -> different;\n    otherwise compare values.\"\"\"\n    s_na = pd.isna(seg_s)\n    c_na = pd.isna(seg_c)\n    if s_na and c_na:\n        return False\n    if s_na != c_na:\n        return True\n    return seg_s != seg_c\n\n\ndef run(inputs: dict) -> dict:\n    dim = _get_input(inputs, 'DIM_CUSTOMER').copy()\n    stg = _get_input(inputs, 'STG_CUSTOMER').copy()\n    fact = _get_input(inputs, 'FACT_TXN').copy()\n\n    # normalize date-like columns for safe comparisons\n    for col in ('eff_start_date', 'eff_end_date'):\n        if col in dim.columns:\n            dim[col] = pd.to_datetime(dim[col], errors='coerce')\n    if 'update_date' in stg.columns:\n        stg['update_date'] = pd.to_datetime(stg['update_date'], errors='coerce')\n    if 'txn_date' in fact.columns:\n        fact['txn_date'] = pd.to_datetime(fact['txn_date'], errors='coerce')\n\n    # max surrogate key before the load\n    if dim.empty or dim['customer_sk'].isna().all():\n        max_sk = 0\n    else:\n        max_sk = int(dim['customer_sk'].max())\n\n    # current row per customer_id (at most one expected)\n    current = dim[dim['is_current'] == 1].set_index('customer_id', drop=False)\n\n    create_flags = []\n    for _, row in stg.iterrows():\n        cid = row['customer_id']\n        if cid not in current.index:\n            create_flags.append(True)\n        else:\n            cur_seg = current.loc[cid, 'segment']\n            create_flags.append(_seg_differs(row['segment'], cur_seg))\n\n    stg = stg.reset_index(drop=True)\n    stg['_create'] = create_flags\n\n    creating = stg[stg['_create']].copy()\n    creating = creating.sort_values('customer_id', kind='mergesort').reset_index(drop=True)\n    creating['customer_sk'] = [max_sk + i + 1 for i in range(len(creating))]\n\n    # expire current rows for customers that get a new version\n    dim_updated = dim.copy()\n    expire_ids = set(creating['customer_id'].tolist())\n\n    for cid in expire_ids:\n        if cid in current.index:\n            idx = dim_updated[\n                (dim_updated['customer_id'] == cid) & (dim_updated['is_current'] == 1)\n            ].index\n            upd_date = creating.loc[creating['customer_id'] == cid, 'update_date'].iloc[0]\n            dim_updated.loc[idx, 'eff_end_date'] = upd_date\n            dim_updated.loc[idx, 'is_current'] = 0\n\n    if len(creating) > 0:\n        new_rows = pd.DataFrame({\n            'customer_sk': creating['customer_sk'].values,\n            'customer_id': creating['customer_id'].values,\n            'segment': creating['segment'].values,\n            'eff_start_date': creating['update_date'].values,\n            'eff_end_date': pd.NaT,\n            'is_current': 1,\n        })\n    else:\n        new_rows = pd.DataFrame(columns=[\n            'customer_sk', 'customer_id', 'segment',\n            'eff_start_date', 'eff_end_date', 'is_current'\n        ])\n\n    dim_customer_out = pd.concat([dim_updated, new_rows], ignore_index=True)\n\n    # enforce dtypes where reasonable\n    if 'customer_sk' in dim_customer_out.columns:\n        dim_customer_out['customer_sk'] = dim_customer_out['customer_sk'].astype('int64')\n    if 'customer_id' in dim_customer_out.columns:\n        dim_customer_out['customer_id'] = dim_customer_out['customer_id'].astype('int64')\n    if 'is_current' in dim_customer_out.columns:\n        dim_customer_out['is_current'] = dim_customer_out['is_current'].astype('int64')\n\n    # Step 2: key facts against the updated dimension\n    dim_by_cust = {}\n    for cid, grp in dim_customer_out.groupby('customer_id'):\n        dim_by_cust[cid] = grp[['customer_sk', 'eff_start_date', 'eff_end_date']].to_dict('records')\n\n    def find_sk(row):\n        cid = row['customer_id']\n        txn_date = row['txn_date']\n        versions = dim_by_cust.get(cid, [])\n        for v in versions:\n            start = v['eff_start_date']\n            end = v['eff_end_date']\n            if pd.isna(start):\n                continue\n            if start <= txn_date and (pd.isna(end) or txn_date < end):\n                return v['customer_sk']\n        return -1\n\n    if len(fact) > 0:\n        fact['customer_sk'] = fact.apply(find_sk, axis=1)\n    else:\n        fact['customer_sk'] = pd.Series(dtype='int64')\n\n    fact['customer_sk'] = fact['customer_sk'].astype('int64')\n\n    fact_txn_keyed = fact[['txn_id', 'customer_sk', 'amount']].copy()\n\n    return {\n        'dim_customer_out': dim_customer_out,\n        'fact_txn_keyed': fact_txn_keyed,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1162,
+   "tokens_out": 3977,
+   "usd": 0.063141,
+   "wall_s": 33.00376105308533
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3409,
+  "tokens_out": 2227,
+  "usd": 0.043632,
+  "wall_s": 15.538197755813599
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

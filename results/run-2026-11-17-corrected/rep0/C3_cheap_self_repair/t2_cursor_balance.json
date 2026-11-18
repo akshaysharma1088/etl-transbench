@@ -1,0 +1,53 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 0,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    transactions = inputs[\"transactions\"].copy()\n    \n    # Sort by account_id, txn_date, txn_seq to match cursor order\n    transactions = transactions.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        ignore_index=True\n    )\n    \n    # Create a column with coalesced amounts (NULL -> 0) for balance computation\n    # but keep original amount column intact\n    coalesced_amount = transactions[\"amount\"].fillna(0.0)\n    \n    # Compute running balance per account using coalesced amounts\n    transactions[\"running_balance\"] = transactions.groupby(\"account_id\", sort=False).apply(\n        lambda group: coalesced_amount[group.index].cumsum()\n    ).reset_index(level=0, drop=True).sort_index()\n    \n    # Compute overdraft flag: 1 if running_balance < 0, else 0\n    transactions[\"overdraft_flag\"] = (transactions[\"running_balance\"] < 0).astype(\"int16\")\n    \n    # Select and order output columns as specified\n    result = transactions[[\n        \"account_id\",\n        \"txn_seq\",\n        \"txn_date\",\n        \"amount\",\n        \"running_balance\",\n        \"overdraft_flag\"\n    ]]\n    \n    return {\"acct_balance_flags\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 520,
+   "tokens_out": 334,
+   "usd": 0.00219,
+   "wall_s": 3.292602777481079,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 967,
+  "tokens_out": 1090,
+  "usd": 0.006417,
+  "wall_s": 8.350532293319702
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

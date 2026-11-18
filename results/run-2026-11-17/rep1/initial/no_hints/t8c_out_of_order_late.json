@@ -1,0 +1,16 @@
+{
+ "task": "t8c_out_of_order_late",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n\n    # Build watermark lookup: device_id -> (applied_event_ts, reading)\n    watermarks = {}\n    for _, row in target_snapshot.iterrows():\n        watermarks[row[\"device_id\"]] = row[\"applied_event_ts\"]\n\n    # Filter events: for devices with a watermark, event_ts must be STRICTLY\n    # greater than watermark. event_ts == watermark is a replay -> skip.\n    # For devices with no watermark (new devices), all events are candidates.\n    def survives(row):\n        dev = row[\"device_id\"]\n        if dev in watermarks:\n            wm = watermarks[dev]\n            return row[\"event_ts\"] > wm\n        return True\n\n    if len(cdc_events) > 0:\n        mask = cdc_events.apply(survives, axis=1)\n        surviving = cdc_events[mask].copy()\n    else:\n        surviving = cdc_events.copy()\n\n    # Among surviving events per device, pick the one with max (event_ts, event_seq)\n    winners = {}\n    if len(surviving) > 0:\n        surviving_sorted = surviving.sort_values(\n            by=[\"event_ts\", \"event_seq\"], ascending=[True, True]\n        )\n        for dev, group in surviving_sorted.groupby(\"device_id\"):\n            last = group.iloc[-1]\n            winners[dev] = (last[\"reading\"], last[\"event_ts\"])\n\n    # Build result: start with target_snapshot devices, carry forward if no winner\n    result_rows = []\n    seen_devices = set()\n\n    for _, row in target_snapshot.iterrows():\n        dev = row[\"device_id\"]\n        seen_devices.add(dev)\n        if dev in winners:\n            reading, applied_ts = winners[dev]\n            result_rows.append(\n                {\"device_id\": dev, \"reading\": reading, \"applied_event_ts\": applied_ts}\n            )\n        else:\n            result_rows.append(\n                {\n                    \"device_id\": dev,\n                    \"reading\": row[\"reading\"],\n                    \"applied_event_ts\": row[\"applied_event_ts\"],\n                }\n            )\n\n    # Add new devices (in winners but not in target_snapshot)\n    for dev, (reading, applied_ts) in winners.items():\n        if dev not in seen_devices:\n            result_rows.append(\n                {\"device_id\": dev, \"reading\": reading, \"applied_event_ts\": applied_ts}\n            )\n\n    new_snapshot = pd.DataFrame(\n        result_rows, columns=[\"device_id\", \"reading\", \"applied_event_ts\"]\n    )\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 698,
+   "tokens_out": 1310,
+   "usd": 0.021744,
+   "wall_s": 11.211389303207397
+  }
+ ]
+}

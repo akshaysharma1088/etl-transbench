@@ -1,0 +1,48 @@
+{
+ "config": "B1_single_pass",
+ "rep": 4,
+ "task": "t2g_payment_waterfall",
+ "category": "T2",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    invoices = inputs[\"invoices\"].copy()\n    payments = inputs[\"payments\"].copy()\n\n    # Sort invoices: oldest due_date first, tie-break by invoice_id\n    invoices = invoices.sort_values(\n        [\"customer_id\", \"due_date\", \"invoice_id\"]\n    ).reset_index(drop=True)\n\n    # Sort payments: chronological, tie-break by payment_id\n    payments = payments.sort_values(\n        [\"customer_id\", \"paid_ts\", \"payment_id\"]\n    ).reset_index(drop=True)\n\n    # Track remaining open amount per invoice\n    open_amt = dict(zip(invoices[\"invoice_id\"], invoices[\"amount\"]))\n    orig_amt = dict(open_amt)\n\n    # Ordered list of invoice_ids per customer (oldest-first order preserved)\n    cust_invoices = invoices.groupby(\"customer_id\")[\"invoice_id\"].apply(list).to_dict()\n\n    allocations = []\n    credit = {}\n\n    for cust_id, pay_group in payments.groupby(\"customer_id\", sort=False):\n        inv_list = cust_invoices.get(cust_id, [])\n        n = len(inv_list)\n        idx = 0  # pointer to first invoice that might still be open\n\n        for _, prow in pay_group.iterrows():\n            left = prow[\"amount\"]\n            pid = prow[\"payment_id\"]\n\n            # advance past invoices that are already fully paid\n            while idx < n and open_amt[inv_list[idx]] <= 0:\n                idx += 1\n\n            j = idx\n            while left > 0 and j < n:\n                inv_id = inv_list[j]\n                o = open_amt[inv_id]\n                if o <= 0:\n                    j += 1\n                    continue\n                pay = left if left < o else o\n                open_amt[inv_id] = o - pay\n                left -= pay\n                allocations.append((pid, inv_id, pay))\n                if open_amt[inv_id] <= 0:\n                    j += 1\n                if left <= 0:\n                    break\n\n            if left > 0:\n                credit[cust_id] = credit.get(cust_id, 0.0) + left\n\n    # Build invoice_status\n    status_rows = []\n    for inv_id in invoices[\"invoice_id\"]:\n        o = open_amt[inv_id]\n        orig = orig_amt[inv_id]\n        if o <= 0:\n            status = \"PAID\"\n        elif o == orig:\n            status = \"OPEN\"\n        else:\n            status = \"PARTIAL\"\n        status_rows.append((inv_id, o, status))\n\n    invoice_status = pd.DataFrame(\n        status_rows, columns=[\"invoice_id\", \"open_amount\", \"status\"]\n    )\n\n    allocations_df = pd.DataFrame(\n        allocations, columns=[\"payment_id\", \"invoice_id\", \"applied_amount\"]\n    )\n\n    customer_credit = pd.DataFrame(\n        [(k, v) for k, v in credit.items() if v > 0],\n        columns=[\"customer_id\", \"unapplied_amount\"],\n    )\n\n    return {\n        \"invoice_status\": invoice_status,\n        \"allocations\": allocations_df,\n        \"customer_credit\": customer_credit,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1108,
+   "tokens_out": 2853,
+   "usd": 0.046119,
+   "wall_s": 23.45347023010254,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

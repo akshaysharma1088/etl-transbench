@@ -1,0 +1,67 @@
+{
+ "config": "B2_retranslate",
+ "rep": 0,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "syntactic"
+  }
+ ],
+ "final_code": "```python\nimport pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_CUSTOMER'].copy()\n    stg = inputs['STG_CUSTOMER'].copy()\n    fact = inputs['FACT_TXN'].copy()\n\n    # --- normalize dtypes -------------------------------------------------\n    if 'eff_start_date' in dim.columns:\n        dim['eff_start_date'] = pd.to_datetime(dim['eff_start_date'])\n    if 'eff_end_date' in dim.columns:\n        dim['eff_end_date'] = pd.to_datetime(dim['eff_end_date'])\n    if 'update_date' in stg.columns:\n        stg['update_date'] = pd.to_datetime(stg['update_date'])\n    if 'txn_date' in fact.columns:\n        fact['txn_date'] = pd.to_datetime(fact['txn_date'])\n\n    # --- STEP 1: SCD Type 2 load -------------------------------------------\n    # current rows (one expected per customer_id)\n    current = dim[dim['is_current'] == 1][['customer_id', 'segment', 'customer_sk']].copy()\n\n    merged = stg.merge(\n        current,\n        on='customer_id',\n        how='left',\n        suffixes=",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1162,
+   "tokens_out": 3977,
+   "usd": 0.063141,
+   "wall_s": 33.00376105308533
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4648,
+  "tokens_out": 15798,
+  "usd": 0.250914,
+  "wall_s": 138.89686632156372
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

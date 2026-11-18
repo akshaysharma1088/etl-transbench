@@ -1,0 +1,126 @@
+{
+ "mode": "REAL",
+ "models_requested": {
+  "cheap": "claude-haiku-4-5-20251001",
+  "frontier": "claude-sonnet-5"
+ },
+ "models_resolved": {
+  "frontier": "claude-sonnet-5",
+  "cheap": "claude-haiku-4-5-20251001"
+ },
+ "temperature": "API default (1.0)",
+ "max_tokens": 4000,
+ "prices_usd_per_mtok": {
+  "cheap": {
+   "in": 1.0,
+   "out": 5.0
+  },
+  "frontier": {
+   "in": 3.0,
+   "out": 15.0
+  }
+ },
+ "reps": 5,
+ "configs": [
+  "B1_single_pass",
+  "LEGATO",
+  "B2_retranslate",
+  "B3_self_repair",
+  "A1_trace_only",
+  "A2_no_hints"
+ ],
+ "n_tasks": 32,
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ],
+ "rep_stride": 1000,
+ "policies": {
+  "B1_single_pass": {
+   "max_iters": 0,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "full",
+   "use_hints": true,
+   "fixed_tier": null
+  },
+  "LEGATO": {
+   "max_iters": 5,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "full",
+   "use_hints": true,
+   "fixed_tier": null
+  },
+  "B2_retranslate": {
+   "max_iters": 5,
+   "escalate_after": 0,
+   "retranslate_after": 0,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "full",
+   "use_hints": true,
+   "fixed_tier": null
+  },
+  "B3_self_repair": {
+   "max_iters": 5,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": false,
+   "evidence": "full",
+   "use_hints": true,
+   "fixed_tier": null
+  },
+  "A1_trace_only": {
+   "max_iters": 5,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "trace_only",
+   "use_hints": true,
+   "fixed_tier": null
+  },
+  "A2_no_hints": {
+   "max_iters": 5,
+   "escalate_after": 1,
+   "retranslate_after": 3,
+   "budget_usd": 0.5,
+   "grounded": true,
+   "evidence": "full",
+   "use_hints": false,
+   "fixed_tier": null
+  }
+ },
+ "initial_groups": {
+  "B1_single_pass": "default",
+  "LEGATO": "default",
+  "B2_retranslate": "default",
+  "B3_self_repair": "default",
+  "A1_trace_only": "default",
+  "A2_no_hints": "no_hints"
+ },
+ "prompts": {
+  "translator_system": "You translate legacy ETL artifacts into Python.\nOutput ONLY a Python module inside one ```python code fence. The module must\ndefine run(inputs: dict[str, pandas.DataFrame]) -> dict[str, pandas.DataFrame]\nthat reproduces the legacy semantics exactly, including null handling, type\ncoercion, duplicate keys, and tie-breaking. Do not invent columns. Do not\nread or write files. Use only pandas and the Python standard library.",
+  "repair_system": "You translate legacy ETL artifacts into Python.\nOutput ONLY a Python module inside one ```python code fence. The module must\ndefine run(inputs: dict[str, pandas.DataFrame]) -> dict[str, pandas.DataFrame]\nthat reproduces the legacy semantics exactly, including null handling, type\ncoercion, duplicate keys, and tie-breaking. Do not invent columns. Do not\nread or write files. Use only pandas and the Python standard library.\nYou will receive your previous code plus EXTERNAL verification evidence\n(error traces, schema diffs, mismatched keys, per-column mismatch counts)\nfrom differential execution against the legacy system. Fix the code. Address\nthe evidence specifically; do not weaken or reinterpret the requirements.",
+  "construct_hints": {
+   "T1": "Dialect SQL: QUALIFY filters on window results AFTER they are computed; replicate Teradata-style null sorting and integer division semantics explicitly.",
+   "T2": "Procedural logic: rewrite cursors/loops as set-oriented operations; preserve per-iteration state effects exactly.",
+   "T5": "SCD Type 2: close prior current rows (end_date, is_current=0) before inserting new versions; unchanged records must NOT create versions; compare tracked attributes only.",
+   "T8": "Incremental/CDC: respect the watermark, apply latest-record-wins per key by event time with deterministic tie-breaks, and make the merge idempotent."
+  }
+ }
+}

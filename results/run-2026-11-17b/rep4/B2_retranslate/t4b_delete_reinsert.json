@@ -1,0 +1,47 @@
+{
+ "config": "B2_retranslate",
+ "rep": 4,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Multi-step partition refresh: DELETE whole arriving partitions then INSERT.\n    \n    Step 1: Create STG_NEW by filtering inbound (qty > 0) and aggregating by product_id, batch_date.\n    Step 2: Delete from target_snapshot all rows whose batch_date appears in STG_NEW.\n    Step 3: Insert all rows from STG_NEW into target_snapshot.\n    \"\"\"\n    \n    inbound = inputs.get('inbound', pd.DataFrame())\n    target_snapshot = inputs.get('target_snapshot', pd.DataFrame())\n    \n    # Step 1: CREATE STG_NEW\n    # Filter rows where qty > 0\n    filtered = inbound[inbound['qty'] > 0].copy()\n    \n    # Group by product_id and batch_date, aggregating qty and unit_cost\n    if len(filtered) > 0:\n        stg_new = filtered.groupby(['product_id', 'batch_date'], as_index=False).agg({\n            'qty': 'sum',\n            'unit_cost': 'max'\n        }).rename(columns={'qty': 'total_qty', 'unit_cost': 'max_unit_cost'})\n    else:\n        # Empty result with correct schema\n        stg_new = pd.DataFrame(columns=['product_id', 'batch_date', 'total_qty', 'max_unit_cost'])\n    \n    # Step 2: DELETE FROM TARGET_SNAPSHOT\n    # Get distinct batch_dates from STG_NEW\n    if len(stg_new) > 0:\n        arriving_dates = stg_new['batch_date'].unique()\n        # Keep only rows from target_snapshot whose batch_date is NOT in arriving_dates\n        target_snapshot = target_snapshot[~target_snapshot['batch_date'].isin(arriving_dates)].copy()\n    \n    # Step 3: INSERT INTO TARGET_SNAPSHOT\n    # Append all rows from stg_new to target_snapshot\n    if len(stg_new) > 0:\n        target_snapshot = pd.concat([target_snapshot, stg_new], ignore_index=True)\n    \n    return {'target_snapshot': target_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 568,
+   "usd": 0.003238,
+   "wall_s": 3.565643548965454
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

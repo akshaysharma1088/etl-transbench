@@ -1,0 +1,48 @@
+{
+ "config": "C0_cheap_single",
+ "rep": 2,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy SP_RUNNING_BALANCE cursor logic as set-oriented pandas operations.\n    \n    Computes running balance per account (reset on account_id change) and overdraft flag.\n    Processes rows ordered by: account_id, txn_date, txn_seq (to break date ties).\n    NULL amounts are treated as 0.\n    Overdraft flag = 1 if running_balance < 0, else 0.\n    \"\"\"\n    transactions = inputs[\"transactions\"].copy()\n    \n    # Sort by account_id, txn_date, txn_seq to match cursor order\n    transactions = transactions.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        ignore_index=False\n    )\n    \n    # Handle NULL amounts as 0\n    transactions[\"amount\"] = transactions[\"amount\"].fillna(0.0)\n    \n    # Compute running balance per account\n    # groupby().cumsum() gives cumulative sum within each group (account_id)\n    transactions[\"running_balance\"] = transactions.groupby(\"account_id\")[\"amount\"].cumsum()\n    \n    # Compute overdraft flag: 1 if running_balance < 0, else 0\n    transactions[\"overdraft_flag\"] = (transactions[\"running_balance\"] < 0).astype(\"int64\")\n    \n    # Select output columns in order\n    acct_balance_flags = transactions[\n        [\"account_id\", \"txn_seq\", \"txn_date\", \"amount\", \"running_balance\", \"overdraft_flag\"]\n    ].reset_index(drop=True)\n    \n    return {\"acct_balance_flags\": acct_balance_flags}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 520,
+   "tokens_out": 444,
+   "usd": 0.00274,
+   "wall_s": 4.183244705200195,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

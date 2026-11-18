@@ -1,0 +1,17 @@
+{
+ "task": "t8b_delete_reinsert_cdc",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_snapshot = inputs[\"target_snapshot\"]\n    cdc_events = inputs[\"cdc_events\"]\n    watermark = inputs[\"watermark\"]\n\n    # Determine watermark high_ts (assume single relevant value; use max if multiple rows)\n    if len(watermark) > 0:\n        high_ts = watermark[\"high_ts\"].max()\n    else:\n        high_ts = pd.NaT\n\n    # Initialize state from target_snapshot\n    state = {}\n    for row in target_snapshot.itertuples(index=False):\n        state[row.item_id] = {\n            \"exists\": True,\n            \"qty\": float(row.qty_on_hand),\n            \"last_ts\": row.last_event_ts,\n        }\n\n    # Filter events not yet applied (event_ts > high_ts)\n    if pd.isna(high_ts):\n        events_to_apply = cdc_events.copy()\n    else:\n        events_to_apply = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n\n    # Sort events by item_id, then (event_ts, event_seq) to apply sequentially per item\n    events_to_apply = events_to_apply.sort_values(\n        by=[\"item_id\", \"event_ts\", \"event_seq\"], kind=\"mergesort\"\n    )\n\n    for row in events_to_apply.itertuples(index=False):\n        item_id = row.item_id\n        op = row.op\n        qty = row.qty\n        ts = row.event_ts\n\n        if item_id not in state:\n            state[item_id] = {\"exists\": False, \"qty\": 0.0, \"last_ts\": None}\n\n        entry = state[item_id]\n\n        if op == \"R\":\n            if not entry[\"exists\"]:\n                entry[\"qty\"] = 0.0\n            entry[\"qty\"] = entry[\"qty\"] + float(qty)\n            entry[\"exists\"] = True\n            entry[\"last_ts\"] = ts\n        elif op == \"A\":\n            entry[\"qty\"] = float(qty)\n            entry[\"exists\"] = True\n            entry[\"last_ts\"] = ts\n        elif op == \"D\":\n            entry[\"exists\"] = False\n            entry[\"last_ts\"] = ts\n        # unknown ops ignored\n\n    # Build output: only items that currently exist\n    out_rows = []\n    for item_id, entry in state.items():\n        if entry[\"exists\"]:\n            out_rows.append(\n                {\n                    \"item_id\": item_id,\n                    \"qty_on_hand\": entry[\"qty\"],\n                    \"last_event_ts\": entry[\"last_ts\"],\n                }\n            )\n\n    if out_rows:\n        new_snapshot = pd.DataFrame(out_rows, columns=[\"item_id\", \"qty_on_hand\", \"last_event_ts\"])\n    else:\n        new_snapshot = pd.DataFrame(columns=[\"item_id\", \"qty_on_hand\", \"last_event_ts\"])\n\n    new_snapshot[\"item_id\"] = new_snapshot[\"item_id\"].astype(\"int64\")\n    new_snapshot[\"qty_on_hand\"] = new_snapshot[\"qty_on_hand\"].astype(\"float64\")\n    new_snapshot[\"last_event_ts\"] = pd.to_datetime(new_snapshot[\"last_event_ts\"])\n\n    new_snapshot = new_snapshot.sort_values(by=\"item_id\", kind=\"mergesort\").reset_index(drop=True)\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 841,
+   "tokens_out": 2076,
+   "usd": 0.033663,
+   "wall_s": 17.370800733566284,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

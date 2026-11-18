@@ -1,0 +1,17 @@
+{
+ "task": "t3c_router_first_match",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    claims = inputs[\"claims\"].copy()\n    \n    # Initialize output ports\n    fast_track = pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    high_value = pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    manual_review = pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    standard = pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    \n    # Track which rows have been matched\n    matched = pd.Series([False] * len(claims), index=claims.index)\n    \n    # Rule 1: amount <= 500 and photos_attached == 1\n    rule1_mask = (~matched) & (claims[\"amount\"] <= 500) & (claims[\"photos_attached\"] == 1)\n    fast_track = pd.concat([fast_track, claims[rule1_mask][[\"claim_id\", \"amount\", \"photos_attached\"]]], ignore_index=True)\n    matched |= rule1_mask\n    \n    # Rule 2: amount > 10000\n    rule2_mask = (~matched) & (claims[\"amount\"] > 10000)\n    high_value = pd.concat([high_value, claims[rule2_mask][[\"claim_id\", \"amount\", \"photos_attached\"]]], ignore_index=True)\n    matched |= rule2_mask\n    \n    # Rule 3: photos_attached == 0 or amount > 500\n    rule3_mask = (~matched) & ((claims[\"photos_attached\"] == 0) | (claims[\"amount\"] > 500))\n    manual_review = pd.concat([manual_review, claims[rule3_mask][[\"claim_id\", \"amount\", \"photos_attached\"]]], ignore_index=True)\n    matched |= rule3_mask\n    \n    # Default port: unmatched rows go to standard\n    default_mask = ~matched\n    standard = pd.concat([standard, claims[default_mask][[\"claim_id\", \"amount\", \"photos_attached\"]]], ignore_index=True)\n    \n    # Ensure proper dtypes\n    for df in [fast_track, high_value, manual_review, standard]:\n        if len(df) > 0:\n            df[\"claim_id\"] = df[\"claim_id\"].astype(\"int64\")\n            df[\"amount\"] = df[\"amount\"].astype(\"float64\")\n            df[\"photos_attached\"] = df[\"photos_attached\"].astype(\"int64\")\n    \n    return {\n        \"claims_fast_track\": fast_track,\n        \"claims_high_value\": high_value,\n        \"claims_manual_review\": manual_review\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 593,
+   "tokens_out": 680,
+   "usd": 0.003993,
+   "wall_s": 5.577970504760742,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

@@ -1,0 +1,29 @@
+-- Legacy stored procedure SP_LOAD_DIM_PRICE_EFFECTIVE (abstracted, vendor-neutral).
+-- Inputs:
+--   DIM_PRICE (product_id INT, list_price DECIMAL(10,2), eff_start_date DATE,
+--              eff_end_date DATE NULL, is_current SMALLINT)
+--        -- a version covers eff_start_date <= d < eff_end_date (end EXCLUSIVE; NULL = open)
+--   STG_PRICE (product_id INT, list_price DECIMAL(10,2), effective_date DATE)
+--        -- several rows per product are possible, in any order; effective_date
+--        -- can be in the PAST or in the FUTURE relative to the batch date.
+--        -- (product_id, effective_date) is unique, and every effective_date is
+--        -- later than the start of the product's latest existing version.
+--   BATCH_CONTROL (batch_date DATE)        -- exactly one row
+-- Output: DIM_PRICE post-state, relation name dim_price_out,
+--         columns product_id, list_price, eff_start_date, eff_end_date, is_current.
+--
+-- PROCEDURE BODY (pseudocode preserved):
+--   FOR EACH product, CURSOR over its STG_PRICE rows ORDER BY effective_date ASC:
+--     tail := the product's version with the LATEST eff_start_date (may be one
+--             inserted earlier in this loop); none if the product is new;
+--     IF tail exists AND tail.list_price = s.list_price THEN
+--         skip s;                                   -- no change, no new version
+--     ELSE
+--         IF tail exists THEN UPDATE tail SET eff_end_date = s.effective_date;
+--         INSERT (s.list_price, start = s.effective_date, end = NULL);
+--     END IF;
+--   AFTER the loop, for EVERY version of EVERY product (old and new):
+--     is_current := 1 if the version covers batch_date, else 0.
+--   So a future-dated version is stored with is_current = 0, the version in
+--   force on batch_date keeps is_current = 1 even though its eff_end_date is now
+--   set, and a product whose versions all start after batch_date has no current row.

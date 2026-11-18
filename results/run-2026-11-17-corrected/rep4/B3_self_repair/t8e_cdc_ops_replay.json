@@ -1,0 +1,53 @@
+{
+ "config": "B3_self_repair",
+ "rep": 4,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 1,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_state\"].copy()\n    events = inputs[\"cdc_events\"].copy()\n\n    # --- Normalize dtypes defensively ---\n    target[\"order_id\"] = target[\"order_id\"].astype(\"int64\")\n    target[\"last_seq\"] = target[\"last_seq\"].astype(\"int64\")\n    if len(events):\n        events[\"order_id\"] = events[\"order_id\"].astype(\"int64\")\n        events[\"seq\"] = events[\"seq\"].astype(\"int64\")\n\n    # 1. Duplicate delivery: the same event (same seq) can appear twice ->\n    #    apply once.\n    events = events.drop_duplicates(subset=[\"seq\"], keep=\"first\")\n\n    # Original per-order watermark (last_seq) from target_state, BEFORE any\n    # processing. The replay guard is always evaluated against this static\n    # snapshot, not against values updated during this batch.\n    orig_last_seq = {\n        int(oid): int(ls)\n        for oid, ls in zip(target[\"order_id\"], target[\"last_seq\"])\n    }\n\n    # 2. Replay guard: drop events for orders that already have a row in\n    #    target_state when seq <= that row's last_seq. Orders with no row\n    #    in target_state have no guard at all.\n    if len(events):\n        oid_arr = events[\"order_id\"].to_numpy()\n        seq_arr = events[\"seq\"].to_numpy()\n        watermark = np.array(\n            [orig_last_seq.get(int(o), None) for o in oid_arr], dtype=object\n        )\n        keep_mask = np.array(\n            [\n                (wm is None) or (int(s) > int(wm))\n                for wm, s in zip(watermark, seq_arr)\n            ]\n        )\n        events = events[keep_mask]\n\n    # 3. Apply remaining events in seq order, per order (cross-order\n    #    ordering is irrelevant since orders evolve independently).\n    events = events.sort_values([\"order_id\", \"seq\"], kind=\"mergesort\")\n\n    # Build mutable state from target_state.\n    state = {}\n    for _, row in target.iterrows():\n        oid = int(row[\"order_id\"])\n        state[oid] = {\n            \"status\": row[\"status\"],\n            \"amount\": row[\"amount\"],\n            \"last_seq\": int(row[\"last_seq\"]),\n        }\n\n    # Orders that ever had a row (from target_state or created this batch).\n    has_had_row = set(state.keys())\n\n    last_event_op = {}\n    last_event_seq = {}\n\n    for _, ev in events.iterrows():\n        oid = int(ev[\"order_id\"])\n        seq = int(ev[\"seq\"])\n        op = ev[\"op\"]\n        status = ev[\"status\"]\n        amount = ev[\"amount\"]\n\n        if op in (\"I\", \"U\"):\n            if oid in state:\n                state[oid][\"status\"] = status\n                if op == \"U\" and pd.isna(amount):\n                    # 'U' with NULL amount leaves existing amount unchanged.\n                    pass\n                else:\n                    state[oid][\"amount\"] = amount\n                state[oid][\"last_seq\"] = seq\n            else:\n                # Creation: event amount is taken as-is (NULL stays NULL),\n                # regardless of op being 'I' or 'U'.\n                state[oid] = {\n                    \"status\": status,\n                    \"amount\": amount,\n                    \"last_seq\": seq,\n                }\n            has_had_row.add(oid)\n        elif op == \"D\":\n            if oid in state:\n                del state[oid]\n            # 'D' on a missing order does nothing to the state, but it is\n            # still the \"last applied event\" for tombstone purposes.\n\n        last_event_op[oid] = op\n        last_event_seq[oid] = seq\n\n    # --- Build new_state ---\n    if state:\n        new_state = pd.DataFrame(\n            [\n                {\n                    \"order_id\": oid,\n                    \"status\": s[\"status\"],\n                    \"amount\": s[\"amount\"],\n                    \"last_seq\": s[\"last_seq\"],\n                }\n                for oid, s in state.items()\n            ]\n        )\n    else:\n        new_state = pd.DataFrame(columns=[\"order_id\", \"status\", \"amount\", \"last_seq\"])\n\n    new_state = new_state.reindex(columns=[\"order_id\", \"status\", \"amount\", \"last_seq\"])\n    new_state[\"order_id\"] = new_state[\"order_id\"].astype(\"int64\")\n    new_state[\"last_seq\"] = new_state[\"last_seq\"].astype(\"int64\")\n    new_state[\"amount\"] = new_state[\"amount\"].astype(\"float64\")\n    new_state[\"status\"] = new_state[\"status\"].astype(object)\n\n    # --- Build tombstones ---\n    tomb_rows = [\n        {\"order_id\": oid, \"deleted_seq\": last_event_seq[oid]}\n        for oid, op in last_event_op.items()\n        if op == \"D\" and oid in has_had_row\n    ]\n\n    if tomb_rows:\n        tombstones = pd.DataFrame(tomb_rows)\n    else:\n        tombstones = pd.DataFrame(columns=[\"order_id\", \"deleted_seq\"])\n\n    tombstones = tombstones.reindex(columns=[\"order_id\", \"deleted_seq\"])\n    tombstones[\"order_id\"] = tombstones[\"order_id\"].astype(\"int64\")\n    tombstones[\"deleted_seq\"] = tombstones[\"deleted_seq\"].astype(\"int64\")\n\n    return {\"new_state\": new_state, \"tombstones\": tombstones}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1266,
+   "tokens_out": 7100,
+   "usd": 0.110298,
+   "wall_s": 69.11491966247559,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6012,
+  "tokens_out": 45043,
+  "usd": 0.693681,
+  "wall_s": 509.66740679740906
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

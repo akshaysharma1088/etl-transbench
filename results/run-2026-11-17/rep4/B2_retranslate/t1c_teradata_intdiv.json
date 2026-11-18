@@ -1,0 +1,66 @@
+{
+ "config": "B2_retranslate",
+ "rep": 4,
+ "task": "t1c_teradata_intdiv",
+ "category": "T1",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import numpy as np\nimport pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"acct_balance\"].copy()\n\n    # WHERE acct_type <> 'CLOSED'\n    # Teradata comparison semantics: NULL <> 'CLOSED' evaluates to NULL (unknown),\n    # which is NOT included by WHERE. So rows with NULL acct_type are excluded.\n    mask = df[\"acct_type\"].notna() & (df[\"acct_type\"] != \"CLOSED\")\n    df = df[mask].copy()\n\n    # ZEROIFNULL(balance_cents): replace NULL with 0 BEFORE any arithmetic.\n    balance_cents_z = df[\"balance_cents\"].fillna(0).astype(\"float64\")\n\n    # balance_bucket = ZEROIFNULL(balance_cents) / 100\n    # This is an INTEGER / INTEGER division in Teradata -> truncates toward zero\n    # (not floor division), e.g. -150/100 = -1, not -2.\n    balance_bucket_raw = balance_cents_z / 100.0\n    balance_bucket = np.trunc(balance_bucket_raw).astype(\"int64\")\n\n    # fx_units = CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER)\n    # fx_rate is a non-integer (float/decimal) type, so the multiplication and\n    # division here are performed in floating/decimal arithmetic (NOT integer\n    # division); only the final CAST ... AS INTEGER truncates toward zero.\n    # If fx_rate is NULL, the whole expression is NULL and CAST(NULL AS INTEGER)\n    # remains NULL.\n    fx_rate = df[\"fx_rate\"]\n    raw_fx = balance_cents_z * fx_rate / 100.0\n\n    fx_units = raw_fx.copy()\n    notna_mask = fx_units.notna()\n    fx_units.loc[notna_mask] = np.trunc(fx_units.loc[notna_mask])\n    fx_units = fx_units.astype(\"Int64\")  # nullable integer to preserve NULLs\n\n    result = pd.DataFrame(\n        {\n            \"account_id\": df[\"account_id\"].values,\n            \"balance_bucket\": balance_bucket.values,\n            \"fx_units\": fx_units.values,\n        }\n    )\n\n    result = result.reset_index(drop=True)\n\n    return {\"balance_buckets\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 373,
+   "tokens_out": 592,
+   "usd": 0.003333,
+   "wall_s": 4.022776365280151
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2300,
+  "tokens_out": 8563,
+  "usd": 0.135345,
+  "wall_s": 81.4199686050415
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

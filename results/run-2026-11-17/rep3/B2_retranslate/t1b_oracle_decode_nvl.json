@@ -1,0 +1,51 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t1b_oracle_decode_nvl",
+ "category": "T1",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"regional_txn\"].copy()\n\n    # Filter WHERE status = 'POSTED'\n    df = df[df[\"status\"] == \"POSTED\"]\n\n    # TRUNC(txn_ts, 'MM') -> first day of month, preserving datetime dtype\n    ts = pd.to_datetime(df[\"txn_ts\"])\n    txn_month = ts.dt.to_period(\"M\").dt.to_timestamp()\n\n    # DECODE(region, NULL, 'MISSING', 'XX', 'UNKNOWN', region)\n    # DECODE treats NULL = NULL as a match.\n    region = df[\"region\"]\n\n    def decode_region(val):\n        if pd.isna(val):\n            return \"MISSING\"\n        if val == \"XX\":\n            return \"UNKNOWN\"\n        return val\n\n    region_norm = region.apply(decode_region)\n\n    # NVL(amount, 0)\n    amount = df[\"amount\"].fillna(0)\n\n    work = pd.DataFrame({\n        \"txn_month\": txn_month.values,\n        \"region_norm\": region_norm.values,\n        \"amount\": amount.values,\n    })\n\n    grouped = (\n        work.groupby([\"txn_month\", \"region_norm\"], dropna=False)\n        .agg(\n            total_amount=(\"amount\", \"sum\"),\n            txn_count=(\"amount\", \"size\"),\n        )\n        .reset_index()\n    )\n\n    return {\"monthly_region_rollup\": grouped}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 421,
+   "tokens_out": 715,
+   "usd": 0.003996,
+   "wall_s": 4.7521140575408936
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 642,
+  "tokens_out": 882,
+  "usd": 0.015156,
+  "wall_s": 7.928720712661743
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

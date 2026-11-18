@@ -1,0 +1,46 @@
+{
+ "config": "B2_retranslate",
+ "rep": 2,
+ "task": "t3_dataflow_orders",
+ "category": "T3",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces the legacy ETL pipeline:\n    1. Filter orders with status == 'SHIPPED'\n    2. Lookup customer region, default to 'UNKNOWN' if not found\n    3. Compute net_amount = qty * unit_price * (1 - discount), treating NULL discount as 0\n    4. Select and output specified columns\n    \"\"\"\n    \n    orders = inputs[\"orders\"].copy()\n    customers = inputs[\"customers\"].copy()\n    \n    # Step 1: Filter - keep only SHIPPED orders\n    flt = orders[orders[\"status\"] == \"SHIPPED\"].copy()\n    \n    # Step 2: Lookup - join with customers to get region\n    # Merge on customer_id, keeping all rows from flt (left join)\n    lkp = flt.merge(\n        customers[[\"customer_id\", \"region\"]],\n        on=\"customer_id\",\n        how=\"left\"\n    )\n    \n    # Fill missing region values with 'UNKNOWN'\n    lkp[\"region\"] = lkp[\"region\"].fillna(\"UNKNOWN\")\n    \n    # Step 3: Reformat - compute net_amount\n    # Handle NULL discount by treating it as 0\n    discount = lkp[\"discount\"].fillna(0)\n    lkp[\"net_amount\"] = lkp[\"qty\"] * lkp[\"unit_price\"] * (1 - discount)\n    \n    # Step 4: Output - select specified columns\n    output_columns = [\"order_id\", \"customer_id\", \"region\", \"qty\", \"unit_price\", \"net_amount\"]\n    result = lkp[output_columns].copy()\n    \n    return {\"shipped_orders_enriched\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 447,
+   "tokens_out": 450,
+   "usd": 0.002697,
+   "wall_s": 3.967359781265259
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

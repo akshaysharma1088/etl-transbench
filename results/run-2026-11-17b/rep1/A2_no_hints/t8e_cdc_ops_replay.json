@@ -1,0 +1,57 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_state = inputs['target_state'].copy()\n    cdc_events = inputs['cdc_events'].copy()\n\n    # At-least-once delivery: distinct by seq (apply each event once)\n    cdc_events = cdc_events.drop_duplicates(subset=['seq'], keep='first')\n\n    # Sort by seq - the only trustworthy ordering\n    cdc_events = cdc_events.sort_values('seq', kind='mergesort')\n\n    # Original last_seq per order, used for the replay guard (fixed, does not\n    # change as we apply events within this batch).\n    orig_last_seq = {}\n    state = {}\n    for _, row in target_state.iterrows():\n        oid = row['order_id']\n        orig_last_seq[oid] = row['last_seq']\n        state[oid] = {\n            'status': row['status'],\n            'amount': row['amount'],\n            'last_seq': row['last_seq'],\n        }\n\n    deleted = {}  # order_id -> deleted_seq, only valid if order currently has no row\n\n    for _, ev in cdc_events.iterrows():\n        oid = ev['order_id']\n        seq = ev['seq']\n        op = ev['op']\n        status = ev['status']\n        amount = ev['amount']\n\n        # Replay guard: based on ORIGINAL target_state last_seq\n        if oid in orig_last_seq and seq <= orig_last_seq[oid]:\n            continue\n\n        if op == 'D':\n            if oid in state:\n                del state[oid]\n                deleted[oid] = seq\n            # D for a missing order does nothing\n        else:  # 'I' or 'U'\n            if oid in state:\n                existing = state[oid]\n                if op == 'U' and pd.isna(amount):\n                    new_amount = existing['amount']\n                else:\n                    new_amount = amount\n                state[oid] = {\n                    'status': status,\n                    'amount': new_amount,\n                    'last_seq': seq,\n                }\n            else:\n                state[oid] = {\n                    'status': status,\n                    'amount': amount,\n                    'last_seq': seq,\n                }\n            # row recreated/updated, no longer deleted\n            deleted.pop(oid, None)\n\n    # Build new_state\n    if state:\n        new_state_rows = [\n            {\n                'order_id': oid,\n                'status': vals['status'],\n                'amount': vals['amount'],\n                'last_seq': vals['last_seq'],\n            }\n            for oid, vals in state.items()\n        ]\n        new_state = pd.DataFrame(new_state_rows, columns=['order_id', 'status', 'amount', 'last_seq'])\n    else:\n        new_state = pd.DataFrame(columns=['order_id', 'status', 'amount', 'last_seq'])\n\n    # Build tombstones\n    if deleted:\n        tomb_rows = [\n            {'order_id': oid, 'deleted_seq': seq}\n            for oid, seq in deleted.items()\n        ]\n        tombstones = pd.DataFrame(tomb_rows, columns=['order_id', 'deleted_seq'])\n    else:\n        tombstones = pd.DataFrame(columns=['order_id', 'deleted_seq'])\n\n    return {\n        'new_state': new_state,\n        'tombstones': tombstones,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1098,
+   "tokens_out": 4000,
+   "usd": 0.063294,
+   "wall_s": 42.0421679019928
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2998,
+  "tokens_out": 7121,
+  "usd": 0.115809,
+  "wall_s": 71.85363674163818
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

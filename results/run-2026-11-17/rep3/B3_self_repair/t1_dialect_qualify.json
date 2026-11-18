@@ -1,0 +1,61 @@
+{
+ "config": "B3_self_repair",
+ "rep": 3,
+ "task": "t1_dialect_qualify",
+ "category": "T1",
+ "dev_equivalent": true,
+ "iterations": 3,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs['acct_txn'].copy()\n\n    # WHERE amount > 100  (NULL amount -> comparison is unknown -> row excluded)\n    df = df[df['amount'] > 100].copy()\n\n    # CASE WHEN amount >= 1000 THEN 'JUMBO'\n    #      WHEN amount >= 500  THEN 'LARGE'\n    #      ELSE 'STANDARD' END AS size_band\n    def _band(a):\n        if pd.isna(a):\n            return None\n        if a >= 1000:\n            return 'JUMBO'\n        elif a >= 500:\n            return 'LARGE'\n        else:\n            return 'STANDARD'\n\n    df['size_band'] = df['amount'].apply(_band)\n\n    # Teradata default null ordering: NULLs sort as the smallest value.\n    # For ASC that means NULLs first; for DESC that means NULLs last.\n    # pandas sort_values default na_position='last' already places NULLs\n    # last regardless of ascending flag, which matches the DESC case here.\n    df_sorted = df.sort_values(\n        by=['account_id', 'txn_ts', 'txn_id'],\n        ascending=[True, False, False],\n        na_position='last',\n        kind='mergesort'  # stable sort to preserve original order for exact ties\n    )\n\n    # ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC)\n    df_sorted = df_sorted.copy()\n    df_sorted['_rn'] = df_sorted.groupby('account_id', dropna=False).cumcount() + 1\n\n    # QUALIFY rn = 1\n    result = df_sorted[df_sorted['_rn'] == 1]\n\n    out_cols = ['account_id', 'txn_id', 'txn_ts', 'amount', 'channel', 'size_band']\n    result = result[out_cols].reset_index(drop=True)\n\n    return {'latest_high_value_txn': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 369,
+   "tokens_out": 742,
+   "usd": 0.004079,
+   "wall_s": 5.497732400894165
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3836,
+  "tokens_out": 7228,
+  "usd": 0.119928,
+  "wall_s": 73.74454116821289
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

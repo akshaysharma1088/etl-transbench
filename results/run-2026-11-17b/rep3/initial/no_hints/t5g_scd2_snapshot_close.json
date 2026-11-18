@@ -1,0 +1,16 @@
+{
+ "task": "t5g_scd2_snapshot_close",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef _null_safe_eq(a: pd.Series, b: pd.Series) -> pd.Series:\n    \"\"\"NULL vs NULL -> equal; NULL vs non-NULL -> not equal.\"\"\"\n    both_null = a.isna() & b.isna()\n    eq = a == b\n    eq = eq.fillna(False)\n    return eq | both_null\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_STORE\"].copy()\n    stg = inputs[\"STG_STORE_FULL\"].copy()\n    batch = inputs[\"BATCH_CONTROL\"].copy()\n\n    b = batch[\"batch_date\"].iloc[0]\n\n    # DISTINCT on the staging snapshot\n    S = stg[[\"store_id\", \"region\", \"format\"]].drop_duplicates().reset_index(drop=True)\n\n    # current rows of DIM_STORE\n    current_mask = dim[\"is_current\"] == 1\n    current = dim.loc[current_mask, [\"store_id\", \"region\", \"format\"]].copy()\n\n    current_ids = set(current[\"store_id\"])\n    S_ids = set(S[\"store_id\"])\n\n    # merge S with current attrs to compare\n    merged = S.merge(\n        current, on=\"store_id\", how=\"left\", suffixes=(\"_s\", \"_c\")\n    )\n\n    region_eq = _null_safe_eq(merged[\"region_s\"], merged[\"region_c\"])\n    format_eq = _null_safe_eq(merged[\"format_s\"], merged[\"format_c\"])\n    has_current = merged[\"store_id\"].isin(current_ids)\n\n    attrs_equal = region_eq & format_eq\n\n    # store_ids whose current row's attributes differ from staging -> close + reinsert\n    changed_ids = set(merged.loc[has_current & ~attrs_equal, \"store_id\"])\n\n    # store_ids that have a current row but are absent from S entirely -> close only\n    closed_due_to_absence = current_ids - S_ids\n\n    close_ids = closed_due_to_absence | changed_ids\n\n    # Build the set of store_ids that need a brand-new inserted row:\n    #   - those with a changed current row (new version)\n    #   - those with no current row at all (new store or reactivated store)\n    new_or_reactivated_ids = S_ids - current_ids\n    insert_ids = changed_ids | new_or_reactivated_ids\n\n    insert_mask = S[\"store_id\"].isin(insert_ids)\n    insert_df = S.loc[insert_mask, [\"store_id\", \"region\", \"format\"]].copy()\n    insert_df[\"eff_start_date\"] = b\n    insert_df[\"eff_end_date\"] = pd.NA\n    insert_df[\"is_current\"] = 1\n\n    # Apply closing updates to existing DIM_STORE rows\n    dim_updated = dim.copy()\n    close_row_mask = (dim_updated[\"is_current\"] == 1) & (\n        dim_updated[\"store_id\"].isin(close_ids)\n    )\n    dim_updated.loc[close_row_mask, \"eff_end_date\"] = b\n    dim_updated.loc[close_row_mask, \"is_current\"] = 0\n\n    result = pd.concat([dim_updated, insert_df], ignore_index=True, sort=False)\n\n    cols = [\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    result = result[cols]\n\n    return {\"dim_store_out\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1039,
+   "tokens_out": 3338,
+   "usd": 0.053187,
+   "wall_s": 30.162705421447754
+  }
+ ]
+}

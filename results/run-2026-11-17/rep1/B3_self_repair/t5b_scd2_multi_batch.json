@@ -1,0 +1,66 @@
+{
+ "config": "B3_self_repair",
+ "rep": 1,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_null(v):\n    if v is None:\n        return True\n    try:\n        return pd.isna(v)\n    except (TypeError, ValueError):\n        return False\n\n\ndef _changed(c_val, s_val):\n    c_null = _is_null(c_val)\n    s_null = _is_null(s_val)\n    if c_null and s_null:\n        return False\n    if c_null != s_null:\n        return True\n    return c_val != s_val\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_PRODUCT\"].copy()\n    stg = inputs[\"STG_PRODUCT\"].copy()\n\n    # Build mutable list of dicts representing current state of DIM_PRODUCT\n    rows = dim.to_dict(\"records\")\n\n    # Map product_id -> index in `rows` of the current (is_current==1) row\n    current_idx = {}\n    for i, r in enumerate(rows):\n        if r.get(\"is_current\") == 1 or r.get(\"is_current\") == 1.0:\n            pid = r.get(\"product_id\")\n            # Assume at most one current row per product in input\n            current_idx[pid] = i\n\n    # Sort staged records by product_id, update_date ascending (cursor order)\n    stg_sorted = stg.sort_values(\n        by=[\"product_id\", \"update_date\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    for _, s in stg_sorted.iterrows():\n        pid = s[\"product_id\"]\n        s_cat = s[\"category\"]\n        s_pb = s[\"price_band\"]\n        s_date = s[\"update_date\"]\n\n        idx = current_idx.get(pid)\n\n        if idx is None:\n            # No current version exists -> insert new current version\n            new_row = {\n                \"product_id\": pid,\n                \"category\": s_cat,\n                \"price_band\": s_pb,\n                \"eff_start_date\": s_date,\n                \"eff_end_date\": None,\n                \"is_current\": 1,\n            }\n            rows.append(new_row)\n            current_idx[pid] = len(rows) - 1\n        else:\n            c = rows[idx]\n            cat_changed = _changed(c.get(\"category\"), s_cat)\n            pb_changed = _changed(c.get(\"price_band\"), s_pb)\n\n            if cat_changed or pb_changed:\n                # Expire current row\n                c[\"eff_end_date\"] = s_date\n                c[\"is_current\"] = 0\n\n                # Insert new current version\n                new_row = {\n                    \"product_id\": pid,\n                    \"category\": s_cat,\n                    \"price_band\": s_pb,\n                    \"eff_start_date\": s_date,\n                    \"eff_end_date\": None,\n                    \"is_current\": 1,\n                }\n                rows.append(new_row)\n                current_idx[pid] = len(rows) - 1\n            # else: no-op, unchanged\n\n    out = pd.DataFrame(\n        rows,\n        columns=[\n            \"product_id\",\n            \"category\",\n            \"price_band\",\n            \"eff_start_date\",\n            \"eff_end_date\",\n            \"is_current\",\n        ],\n    )\n\n    return {\"dim_product_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 833,
+   "tokens_out": 2085,
+   "usd": 0.033774,
+   "wall_s": 18.237015962600708
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5151,
+  "tokens_out": 12626,
+  "usd": 0.204843,
+  "wall_s": 126.6152572631836
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

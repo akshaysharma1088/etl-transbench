@@ -1,0 +1,9 @@
+{
+  "id": "t2e_overdraft_fee_cursor",
+  "category": "T2",
+  "tier": 3,
+  "description": "Row-by-row ledger with an overdraft fee that feeds back into the balance and is charged at most once per account per day",
+  "legacy_artifact": "legacy_artifact.sql",
+  "target": "pandas (PySpark in full benchmark)",
+  "set": "confirmation"
+}

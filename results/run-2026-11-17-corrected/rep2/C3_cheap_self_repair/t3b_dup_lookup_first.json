@@ -1,0 +1,48 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 2,
+ "task": "t3b_dup_lookup_first",
+ "category": "T3",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy ETL graphical component: source -> lookup -> reformat -> output.\n    \n    Lookup uses duplicate-key resolution policy: first_by ordering on \n    (effective_date DESC, rate_id DESC), with on_miss defaults for unmatched keys.\n    Output row count equals input row count (no row explosion).\n    \"\"\"\n    \n    # src: source relation\n    shipments = inputs[\"shipments\"].copy()\n    \n    # lkp: lookup with duplicate-key resolution\n    carrier_rates = inputs[\"carrier_rates\"].copy()\n    \n    # Sort by the first_by policy: effective_date DESC, then rate_id DESC\n    # This ensures that when we deduplicate by carrier_id, we keep the first row\n    # which corresponds to the latest effective_date and highest rate_id on ties\n    carrier_rates_sorted = carrier_rates.sort_values(\n        by=[\"effective_date\", \"rate_id\"],\n        ascending=[False, False],\n        na_position=\"last\"\n    )\n    \n    # Deduplicate by carrier_id, keeping first occurrence (which is the first in sort order)\n    carrier_rates_dedup = carrier_rates_sorted.drop_duplicates(\n        subset=[\"carrier_id\"],\n        keep=\"first\"\n    )\n    \n    # Merge shipments with deduplicated carrier_rates on carrier_id\n    # Using left merge to preserve all shipment rows and apply on_miss defaults\n    merged = shipments.merge(\n        carrier_rates_dedup[[\"carrier_id\", \"rate_per_kg\", \"service_tier\"]],\n        on=\"carrier_id\",\n        how=\"left\"\n    )\n    \n    # Apply on_miss defaults for unmatched rows\n    merged[\"rate_per_kg\"] = merged[\"rate_per_kg\"].fillna(0.0)\n    merged[\"service_tier\"] = merged[\"service_tier\"].fillna(\"NONE\")\n    \n    # rfm: reformat - compute freight_cost\n    merged[\"freight_cost\"] = merged[\"weight_kg\"] * merged[\"rate_per_kg\"]\n    \n    # out: output with selected columns in specified order\n    output_df = merged[[\n        \"shipment_id\",\n        \"carrier_id\",\n        \"service_tier\",\n        \"weight_kg\",\n        \"rate_per_kg\",\n        \"freight_cost\"\n    ]].copy()\n    \n    return {\n        \"shipment_costs\": output_df\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 581,
+   "tokens_out": 634,
+   "usd": 0.003751,
+   "wall_s": 6.131403207778931,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

@@ -1,0 +1,58 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 0,
+ "task": "t7d_quarantine_threshold",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    readings = inputs[\"readings\"].copy()\n    \n    # Step 1: Mark rows as bad based on row rule\n    # value IS NULL OR value < 0 OR value > 1000 -> BAD\n    readings[\"is_bad\"] = (\n        readings[\"value\"].isna() | \n        (readings[\"value\"] < 0) | \n        (readings[\"value\"] > 1000)\n    )\n    \n    # Step 2: Group by batch_id and evaluate batch rule\n    batch_stats = readings.groupby(\"batch_id\").agg(\n        total_rows=(\"reading_id\", \"count\"),\n        bad_row_count=(\"is_bad\", \"sum\")\n    ).reset_index()\n    \n    # Calculate batch reject percentage (for quarantined batches)\n    batch_stats[\"batch_reject_pct\"] = (\n        batch_stats[\"bad_row_count\"] * 100.0 / batch_stats[\"total_rows\"]\n    ).round(2)\n    \n    # Determine which batches to quarantine: bad_row_count * 100 > total_rows * 20\n    batch_stats[\"quarantine\"] = (\n        batch_stats[\"bad_row_count\"] * 100 > batch_stats[\"total_rows\"] * 20\n    )\n    \n    # Step 3: Merge batch decisions back to readings\n    readings = readings.merge(batch_stats[[\"batch_id\", \"quarantine\", \"batch_reject_pct\"]], \n                               on=\"batch_id\", how=\"left\")\n    \n    # Step 4: Route rows to appropriate output tables\n    readings_clean = pd.DataFrame(columns=[\"batch_id\", \"reading_id\", \"sensor\", \"value\"])\n    readings_rejects = pd.DataFrame(columns=[\"batch_id\", \"reading_id\", \"sensor\", \"value\"])\n    readings_quarantine = pd.DataFrame(columns=[\"batch_id\", \"reading_id\", \"sensor\", \"value\", \"batch_reject_pct\"])\n    \n    # Separate quarantined batches\n    quarantined_mask = readings[\"quarantine\"] == True\n    if quarantined_mask.any():\n        quarantine_data = readings[quarantined_mask][[\"batch_id\", \"reading_id\", \"sensor\", \"value\", \"batch_reject_pct\"]]\n        readings_quarantine = quarantine_data\n    \n    # For non-quarantined batches, separate good and bad rows\n    non_quarantined = readings[quarantined_mask == False]\n    if len(non_quarantined) > 0:\n        good_rows = non_quarantined[non_quarantined[\"is_bad\"] == False][[\"batch_id\", \"reading_id\", \"sensor\", \"value\"]]\n        bad_rows = non_quarantined[non_quarantined[\"is_bad\"] == True][[\"batch_id\", \"reading_id\", \"sensor\", \"value\"]]\n        \n        if len(good_rows) > 0:\n            readings_clean = good_rows\n        if len(bad_rows) > 0:\n            readings_rejects = bad_rows\n    \n    # Reset index and ensure proper dtypes\n    readings_clean = readings_clean.reset_index(drop=True)\n    readings_rejects = readings_rejects.reset_index(drop=True)\n    readings_quarantine = readings_quarantine.reset_index(drop=True)\n    \n    # Ensure columns are in correct order and dtypes\n    readings_clean = readings_clean[[\"batch_id\", \"reading_id\", \"sensor\", \"value\"]]\n    readings_rejects = readings_rejects[[\"batch_id\", \"reading_id\", \"sensor\", \"value\"]]\n    readings_quarantine = readings_quarantine[[\"batch_id\", \"reading_id\", \"sensor\", \"value\", \"batch_reject_pct\"]]\n    \n    return {\n        \"readings_clean\": readings_clean,\n        \"readings_rejects\": readings_rejects,\n        \"readings_quarantine\": readings_quarantine\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 423,
+   "tokens_out": 1049,
+   "usd": 0.005668,
+   "wall_s": 6.070713996887207,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2743,
+  "tokens_out": 2637,
+  "usd": 0.015928,
+  "wall_s": 17.231552124023438
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

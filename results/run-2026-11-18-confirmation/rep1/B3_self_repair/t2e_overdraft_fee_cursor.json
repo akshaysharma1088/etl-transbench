@@ -1,0 +1,48 @@
+{
+ "config": "B3_self_repair",
+ "rep": 1,
+ "task": "t2e_overdraft_fee_cursor",
+ "category": "T2",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    accounts = inputs[\"accounts\"]\n    txns = inputs[\"txns\"]\n\n    # Only consider txns for known accounts\n    merged = txns.merge(\n        accounts[[\"account_id\", \"opening_balance\"]],\n        on=\"account_id\",\n        how=\"inner\",\n    )\n\n    # Sort per legacy cursor order: by account (grouping), then txn_ts, then txn_id\n    merged = merged.sort_values(\n        by=[\"account_id\", \"txn_ts\", \"txn_id\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    ledger_txn_ids = []\n    ledger_balances = []\n\n    fee_account_ids = []\n    fee_dates = []\n    fee_trigger_txn_ids = []\n\n    current_account = None\n    bal = 0.0\n    fee_dates_for_account = set()\n\n    for row in merged.itertuples(index=False):\n        acc_id = row.account_id\n        txn_id = row.txn_id\n        txn_ts = row.txn_ts\n        amount = row.amount\n        opening_balance = row.opening_balance\n\n        if acc_id != current_account:\n            current_account = acc_id\n            bal = opening_balance\n            fee_dates_for_account = set()\n\n        bal = bal + amount\n\n        if amount < 0 and bal < 0:\n            txn_date = pd.Timestamp(txn_ts).date()\n            if txn_date not in fee_dates_for_account:\n                bal = bal - 35.00\n                fee_dates_for_account.add(txn_date)\n                fee_account_ids.append(acc_id)\n                fee_dates.append(txn_date)\n                fee_trigger_txn_ids.append(txn_id)\n\n        ledger_txn_ids.append(txn_id)\n        ledger_balances.append(bal)\n\n    txn_ledger = pd.DataFrame(\n        {\n            \"txn_id\": ledger_txn_ids,\n            \"balance_after\": ledger_balances,\n        }\n    )\n\n    fees = pd.DataFrame(\n        {\n            \"account_id\": fee_account_ids,\n            \"fee_date\": fee_dates,\n            \"trigger_txn_id\": fee_trigger_txn_ids,\n        }\n    )\n\n    if not fees.empty:\n        fees[\"fee_date\"] = pd.to_datetime(fees[\"fee_date\"])\n\n    return {\"txn_ledger\": txn_ledger, \"fees\": fees}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1002,
+   "tokens_out": 1088,
+   "usd": 0.019326,
+   "wall_s": 9.871701955795288,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

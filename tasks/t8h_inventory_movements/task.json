@@ -1,0 +1,13 @@
+{
+  "id": "t8h_inventory_movements",
+  "category": "T8",
+  "tier": 3,
+  "description": "Stock movements applied in order with an idempotency ledger; outbound movements that would overdraw are rejected and stay retryable",
+  "legacy_artifact": "legacy_artifact.txt",
+  "target": "pandas (PySpark in full benchmark)",
+  "set": "confirmation",
+  "replay": {
+    "new_balance": "stock_balance",
+    "applied_out": "applied_movements"
+  }
+}

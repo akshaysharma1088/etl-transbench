@@ -1,0 +1,66 @@
+{
+ "config": "A1_trace_only",
+ "rep": 2,
+ "task": "t4c_stale_snapshot",
+ "category": "T4",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    \"\"\"\n    Reproduces the legacy multi-step batch job:\n\n    Step 1: STG_CURR = SELECT account_id, AVG(score) AS avg_score\n                       FROM score_feed GROUP BY account_id\n    Step 2: DELTA    = SELECT c.account_id,\n                               c.avg_score - COALESCE(p.avg_score, 0) AS score_delta\n                        FROM STG_CURR c\n                        LEFT JOIN SCORE_SNAPSHOT p ON c.account_id = p.account_id\n             -- NOTE: joins against the PRE-UPDATE snapshot (inputs['score_snapshot'])\n    Step 3: SCORE_SNAPSHOT is replaced entirely with STG_CURR's contents\n             (post-update state), but DELTA was already computed against\n             the pre-update snapshot above.\n    \"\"\"\n    score_feed = inputs[\"score_feed\"]\n    score_snapshot_pre = inputs[\"score_snapshot\"]  # PRE-update snapshot\n\n    # --- Step 1: STG_CURR -----------------------------------------------\n    # SQL AVG() ignores NULLs, and GROUP BY groups NULL keys together.\n    # pandas .mean() skips NaN by default; dropna=False keeps a NULL group.\n    stg_curr = (\n        score_feed.groupby(\"account_id\", dropna=False, as_index=False)[\"score\"]\n        .mean()\n        .rename(columns={\"score\": \"avg_score\"})\n    )\n\n    # --- Step 2: DELTA (computed against the PRE-update snapshot) ------\n    # LEFT JOIN on account_id. SQL NULL = NULL is unknown (no match),\n    # which matches pandas merge default behavior for NaN keys.\n    merged = stg_curr.merge(\n        score_snapshot_pre,\n        on=\"account_id\",\n        how=\"left\",\n        suffixes=(\"\", \"_prev\"),\n    )\n\n    prev_avg_score = merged[\"avg_score_prev\"] if \"avg_score_prev\" in merged.columns else merged[\"avg_score\"] * 0\n    # COALESCE(p.avg_score, 0)\n    coalesced_prev = prev_avg_score.fillna(0)\n\n    delta = pd.DataFrame(\n        {\n            \"account_id\": merged[\"account_id\"],\n            \"score_delta\": merged[\"avg_score\"] - coalesced_prev,\n        }\n    )\n\n    # --- Step 3: SCORE_SNAPSHOT replaced with STG_CURR (post-update) ---\n    score_snapshot_post = stg_curr[[\"account_id\", \"avg_score\"]].copy()\n\n    return {\n        \"delta\": delta,\n        \"score_snapshot\": score_snapshot_post,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 421,
+   "tokens_out": 693,
+   "usd": 0.003886,
+   "wall_s": 4.298382520675659
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5599,
+  "tokens_out": 8547,
+  "usd": 0.14500200000000002,
+  "wall_s": 76.2870934009552
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

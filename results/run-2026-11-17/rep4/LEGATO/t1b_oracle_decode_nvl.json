@@ -1,0 +1,51 @@
+{
+ "config": "LEGATO",
+ "rep": 4,
+ "task": "t1b_oracle_decode_nvl",
+ "category": "T1",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Legacy Oracle SQL translation: Monthly regional transaction rollup with\n    DECODE-based null matching and NVL coalescing.\n\n    Semantics:\n    - DECODE(region, NULL, 'MISSING', 'XX', 'UNKNOWN', region) treats NULL=NULL as match\n    - NVL(amount, 0) coalesces nulls to 0\n    - TRUNC(txn_ts, 'MM') truncates to month start (first day of month)\n    - Filters to status='POSTED' before aggregation\n    \"\"\"\n    df = inputs['regional_txn'].copy()\n\n    # Filter: WHERE status = 'POSTED'\n    df = df[df['status'] == 'POSTED'].copy()\n\n    # TRUNC(txn_ts, 'MM') - truncate timestamp to first day of month\n    df['txn_month'] = pd.to_datetime(df['txn_ts']).dt.to_period('M').dt.to_timestamp()\n\n    # DECODE(region, NULL, 'MISSING', 'XX', 'UNKNOWN', region)\n    # Oracle DECODE matches NULL=NULL, so we need explicit null checking\n    def decode_region(val):\n        if pd.isna(val):\n            return 'MISSING'\n        elif val == 'XX':\n            return 'UNKNOWN'\n        else:\n            return val\n\n    df['region_norm'] = df['region'].apply(decode_region)\n\n    # NVL(amount, 0) - coalesce nulls to 0\n    df['amount_coalesced'] = df['amount'].fillna(0)\n\n    # GROUP BY txn_month, region_norm\n    # Use named aggregation to avoid referencing a groupby key column\n    # inside the agg dict (which causes KeyError since it's dropped\n    # from the remaining columns after grouping).\n    result = df.groupby(['txn_month', 'region_norm'], as_index=False).agg(\n        total_amount=('amount_coalesced', 'sum'),\n        txn_count=('region_norm', 'size')\n    )\n\n    # Explicit column ordering to match legacy output\n    result = result[['txn_month', 'region_norm', 'total_amount', 'txn_count']]\n\n    return {'monthly_region_rollup': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 421,
+   "tokens_out": 691,
+   "usd": 0.003876,
+   "wall_s": 4.921940088272095
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2232,
+  "tokens_out": 1086,
+  "usd": 0.022986,
+  "wall_s": 8.982695579528809
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

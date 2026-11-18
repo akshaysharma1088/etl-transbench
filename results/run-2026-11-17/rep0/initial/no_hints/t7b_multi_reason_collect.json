@@ -1,0 +1,16 @@
+{
+ "task": "t7b_multi_reason_collect",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"invoices\"].copy()\n\n    def eval_row(row):\n        codes = []\n\n        amount = row.get(\"amount\")\n        tax = row.get(\"tax\")\n        due_date = row.get(\"due_date\")\n        customer_ref = row.get(\"customer_ref\")\n\n        amount_is_null = pd.isna(amount)\n        tax_is_null = pd.isna(tax)\n\n        # R1\n        if amount_is_null or (not amount_is_null and amount < 0):\n            codes.append(\"AMT_BAD\")\n\n        # R2\n        if tax_is_null or (not tax_is_null and tax < 0):\n            codes.append(\"TAX_BAD\")\n\n        # R3 - NULL-safe, skip if either is null\n        if not amount_is_null and not tax_is_null:\n            if tax > amount * 0.5:\n                codes.append(\"TAX_EXCESS\")\n\n        # R4\n        if pd.isna(due_date):\n            codes.append(\"DUE_NULL\")\n\n        # R5\n        if pd.isna(customer_ref) or str(customer_ref).strip() == \"\":\n            codes.append(\"REF_EMPTY\")\n\n        return \"|\".join(codes)\n\n    reason_codes = df.apply(eval_row, axis=1)\n\n    is_reject = reason_codes != \"\"\n\n    invoices_clean = df.loc[~is_reject].copy()\n\n    invoices_rejects = df.loc[is_reject].copy()\n    invoices_rejects[\"reason_codes\"] = reason_codes.loc[is_reject]\n\n    return {\n        \"invoices_clean\": invoices_clean,\n        \"invoices_rejects\": invoices_rejects,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 667,
+   "tokens_out": 900,
+   "usd": 0.015501,
+   "wall_s": 7.586560964584351
+  }
+ ]
+}

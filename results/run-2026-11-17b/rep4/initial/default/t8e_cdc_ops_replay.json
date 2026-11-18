@@ -1,0 +1,16 @@
+{
+ "task": "t8e_cdc_ops_replay",
+ "group": "default",
+ "tier": "frontier",
+ "code": "```python\nimport pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    target_state = inputs[\"target_state\"]\n    cdc_events = inputs[\"cdc_events\"]\n\n    # --- Build initial state from target_state ---\n    state = {}\n    orig_last_seq = {}\n    ever_had_row = set()\n\n    for row in target_state.itertuples(index=False):\n        order_id = row.order_id\n        status = row.status\n        amount = row.amount\n        last_seq = row.last_seq\n        state[order_id] = {\"status\": status, \"amount\": amount, \"last_seq\": last_seq}\n        ",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1149,
+   "tokens_out": 4000,
+   "usd": 0.063447,
+   "wall_s": 41.99675941467285
+  }
+ ]
+}

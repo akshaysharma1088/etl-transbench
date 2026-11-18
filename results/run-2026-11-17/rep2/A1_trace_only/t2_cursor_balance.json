@@ -1,0 +1,51 @@
+{
+ "config": "A1_trace_only",
+ "rep": 2,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    # Resolve input key case-insensitively to be robust to harness naming\n    key = None\n    for k in inputs.keys():\n        if k.lower() == \"transactions\":\n            key = k\n            break\n    if key is None:\n        raise KeyError(\"TRANSACTIONS\")\n\n    df = inputs[key].copy()\n\n    # Preserve original dtypes/values for output columns\n    df = df.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        kind=\"mergesort\"  # stable sort to mimic deterministic cursor order\n    ).reset_index(drop=True)\n\n    # Coalesce amount to 0 for running balance computation only\n    amt_filled = df[\"amount\"].fillna(0)\n\n    # Running balance resets per account_id (cursor logic: bal resets when account changes)\n    running_balance = amt_filled.groupby(df[\"account_id\"]).cumsum()\n\n    overdraft_flag = (running_balance < 0).astype(\"int64\")\n\n    out = pd.DataFrame({\n        \"account_id\": df[\"account_id\"],\n        \"txn_seq\": df[\"txn_seq\"],\n        \"txn_date\": df[\"txn_date\"],\n        \"amount\": df[\"amount\"],\n        \"running_balance\": running_balance.astype(\"float64\"),\n        \"overdraft_flag\": overdraft_flag\n    })\n\n    return {\"acct_balance_flags\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 713,
+   "tokens_out": 614,
+   "usd": 0.011349,
+   "wall_s": 6.873511791229248
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1570,
+  "tokens_out": 544,
+  "usd": 0.01287,
+  "wall_s": 4.74163556098938
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

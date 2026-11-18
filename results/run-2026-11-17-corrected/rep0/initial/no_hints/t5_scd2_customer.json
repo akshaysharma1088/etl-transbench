@@ -1,0 +1,17 @@
+{
+ "task": "t5_scd2_customer",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef _is_diff(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef _pick_latest(group: pd.DataFrame) -> pd.Series:\n    max_date = group[\"update_date\"].max()\n    candidates = group[group[\"update_date\"] == max_date]\n    if len(candidates) > 1:\n        candidates = candidates.sort_values(\n            [\"name\", \"segment\"], ascending=[False, False]\n        )\n    return candidates.iloc[0]\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_customer\"].copy().reset_index(drop=True)\n    stg = inputs[\"stg_customer\"].copy()\n\n    if len(stg) == 0:\n        result = dim.copy()\n        result[\"customer_id\"] = result[\"customer_id\"].astype(\"int64\")\n        result[\"is_current\"] = result[\"is_current\"].astype(\"int64\")\n        result[\"eff_start_date\"] = pd.to_datetime(result[\"eff_start_date\"])\n        result[\"eff_end_date\"] = pd.to_datetime(result[\"eff_end_date\"])\n        return {\"dim_customer_out\": result}\n\n    dedup = (\n        stg.groupby(\"customer_id\", group_keys=False)\n        .apply(_pick_latest)\n        .reset_index(drop=True)\n    )\n\n    new_rows = []\n\n    for _, s in dedup.iterrows():\n        cid = s[\"customer_id\"]\n        mask = (dim[\"customer_id\"] == cid) & (dim[\"is_current\"] == 1)\n        current_idx = dim.index[mask]\n\n        if len(current_idx) == 0:\n            new_rows.append(\n                {\n                    \"customer_id\": cid,\n                    \"name\": s[\"name\"],\n                    \"segment\": s[\"segment\"],\n                    \"eff_start_date\": s[\"update_date\"],\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            )\n        else:\n            ci = current_idx[0]\n            c_name = dim.at[ci, \"name\"]\n            c_segment = dim.at[ci, \"segment\"]\n\n            changed = _is_diff(c_name, s[\"name\"]) or _is_diff(c_segment, s[\"segment\"])\n\n            if changed:\n                dim.at[ci, \"eff_end_date\"] = s[\"update_date\"]\n                dim.at[ci, \"is_current\"] = 0\n                new_rows.append(\n                    {\n                        \"customer_id\": cid,\n                        \"name\": s[\"name\"],\n                        \"segment\": s[\"segment\"],\n                        \"eff_start_date\": s[\"update_date\"],\n                        \"eff_end_date\": pd.NaT,\n                        \"is_current\": 1,\n                    }\n                )\n            # else: no change, do nothing\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows)\n        result = pd.concat([dim, new_df], ignore_index=True)\n    else:\n        result = dim\n\n    result[\"customer_id\"] = result[\"customer_id\"].astype(\"int64\")\n    result[\"is_current\"] = result[\"is_current\"].astype(\"int64\")\n    result[\"eff_start_date\"] = pd.to_datetime(result[\"eff_start_date\"])\n    result[\"eff_end_date\"] = pd.to_datetime(result[\"eff_end_date\"])\n\n    return {\"dim_customer_out\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1099,
+   "tokens_out": 2889,
+   "usd": 0.046632,
+   "wall_s": 23.32169818878174,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

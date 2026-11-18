@@ -1,0 +1,58 @@
+{
+ "config": "C4_cheap_trace_only",
+ "rep": 3,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy SP_RUNNING_BALANCE cursor logic as set-oriented pandas operations.\n    \n    Computes running balance per account (reset at account boundaries) and flags overdrafts.\n    Preserves null handling (NULL amounts treated as 0 for accumulation) and tie-breaking order.\n    \"\"\"\n    transactions = inputs[\"transactions\"].copy()\n    \n    # Sort by account_id, txn_date, txn_seq to match cursor order\n    transactions = transactions.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Create a column with amounts where NULLs are replaced with 0 for cumsum\n    # but keep original amount in the output\n    amount_for_calc = transactions[\"amount\"].fillna(0.0)\n    \n    # Identify account boundaries for resetting balance\n    account_changes = transactions[\"account_id\"] != transactions[\"account_id\"].shift()\n    account_changes.iloc[0] = True\n    \n    # Assign group IDs: each group represents a contiguous account\n    account_groups = account_changes.cumsum()\n    \n    # Compute cumulative sum within each account group using filled amounts\n    transactions[\"running_balance\"] = transactions.groupby(account_groups, observed=True).apply(\n        lambda x: amount_for_calc.loc[x.index].cumsum(),\n        include_groups=False\n    ).reset_index(drop=True)\n    \n    # Ensure running_balance is float64\n    transactions[\"running_balance\"] = transactions[\"running_balance\"].astype(\"float64\")\n    \n    # Compute overdraft flag: 1 if running_balance < 0, else 0\n    transactions[\"overdraft_flag\"] = (transactions[\"running_balance\"] < 0).astype(\"int64\")\n    \n    # Select output columns in order, keeping original amount (with potential NULLs)\n    result = transactions[\n        [\"account_id\", \"txn_seq\", \"txn_date\", \"amount\", \"running_balance\", \"overdraft_flag\"]\n    ].copy()\n    \n    return {\"acct_balance_flags\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 520,
+   "tokens_out": 529,
+   "usd": 0.003165,
+   "wall_s": 5.077462911605835,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2336,
+  "tokens_out": 2831,
+  "usd": 0.016491,
+  "wall_s": 21.47386074066162
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

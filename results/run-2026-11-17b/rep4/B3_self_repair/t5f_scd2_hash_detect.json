@@ -1,0 +1,67 @@
+{
+ "config": "B3_self_repair",
+ "rep": 4,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "runtime"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _sig(city, tier):\n    def norm(x):\n        if pd.isna(x):\n            return \"\"\n        return str(x).rstrip()\n    return norm(city) + \"|\" + norm(tier)\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"DIM_MEMBER\"].copy()\n    stg = inputs[\"STG_MEMBER\"].copy()\n\n    # Ensure expected columns exist and preserve order\n    cols = [\"member_id\", \"city\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    dim = dim.reindex(columns=cols)\n\n    # Work with a list of row dicts for easy mutation/append, keep original index\n    dim = dim.reset_index(drop=True)\n\n    # Build a quick lookup: member_id -> index of current row (is_current == 1)\n    def find_current_idx(member_id):\n        mask = (dim[\"member_id\"] == member_id) & (dim[\"is_current\"] == 1)\n        idxs = dim.index[mask]\n        if len(idxs) == 0:\n            return None\n        return idxs[0]\n\n    new_rows = []\n\n    for _, s in stg.iterrows():\n        member_id = s[\"member_id\"]\n        s_city = s[\"city\"]\n        s_tier = s[\"tier\"]\n        update_date = s[\"update_date\"]\n\n        cur_idx = find_current_idx(member_id)\n\n        if cur_idx is None:\n            # No current row -> insert new current record\n            new_rows.append({\n                \"member_id\": member_id,\n                \"city\": s_city,\n                \"tier\": s_tier,\n                \"eff_start_date\": update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n        else:\n            c_city = dim.at[cur_idx, \"city\"]\n            c_tier = dim.at[cur_idx, \"tier\"]\n\n            sig_s = _sig(s_city, s_tier)\n            sig_c = _sig(c_city, c_tier)\n\n            if sig_s != sig_c:\n                # Close current row\n                dim.at[cur_idx, \"eff_end_date\"] = update_date\n                dim.at[cur_idx, \"is_current\"] = 0\n\n                # Insert new current row\n                new_rows.append({\n                    \"member_id\": member_id,\n                    \"city\": s_city,\n                    \"tier\": s_tier,\n                    \"eff_start_date\": update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            # else: no-op, unchanged\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=cols)\n        dim = pd.concat([dim, new_df], ignore_index=True)\n\n    dim = dim.reindex(columns=cols).reset_index(drop=True)\n\n    return {\"dim_member_out\": dim}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1114,
+   "tokens_out": 3634,
+   "usd": 0.057852,
+   "wall_s": 33.53163695335388
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6051,
+  "tokens_out": 9951,
+  "usd": 0.167418,
+  "wall_s": 99.35202550888062
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

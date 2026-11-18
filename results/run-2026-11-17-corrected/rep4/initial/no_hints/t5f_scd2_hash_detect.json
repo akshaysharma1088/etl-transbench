@@ -1,0 +1,17 @@
+{
+ "task": "t5f_scd2_hash_detect",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef _sig(val_city, val_tier):\n    c = '' if pd.isna(val_city) else str(val_city)\n    t = '' if pd.isna(val_tier) else str(val_tier)\n    return c.rstrip(' ') + '|' + t.rstrip(' ')\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_member\"].copy()\n    stg = inputs[\"stg_member\"].copy()\n\n    # Ensure proper dtypes / reset index for stable row access\n    dim = dim.reset_index(drop=True)\n\n    # Work with a list of dict rows so we can mutate and append easily\n    records = dim.to_dict(\"records\")\n\n    # Build a quick lookup: member_id -> index of current row (is_current == 1)\n    current_idx = {}\n    for i, r in enumerate(records):\n        if r.get(\"is_current\") == 1:\n            current_idx[r[\"member_id\"]] = i\n\n    new_rows = []\n\n    for _, s in stg.iterrows():\n        mid = s[\"member_id\"]\n        s_city = s[\"city\"]\n        s_tier = s[\"tier\"]\n        s_date = s[\"update_date\"]\n\n        if mid not in current_idx:\n            new_rows.append({\n                \"member_id\": mid,\n                \"city\": s_city,\n                \"tier\": s_tier,\n                \"eff_start_date\": s_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n        else:\n            idx = current_idx[mid]\n            c = records[idx]\n            if _sig(s_city, s_tier) != _sig(c[\"city\"], c[\"tier\"]):\n                records[idx][\"eff_end_date\"] = s_date\n                records[idx][\"is_current\"] = 0\n                new_rows.append({\n                    \"member_id\": mid,\n                    \"city\": s_city,\n                    \"tier\": s_tier,\n                    \"eff_start_date\": s_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            # else: no-op, keep c as is\n\n    all_rows = records + new_rows\n\n    out = pd.DataFrame(all_rows, columns=[\n        \"member_id\", \"city\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"\n    ])\n\n    # Coerce dtypes to match expected output schema\n    out[\"member_id\"] = out[\"member_id\"].astype(\"int64\")\n    out[\"eff_start_date\"] = pd.to_datetime(out[\"eff_start_date\"])\n    out[\"eff_end_date\"] = pd.to_datetime(out[\"eff_end_date\"])\n    out[\"is_current\"] = out[\"is_current\"].astype(\"int64\")\n\n    return {\"dim_member_out\": out}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1192,
+   "tokens_out": 1300,
+   "usd": 0.023076,
+   "wall_s": 11.108563661575317,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

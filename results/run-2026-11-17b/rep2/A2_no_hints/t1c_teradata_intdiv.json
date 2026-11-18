@@ -1,0 +1,47 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t1c_teradata_intdiv",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy Teradata SQL semantics:\n    - ZEROIFNULL: replace NULL with 0\n    - INTEGER / INTEGER: truncate toward zero (not floor division)\n    - CAST(... AS INTEGER): truncate toward zero\n    \"\"\"\n    \n    acct_balance = inputs['acct_balance'].copy()\n    \n    # Filter: WHERE acct_type <> 'CLOSED'\n    result = acct_balance[acct_balance['acct_type'] != 'CLOSED'].copy()\n    \n    # ZEROIFNULL(balance_cents) / 100 AS balance_bucket\n    # Replace NULL with 0, then divide and truncate toward zero\n    balance_cents = result['balance_cents'].fillna(0)\n    result['balance_bucket'] = (balance_cents / 100).apply(\n        lambda x: int(np.trunc(x))\n    )\n    \n    # CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER) AS fx_units\n    # Replace NULL with 0, multiply by fx_rate, divide by 100, truncate toward zero\n    balance_cents = result['balance_cents'].fillna(0)\n    fx_rate = result['fx_rate']\n    result['fx_units'] = (balance_cents * fx_rate / 100).apply(\n        lambda x: int(np.trunc(x))\n    )\n    \n    # Select only the required columns\n    output = result[['account_id', 'balance_bucket', 'fx_units']].reset_index(drop=True)\n    \n    return {'balance_buckets': output}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 342,
+   "tokens_out": 443,
+   "usd": 0.002557,
+   "wall_s": 2.9399611949920654
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

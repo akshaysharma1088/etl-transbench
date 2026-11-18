@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 4,
+ "task": "t1b_oracle_decode_nvl",
+ "category": "T1",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\nfrom datetime import datetime\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Legacy warehouse SQL translation: Oracle DECODE/NVL/TRUNC month rollup.\n    \n    Semantics:\n    - TRUNC(txn_ts, 'MM') truncates timestamp to month start\n    - DECODE(region, NULL, 'MISSING', 'XX', 'UNKNOWN', region) matches NULL and 'XX' explicitly\n    - NVL(amount, 0) replaces NULL amounts with 0\n    - Aggregation on filtered (status='POSTED') rows\n    \"\"\"\n    regional_txn = inputs['regional_txn'].copy()\n    \n    # Filter: WHERE status = 'POSTED'\n    regional_txn = regional_txn[regional_txn['status'] == 'POSTED'].copy()\n    \n    # Apply TRUNC(txn_ts, 'MM') - truncate to month start\n    # Convert to datetime if needed\n    if not pd.api.types.is_datetime64_any_dtype(regional_txn['txn_ts']):\n        regional_txn['txn_ts'] = pd.to_datetime(regional_txn['txn_ts'])\n    \n    regional_txn['txn_month'] = regional_txn['txn_ts'].dt.to_period('M').dt.to_timestamp()\n    \n    # Apply DECODE(region, NULL, 'MISSING', 'XX', 'UNKNOWN', region)\n    # Oracle DECODE matches NULL = NULL (unlike SQL CASE)\n    def decode_region(val):\n        if pd.isna(val):\n            return 'MISSING'\n        elif val == 'XX':\n            return 'UNKNOWN'\n        else:\n            return val\n    \n    regional_txn['region_norm'] = regional_txn['region'].apply(decode_region)\n    \n    # Apply NVL(amount, 0) - replace NULL with 0\n    regional_txn['amount_normalized'] = regional_txn['amount'].fillna(0)\n    \n    # GROUP BY txn_month, region_norm\n    grouped = regional_txn.groupby(['txn_month', 'region_norm'], as_index=False)\n    \n    # Aggregations\n    result = grouped.agg(\n        total_amount=('amount_normalized', 'sum'),\n        txn_count=('amount_normalized', 'count')  # COUNT(*) counts all rows in group\n    ).reset_index()\n    \n    # Rename for output\n    result = result.rename(columns={'txn_month': 'txn_month', 'region_norm': 'region_norm'})\n    \n    # Ensure correct column order and types\n    result = result[['txn_month', 'region_norm', 'total_amount', 'txn_count']]\n    result['total_amount'] = pd.to_numeric(result['total_amount'], errors='coerce')\n    result['txn_count'] = result['txn_count'].astype('int64')\n    \n    return {'monthly_region_rollup': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 390,
+   "tokens_out": 790,
+   "usd": 0.00434,
+   "wall_s": 6.618718385696411
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

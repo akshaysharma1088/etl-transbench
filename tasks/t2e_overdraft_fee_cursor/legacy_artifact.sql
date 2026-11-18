@@ -1,0 +1,25 @@
+-- Legacy stored procedure SP_POST_TXNS_WITH_FEES (abstracted, vendor-neutral).
+-- Inputs:
+--   accounts (account_id INT, opening_balance DECIMAL(12,2))
+--   txns     (txn_id INT, account_id INT, txn_ts TIMESTAMP, amount DECIMAL(12,2))
+--        -- amount > 0 is a deposit, amount < 0 is a debit. txn_id is unique.
+-- Outputs:
+--   txn_ledger (txn_id, balance_after)
+--   fees       (account_id, fee_date, trigger_txn_id)
+--
+-- PROCEDURE BODY (pseudocode preserved):
+--   FOR EACH account:
+--     bal := opening_balance;
+--     CURSOR over the account's txns ORDER BY txn_ts, txn_id;
+--     FOR EACH txn t:
+--       bal := bal + t.amount;
+--       IF t.amount < 0 AND bal < 0
+--          AND no fee has been charged to this account on CAST(t.txn_ts AS DATE) THEN
+--           bal := bal - 35.00;                         -- the fee is part of the balance
+--           INSERT INTO fees (account_id, CAST(t.txn_ts AS DATE), t.txn_id);
+--       END IF;
+--       INSERT INTO txn_ledger (t.txn_id, bal);          -- balance AFTER any fee
+--   A deposit never triggers a fee, even when the balance stays negative.
+--   An account that starts the day negative is charged only when a debit posts.
+--   Every txn of a known account produces one txn_ledger row. Txns whose
+--   account_id is not in accounts are ignored.

@@ -1,0 +1,57 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_state = inputs['target_state']\n    cdc_events = inputs['cdc_events']\n\n    # 1. Deduplicate events by seq (at-least-once delivery -> apply once)\n    events = cdc_events.drop_duplicates(subset=['seq'], keep='first').sort_values('seq')\n\n    # Build initial per-order state from target_state, and remember the\n    # watermark (last_seq) used for the replay guard.\n    state = {}\n    guard_seq = {}\n    for _, row in target_state.iterrows():\n        oid = row['order_id']\n        state[oid] = {\n            'status': row['status'],\n            'amount': row['amount'],\n            'last_seq': row['last_seq'],\n            'exists': True,\n            'deleted_seq': None,\n        }\n        guard_seq[oid] = row['last_seq']\n\n    # 2 & 3. Apply events, in seq order, honoring the per-order replay guard.\n    for _, ev in events.iterrows():\n        oid = ev['order_id']\n        seq = ev['seq']\n        op = ev['op']\n\n        if oid in guard_seq and seq <= guard_seq[oid]:\n            continue\n\n        if oid not in state:\n            state[oid] = {\n                'status': None,\n                'amount': None,\n                'last_seq': None,\n                'exists': False,\n                'deleted_seq': None,\n            }\n        s = state[oid]\n\n        if op in ('I', 'U'):\n            if s['exists']:\n                s['status'] = ev['status']\n                if op == 'U':\n                    # 'U' with NULL amount leaves existing amount unchanged\n                    if pd.notna(ev['amount']):\n                        s['amount'] = ev['amount']\n                    # else keep existing amount\n                else:\n                    # 'I' on existing row: update amount to event amount (as is)\n                    s['amount'] = ev['amount']\n            else:\n                # create new row from scratch\n                s['status'] = ev['status']\n                s['amount'] = ev['amount']\n                s['exists'] = True\n\n            s['last_seq'] = seq\n            s['deleted_seq'] = None\n\n        elif op == 'D':\n            if s['exists']:\n                s['exists'] = False\n                s['status'] = None\n                s['amount'] = None\n                s['last_seq'] = seq\n                s['deleted_seq'] = seq\n            # 'D' for a missing order does nothing\n        # unknown op: ignore (not specified)\n\n    # 4. Build new_state: orders with a surviving row\n    new_state_rows = []\n    tombstone_rows = []\n\n    for oid, s in state.items():\n        if s['exists']:\n            new_state_rows.append({\n                'order_id': oid,\n                'status': s['status'],\n                'amount': s['amount'],\n                'last_seq': s['last_seq'],\n            })\n        else:\n            # Had a row at some point (either originally or created) and\n            # last applied event was 'D'\n            if s['deleted_seq'] is not None:\n                tombstone_rows.append({\n                    'order_id': oid,\n                    'deleted_seq': s['deleted_seq'],\n                })\n\n    new_state = pd.DataFrame(new_state_rows, columns=['order_id', 'status', 'amount', 'last_seq'])\n    tombstones = pd.DataFrame(tombstone_rows, columns=['order_id', 'deleted_seq'])\n\n    if len(new_state) > 0:\n        new_state['order_id'] = new_state['order_id'].astype(target_state['order_id'].dtype, errors='ignore')\n        new_state['last_seq'] = new_state['last_seq'].astype(target_state['last_seq'].dtype, errors='ignore')\n\n    if len(tombstones) > 0:\n        tombstones['order_id'] = tombstones['order_id'].astype(target_state['order_id'].dtype, errors='ignore')\n        tombstones['deleted_seq'] = tombstones['deleted_seq'].astype(cdc_events['seq'].dtype, errors='ignore')\n\n    return {\n        'new_state': new_state,\n        'tombstones': tombstones,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1098,
+   "tokens_out": 4000,
+   "usd": 0.063294,
+   "wall_s": 41.42179226875305
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3287,
+  "tokens_out": 5625,
+  "usd": 0.094236,
+  "wall_s": 52.964752435684204
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 4,
+ "task": "t2f_fifo_lot_matching",
+ "category": "T2",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom typing import Dict, List, Tuple\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    FIFO lot matching for trades: sells consume the oldest buy lots.\n    Returns sell_results and open_lots.\n    \"\"\"\n    trades_df = inputs[\"trades\"].copy()\n    \n    # Sort by account_id, symbol, trade_ts, trade_id to process in order\n    trades_df = trades_df.sort_values(\n        by=[\"account_id\", \"symbol\", \"trade_ts\", \"trade_id\"],\n        ignore_index=False\n    )\n    \n    sell_results_list = []\n    open_lots_dict = {}  # key: (account_id, symbol), value: list of dicts {lot_trade_id, remaining_qty, price}\n    \n    # Process each trade in order\n    for idx, trade in trades_df.iterrows():\n        trade_id = trade[\"trade_id\"]\n        account_id = trade[\"account_id\"]\n        symbol = trade[\"symbol\"]\n        side = trade[\"side\"]\n        qty = trade[\"qty\"]\n        price = trade[\"price\"]\n        \n        key = (account_id, symbol)\n        if key not in open_lots_dict:\n            open_lots_dict[key] = []\n        \n        if side == \"BUY\":\n            # Open a new lot\n            open_lots_dict[key].append({\n                \"lot_trade_id\": trade_id,\n                \"remaining_qty\": qty,\n                \"price\": price\n            })\n        else:  # SELL\n            # Consume open lots FIFO (oldest first)\n            matched_qty = 0\n            realized_pnl = 0.0\n            still_to_sell = qty\n            \n            # Process lots in order (they're already in FIFO order)\n            for lot in open_lots_dict[key]:\n                if still_to_sell <= 0:\n                    break\n                \n                take = min(lot[\"remaining_qty\"], still_to_sell)\n                realized_pnl += take * (price - lot[\"price\"])\n                lot[\"remaining_qty\"] -= take\n                still_to_sell -= take\n                matched_qty += take\n            \n            short_qty = still_to_sell  # Remaining unsold quantity\n            \n            sell_results_list.append({\n                \"trade_id\": trade_id,\n                \"matched_qty\": matched_qty,\n                \"short_qty\": short_qty,\n                \"realized_pnl\": realized_pnl\n            })\n    \n    # Build sell_results DataFrame\n    if sell_results_list:\n        sell_results = pd.DataFrame(sell_results_list)\n    else:\n        sell_results = pd.DataFrame(columns=[\"trade_id\", \"matched_qty\", \"short_qty\", \"realized_pnl\"])\n    \n    # Build open_lots DataFrame from remaining lots\n    open_lots_list = []\n    for (account_id, symbol), lots in open_lots_dict.items():\n        for lot in lots:\n            if lot[\"remaining_qty\"] > 0:\n                open_lots_list.append({\n                    \"lot_trade_id\": lot[\"lot_trade_id\"],\n                    \"account_id\": account_id,\n                    \"symbol\": symbol,\n                    \"remaining_qty\": lot[\"remaining_qty\"],\n                    \"price\": lot[\"price\"]\n                })\n    \n    if open_lots_list:\n        open_lots = pd.DataFrame(open_lots_list)\n    else:\n        open_lots = pd.DataFrame(columns=[\"lot_trade_id\", \"account_id\", \"symbol\", \"remaining_qty\", \"price\"])\n    \n    return {\n        \"sell_results\": sell_results,\n        \"open_lots\": open_lots\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 686,
+   "tokens_out": 940,
+   "usd": 0.005386,
+   "wall_s": 5.572545766830444,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

@@ -1,0 +1,58 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 0,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_product = inputs[\"dim_product\"].copy()\n    stg_product = inputs[\"stg_product\"].copy()\n    \n    # Sort staged records by product_id, update_date to process in order\n    stg_product = stg_product.sort_values(\n        by=[\"product_id\", \"update_date\"],\n        ascending=[True, True]\n    ).reset_index(drop=True)\n    \n    # Ensure dtypes\n    dim_product = dim_product.astype({\n        \"product_id\": \"int64\",\n        \"category\": \"object\",\n        \"price_band\": \"object\",\n        \"eff_start_date\": \"datetime64[us]\",\n        \"eff_end_date\": \"datetime64[s]\",\n        \"is_current\": \"int64\"\n    })\n    \n    stg_product = stg_product.astype({\n        \"product_id\": \"int64\",\n        \"category\": \"object\",\n        \"price_band\": \"object\",\n        \"update_date\": \"datetime64[us]\"\n    })\n    \n    # Separate historical (non-current) records - these stay as-is\n    historical = dim_product[dim_product[\"is_current\"] == 0].copy()\n    \n    # Build initial current state from dim_product\n    current_state = {}\n    for _, row in dim_product[dim_product[\"is_current\"] == 1].iterrows():\n        current_state[row[\"product_id\"]] = row.to_dict()\n    \n    # Track all changes (expired and new versions) during processing\n    changes = []\n    \n    # Process each staged record in order\n    for _, staged_row in stg_product.iterrows():\n        product_id = staged_row[\"product_id\"]\n        staged_category = staged_row[\"category\"]\n        staged_price_band = staged_row[\"price_band\"]\n        update_date = staged_row[\"update_date\"]\n        \n        # Find current row for this product_id\n        if product_id not in current_state:\n            # Product missing: insert new current version\n            new_row = {\n                \"product_id\": product_id,\n                \"category\": staged_category,\n                \"price_band\": staged_price_band,\n                \"eff_start_date\": update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1\n            }\n            current_state[product_id] = new_row\n        else:\n            # Current row exists\n            current_row = current_state[product_id]\n            current_category = current_row[\"category\"]\n            current_price_band = current_row[\"price_band\"]\n            \n            # Check if tracked attributes changed\n            # NULL vs NULL is not a change\n            # NULL vs non-NULL is a change\n            category_changed = False\n            price_band_changed = False\n            \n            if pd.isna(current_category) and pd.isna(staged_category):\n                category_changed = False\n            elif pd.isna(current_category) or pd.isna(staged_category):\n                category_changed = True\n            else:\n                category_changed = current_category != staged_category\n            \n            if pd.isna(current_price_band) and pd.isna(staged_price_band):\n                price_band_changed = False\n            elif pd.isna(current_price_band) or pd.isna(staged_price_band):\n                price_band_changed = True\n            else:\n                price_band_changed = current_price_band != staged_price_band\n            \n            if category_changed or price_band_changed:\n                # Expire current row\n                expired_row = current_row.copy()\n                expired_row[\"eff_end_date\"] = update_date\n                expired_row[\"is_current\"] = 0\n                changes.append(expired_row)\n                \n                # Insert new current version\n                new_row = {\n                    \"product_id\": product_id,\n                    \"category\": staged_category,\n                    \"price_band\": staged_price_band,\n                    \"eff_start_date\": update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1\n                }\n                current_state[product_id] = new_row\n            # else: no-op (unchanged record)\n    \n    # Add all expired versions from changes to output\n    changes_df = pd.DataFrame(changes) if changes else pd.DataFrame(\n        columns=[\"product_id\", \"category\", \"price_band\",\n                \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    )\n    \n    # Add final current state to output\n    final_current = list(current_state.values())\n    current_df = pd.DataFrame(final_current) if final_current else pd.DataFrame(\n        columns=[\"product_id\", \"category\", \"price_band\",\n                \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    )\n    \n    # Combine historical + all expired versions + final current state\n    dim_product_out = pd.concat(\n        [historical, changes_df, current_df],\n        ignore_index=True\n    )\n    \n    # Ensure proper dtypes in output\n    dim_product_out = dim_product_out.astype({\n        \"product_id\": \"int64\",\n        \"category\": \"object\",\n        \"price_band\": \"object\",\n        \"eff_start_date\": \"datetime64[us]\",\n        \"eff_end_date\": \"datetime64[s]\",\n        \"is_current\": \"int64\"\n    })\n    \n    return {\"dim_product_out\": dim_product_out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 674,
+   "tokens_out": 2981,
+   "usd": 0.015579,
+   "wall_s": 21.00071430206299,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4566,
+  "tokens_out": 3490,
+  "usd": 0.022016,
+  "wall_s": 22.482035160064697
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

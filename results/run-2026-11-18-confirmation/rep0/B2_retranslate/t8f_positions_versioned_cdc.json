@@ -1,0 +1,68 @@
+{
+ "config": "B2_retranslate",
+ "rep": 0,
+ "task": "t8f_positions_versioned_cdc",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 4,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_positions\"].copy()\n    events = inputs[\"position_events\"].copy()\n\n    # Ensure correct dtypes / no stray index issues\n    target = target.reset_index(drop=True)\n    events = events.reset_index(drop=True)\n\n    # 1. Dedup events by batch_seq (same event delivered more than once -> apply once)\n    events = events.drop_duplicates(subset=[\"batch_seq\"], keep=\"first\")\n\n    # Build target lookup: key -> (qty, price, row_version)\n    target_map = {}\n    for _, row in target.iterrows():\n        key = (row[\"account_id\"], row[\"symbol\"])\n        target_map[key] = {\n            \"qty\": row[\"qty\"],\n            \"price\": row[\"price\"],\n            \"row_version\": row[\"row_version\"],\n        }\n\n    # Group events by key\n    events_by_key = {}\n    for _, row in events.iterrows():\n        key = (row[\"account_id\"], row[\"symbol\"])\n        events_by_key.setdefault(key, []).append(row)\n\n    # Final state container: key -> state dict or None (closed) ; also track whether\n    # a key currently exists in target (for keys with no events at all -> carry forward)\n    new_positions_rows = []\n    closed_rows = []\n\n    processed_keys = set()\n\n    all_keys = set(target_map.keys()) | set(events_by_key.keys())\n\n    for key in all_keys:\n        account_id, symbol = key\n        has_target = key in target_map\n        state = dict(target_map[key]) if has_target else None\n\n        key_events = events_by_key.get(key, [])\n\n        if has_target:\n            guard_version = target_map[key][\"row_version\"]\n            filtered = [e for e in key_events if e[\"row_version\"] > guard_version]\n        else:\n            filtered = list(key_events)\n\n        # order by row_version, batch_seq\n        filtered.sort(key=lambda e: (e[\"row_version\"], e[\"batch_seq\"]))\n\n        closed_version = None\n        touched = False\n\n        for e in filtered:\n            op = e[\"op\"]\n            qty_val = e[\"qty\"]\n            price_val = e[\"price\"]\n            row_version = e[\"row_version\"]\n\n            is_removal = (op == \"D\") or (op in (\"I\", \"U\") and (qty_val == 0))\n\n            if is_removal:\n                if state is not None:\n                    state = None\n                    closed_version = row_version\n                    touched = True\n                # else: no-op, no change to closed_version, not touched\n            else:\n                # I or U with qty != 0\n                if state is not None:\n                    new_qty = qty_val\n                    if op == \"U\" and pd.isna(price_val):\n                        new_price = state[\"price\"]\n                    else:\n                        new_price = price_val\n                    state = {\n                        \"qty\": new_qty,\n                        \"price\": new_price,\n                        \"row_version\": row_version,\n                    }\n                else:\n                    new_price = price_val  # NULL stays NULL\n                    state = {\n                        \"qty\": qty_val,\n                        \"price\": new_price,\n                        \"row_version\": row_version,\n                    }\n                closed_version = None\n                touched = True\n\n        if state is not None:\n            new_positions_rows.append(\n                {\n                    \"account_id\": account_id,\n                    \"symbol\": symbol,\n                    \"qty\": state[\"qty\"],\n                    \"price\": state[\"price\"],\n                    \"row_version\": state[\"row_version\"],\n                }\n            )\n        else:\n            if touched and closed_version is not None:\n                closed_rows.append(\n                    {\n                        \"account_id\": account_id,\n                        \"symbol\": symbol,\n                        \"closed_version\": closed_version,\n                    }\n                )\n            # else: nothing to emit (never existed, never created)\n\n    new_positions = pd.DataFrame(\n        new_positions_rows, columns=[\"account_id\", \"symbol\", \"qty\", \"price\", \"row_version\"]\n    )\n    closed_positions = pd.DataFrame(\n        closed_rows, columns=[\"account_id\", \"symbol\", \"closed_version\"]\n    )\n\n    # Normalize dtypes\n    if not new_positions.empty:\n        new_positions[\"account_id\"] = new_positions[\"account_id\"].astype(\"int64\")\n        new_positions[\"qty\"] = new_positions[\"qty\"].astype(\"int64\")\n        new_positions[\"row_version\"] = new_positions[\"row_version\"].astype(\"int64\")\n        new_positions[\"price\"] = new_positions[\"price\"].astype(\"float64\")\n    else:\n        new_positions = pd.DataFrame(\n            {\n                \"account_id\": pd.Series(dtype=\"int64\"),\n                \"symbol\": pd.Series(dtype=\"object\"),\n                \"qty\": pd.Series(dtype=\"int64\"),\n                \"price\": pd.Series(dtype=\"float64\"),\n                \"row_version\": pd.Series(dtype=\"int64\"),\n            }\n        )\n\n    if not closed_positions.empty:\n        closed_positions[\"account_id\"] = closed_positions[\"account_id\"].astype(\"int64\")\n        closed_positions[\"closed_version\"] = closed_positions[\"closed_version\"].astype(\"int64\")\n    else:\n        closed_positions = pd.DataFrame(\n            {\n                \"account_id\": pd.Series(dtype=\"int64\"),\n                \"symbol\": pd.Series(dtype=\"object\"),\n                \"closed_version\": pd.Series(dtype=\"int64\"),\n            }\n        )\n\n    return {\n        \"new_positions\": new_positions,\n        \"closed_positions\": closed_positions,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1246,
+   "tokens_out": 4495,
+   "usd": 0.071163,
+   "wall_s": 42.62992811203003,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4984,
+  "tokens_out": 19488,
+  "usd": 0.307272,
+  "wall_s": 182.39899945259094
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

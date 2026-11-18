@@ -1,0 +1,48 @@
+{
+ "config": "L2_cx_patch_then_fresh",
+ "rep": 1,
+ "task": "t1_dialect_qualify",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicates Teradata-style QUALIFY semantics:\n    1. Filter WHERE amount > 100\n    2. Add ROW_NUMBER window function partitioned by account_id,\n       ordered by txn_ts DESC, txn_id DESC\n    3. QUALIFY (filter) where ROW_NUMBER = 1\n    4. Add computed size_band column\n    \"\"\"\n    df = inputs[\"acct_txn\"].copy()\n    \n    # Step 1: WHERE amount > 100\n    df = df[df[\"amount\"] > 100].copy()\n    \n    # Step 2: Compute ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC)\n    # In pandas, we sort by the order-by columns in descending order, then assign row numbers per partition\n    df = df.sort_values(\n        by=[\"account_id\", \"txn_ts\", \"txn_id\"],\n        ascending=[True, False, False],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    df[\"row_num\"] = df.groupby(\"account_id\", sort=False).cumcount() + 1\n    \n    # Step 3: QUALIFY - filter where row_num = 1 (latest transaction per account)\n    df = df[df[\"row_num\"] == 1].copy()\n    \n    # Step 4: Add size_band column using CASE WHEN logic\n    def compute_size_band(amount):\n        if pd.isna(amount):\n            return None\n        if amount >= 1000:\n            return \"JUMBO\"\n        elif amount >= 500:\n            return \"LARGE\"\n        else:\n            return \"STANDARD\"\n    \n    df[\"size_band\"] = df[\"amount\"].apply(compute_size_band)\n    \n    # Step 5: Select final columns (drop row_num as it's not in output)\n    result = df[[\"account_id\", \"txn_id\", \"txn_ts\", \"amount\", \"channel\", \"size_band\"]].copy()\n    \n    return {\"latest_high_value_txn\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 432,
+   "tokens_out": 559,
+   "usd": 0.003227,
+   "wall_s": 5.0626115798950195,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

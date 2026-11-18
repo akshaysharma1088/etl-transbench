@@ -1,0 +1,48 @@
+{
+ "config": "C0_cheap_single",
+ "rep": 1,
+ "task": "t7_reject_validation",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    payments = inputs[\"payments\"].copy()\n    \n    # Initialize columns for tracking\n    payments[\"_reason_code\"] = None\n    payments[\"_rejected\"] = False\n    \n    # R1: amount IS NULL -> reason_code 'AMT_NULL'\n    mask_r1 = payments[\"amount\"].isna()\n    payments.loc[mask_r1 & ~payments[\"_rejected\"], \"_reason_code\"] = \"AMT_NULL\"\n    payments.loc[mask_r1 & ~payments[\"_rejected\"], \"_rejected\"] = True\n    \n    # R2: amount <= 0 -> reason_code 'AMT_NONPOS'\n    mask_r2 = (payments[\"amount\"] <= 0) & (payments[\"amount\"].notna())\n    payments.loc[mask_r2 & ~payments[\"_rejected\"], \"_reason_code\"] = \"AMT_NONPOS\"\n    payments.loc[mask_r2 & ~payments[\"_rejected\"], \"_rejected\"] = True\n    \n    # R3: currency NOT IN ('USD','EUR','GBP') -> reason_code 'CCY_INVALID'\n    mask_r3 = ~payments[\"currency\"].isin([\"USD\", \"EUR\", \"GBP\"])\n    payments.loc[mask_r3 & ~payments[\"_rejected\"], \"_reason_code\"] = \"CCY_INVALID\"\n    payments.loc[mask_r3 & ~payments[\"_rejected\"], \"_rejected\"] = True\n    \n    # R4: country IS NULL -> reason_code 'CTRY_NULL'\n    mask_r4 = payments[\"country\"].isna()\n    payments.loc[mask_r4 & ~payments[\"_rejected\"], \"_reason_code\"] = \"CTRY_NULL\"\n    payments.loc[mask_r4 & ~payments[\"_rejected\"], \"_rejected\"] = True\n    \n    # Split into clean and reject\n    clean = payments[~payments[\"_rejected\"]].copy()\n    rejects = payments[payments[\"_rejected\"]].copy()\n    \n    # Build output for clean records\n    payments_clean = clean[[\"payment_id\", \"amount\", \"currency\", \"country\"]].copy()\n    payments_clean[\"amount\"] = payments_clean[\"amount\"].round(2)\n    \n    # Build output for rejected records\n    payments_rejects = rejects[[\"payment_id\", \"amount\", \"currency\", \"country\", \"_reason_code\"]].copy()\n    payments_rejects = payments_rejects.rename(columns={\"_reason_code\": \"reason_code\"})\n    \n    return {\n        \"payments_clean\": payments_clean,\n        \"payments_rejects\": payments_rejects\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 415,
+   "tokens_out": 677,
+   "usd": 0.0038,
+   "wall_s": 3.807798147201538,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

@@ -90,8 +90,13 @@ def perturb_task(task: Task, seed: int) -> Task:
         rs.columns = {mapping.get(c, c): replace(rule, name=mapping.get(c, c))
                       for c, rule in rs.columns.items()}
 
+    meta = {**task.meta, "perturbation_seed": seed}
+    if "replay" in meta:   # output relation -> input relation it is fed back as
+        meta["replay"] = {mapping.get(o, o): mapping.get(i, i)
+                          for o, i in meta["replay"].items()}
+
     return Task(task_dir=task.task_dir,
-                meta={**task.meta, "perturbation_seed": seed},
+                meta=meta,
                 spec=spec,
                 reference=perturbed_reference,
                 corpus=perturbed_corpus,

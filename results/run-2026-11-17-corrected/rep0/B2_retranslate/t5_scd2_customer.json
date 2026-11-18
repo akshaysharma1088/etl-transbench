@@ -1,0 +1,53 @@
+{
+ "config": "B2_retranslate",
+ "rep": 0,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_customer\"].copy()\n    stg = inputs[\"stg_customer\"].copy()\n\n    # Ensure proper dtypes\n    dim[\"eff_start_date\"] = pd.to_datetime(dim[\"eff_start_date\"])\n    dim[\"eff_end_date\"] = pd.to_datetime(dim[\"eff_end_date\"])\n    stg[\"update_date\"] = pd.to_datetime(stg[\"update_date\"])\n\n    # --- Step 1: Deduplicate staged records ---\n    # latest per customer_id by update_date; ties broken by greater (name, segment)\n    stg_sorted = stg.sort_values(\n        by=[\"customer_id\", \"update_date\", \"name\", \"segment\"],\n        ascending=True,\n        na_position=\"first\",\n        kind=\"mergesort\",\n    )\n    dedup = stg_sorted.groupby(\"customer_id\", as_index=False).tail(1).reset_index(drop=True)\n\n    # --- Helper for null-safe inequality comparison ---\n    def differs(a, b):\n        a_null = pd.isna(a)\n        b_null = pd.isna(b)\n        if a_null and b_null:\n            return False\n        if a_null or b_null:\n            return True\n        return a != b\n\n    # Work with dim as list of row dicts for easy mutation/append\n    records = dim.to_dict(\"records\")\n\n    # Build index of current rows per customer_id (is_current == 1)\n    # Since there should be at most one current row per customer_id, map customer_id -> index in records\n    current_idx = {}\n    for idx, r in enumerate(records):\n        if r.get(\"is_current\") == 1:\n            current_idx[r[\"customer_id\"]] = idx\n\n    for _, s in dedup.iterrows():\n        cust_id = s[\"customer_id\"]\n        s_name = s[\"name\"]\n        s_segment = s[\"segment\"]\n        s_update_date = s[\"update_date\"]\n\n        if cust_id in current_idx:\n            idx = current_idx[cust_id]\n            c = records[idx]\n            changed = differs(c[\"name\"], s_name) or differs(c[\"segment\"], s_segment)\n            if changed:\n                # expire current row\n                records[idx] = {\n                    **c,\n                    \"eff_end_date\": s_update_date,\n                    \"is_current\": 0,\n                }\n                # insert new version\n                new_row = {\n                    \"customer_id\": cust_id,\n                    \"name\": s_name,\n                    \"segment\": s_segment,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n                records.append(new_row)\n                current_idx[cust_id] = len(records) - 1\n            # else: no change, do nothing\n        else:\n            # no current row exists -> insert new\n            new_row = {\n                \"customer_id\": cust_id,\n                \"name\": s_name,\n                \"segment\": s_segment,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            }\n            records.append(new_row)\n            current_idx[cust_id] = len(records) - 1\n\n    out = pd.DataFrame(records, columns=[\"customer_id\", \"name\", \"segment\",\n                                          \"eff_start_date\", \"eff_end_date\", \"is_current\"])\n\n    # Enforce dtypes\n    out[\"customer_id\"] = out[\"customer_id\"].astype(\"int64\")\n    out[\"name\"] = out[\"name\"].astype(object)\n    out[\"segment\"] = out[\"segment\"].astype(object)\n    out[\"eff_start_date\"] = pd.to_datetime(out[\"eff_start_date\"])\n    out[\"eff_end_date\"] = pd.to_datetime(out[\"eff_end_date\"])\n    out[\"is_current\"] = out[\"is_current\"].astype(\"int64\")\n\n    return {\"dim_customer_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1154,
+   "tokens_out": 1943,
+   "usd": 0.032607,
+   "wall_s": 16.898943185806274,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1154,
+  "tokens_out": 2171,
+  "usd": 0.036027,
+  "wall_s": 18.911181926727295
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

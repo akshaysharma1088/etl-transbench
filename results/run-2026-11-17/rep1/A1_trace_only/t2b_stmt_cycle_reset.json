@@ -1,0 +1,51 @@
+{
+ "config": "A1_trace_only",
+ "rep": 1,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    # Handle case-insensitive / flexible key lookup for the input relation\n    ledger = None\n    for key in ('LEDGER', 'ledger', 'Ledger'):\n        if key in inputs:\n            ledger = inputs[key].copy()\n            break\n    if ledger is None:\n        # fallback: find any key matching case-insensitively\n        for k, v in inputs.items():\n            if k.lower() == 'ledger':\n                ledger = v.copy()\n                break\n    if ledger is None:\n        raise KeyError('LEDGER input not found')\n\n    # Sort by account_id, entry_date, row_seq (stable sort preserves cursor order)\n    ledger = ledger.sort_values(\n        by=['account_id', 'entry_date', 'row_seq'], kind='mergesort'\n    ).reset_index(drop=True)\n\n    records = []\n    prev_acct = None\n    bal = 0.0\n    cyc = 1\n\n    for _, row in ledger.iterrows():\n        acct = row['account_id']\n\n        if acct != prev_acct:\n            bal = 0.0\n            cyc = 1\n            prev_acct = acct\n\n        if row['entry_type'] == 'STMT':\n            bal = 0.0\n            cyc += 1\n\n        amt = row['amount']\n        if pd.isna(amt):\n            amt = 0.0\n\n        bal = bal + amt\n\n        records.append({\n            'account_id': row['account_id'],\n            'row_seq': row['row_seq'],\n            'entry_date': row['entry_date'],\n            'entry_type': row['entry_type'],\n            'amount': row['amount'],\n            'cycle_no': cyc,\n            'cycle_balance': bal,\n        })\n\n    out_cols = ['account_id', 'row_seq', 'entry_date', 'entry_type',\n                'amount', 'cycle_no', 'cycle_balance']\n\n    cycle_balances = pd.DataFrame(records, columns=out_cols)\n\n    return {'cycle_balances': cycle_balances}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 750,
+   "tokens_out": 1446,
+   "usd": 0.02394,
+   "wall_s": 12.616673231124878
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1650,
+  "tokens_out": 721,
+  "usd": 0.015765,
+  "wall_s": 6.684514284133911
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

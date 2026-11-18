@@ -1,0 +1,16 @@
+{
+ "task": "t7c_crossfield_reference",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    ref_customers = inputs[\"ref_customers\"].copy()\n    ref_skus = inputs[\"ref_skus\"].copy()\n\n    orig_cols = list(orders.columns)\n\n    # De-duplicate reference tables on their keys, keeping the first occurrence\n    ref_customers = ref_customers.drop_duplicates(subset=[\"customer_id\"], keep=\"first\")\n    ref_skus = ref_skus.drop_duplicates(subset=[\"sku\"], keep=\"first\")\n\n    # Keep a row index to restore original order after merges\n    orders = orders.reset_index(drop=False).rename(columns={\"index\": \"_orig_idx\"})\n\n    # Merge with ref_customers\n    merged = orders.merge(\n        ref_customers[[\"customer_id\", \"status\"]],\n        on=\"customer_id\",\n        how=\"left\",\n        suffixes=(\"\", \"_cust\"),\n    )\n\n    # Merge with ref_skus\n    merged = merged.merge(\n        ref_skus[[\"sku\", \"discontinued\", \"allowed_countries\"]],\n        on=\"sku\",\n        how=\"left\",\n        suffixes=(\"\", \"_sku\"),\n    )\n\n    # Restore original row order\n    merged = merged.sort_values(\"_orig_idx\").reset_index(drop=True)\n\n    # --- Rule evaluation (first failure wins) ---\n\n    # R1: customer not found in ref_customers\n    r1 = merged[\"status\"].isna()\n\n    # R2: customer status is not ACTIVE (only relevant when found)\n    r2 = (~r1) & (merged[\"status\"] != \"ACTIVE\")\n\n    # R3: sku not found in ref_skus\n    r3 = merged[\"discontinued\"].isna()\n\n    # R4: sku discontinued flag set (only relevant when found)\n    def _is_discontinued(val):\n        if pd.isna(val):\n            return False\n        try:\n            return int(val) == 1\n        except (ValueError, TypeError):\n            return False\n\n    r4 = (~r3) & merged[\"discontinued\"].apply(_is_discontinued)\n\n    # R5: ship_country not in trimmed whitelist (only when whitelist non-empty)\n    def _country_blocked(row):\n        ac = row[\"allowed_countries\"]\n        if pd.isna(ac):\n            return False\n        ac_str = str(ac)\n        if ac_str.strip() == \"\":\n            return False\n        members = [m.strip() for m in ac_str.split(\",\")]\n        return row[\"ship_country\"] not in members\n\n    r5 = merged.apply(_country_blocked, axis=1)\n\n    reason = np.select(\n        [r1, r2, r3, r4, r5],\n        [\"CUST_UNKNOWN\", \"CUST_INACTIVE\", \"SKU_UNKNOWN\", \"SKU_DISC\", \"CTRY_BLOCKED\"],\n        default=\"OK\",\n    )\n\n    merged[\"reason_code\"] = reason\n\n    is_ok = merged[\"reason_code\"] == \"OK\"\n\n    orders_clean = merged.loc[is_ok, orig_cols].reset_index(drop=True)\n    orders_rejects = merged.loc[~is_ok, orig_cols + [\"reason_code\"]].reset_index(drop=True)\n\n    return {\n        \"orders_clean\": orders_clean,\n        \"orders_rejects\": orders_rejects,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 704,
+   "tokens_out": 2316,
+   "usd": 0.036852,
+   "wall_s": 21.2099392414093
+  }
+ ]
+}

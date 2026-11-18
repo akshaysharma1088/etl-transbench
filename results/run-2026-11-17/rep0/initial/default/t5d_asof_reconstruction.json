@@ -1,0 +1,16 @@
+{
+ "task": "t5d_asof_reconstruction",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    hist = inputs[\"DIM_EMP_HIST\"].copy()\n    queries = inputs[\"ASOF_QUERIES\"].copy()\n\n    # Normalize date columns to datetime for correct comparison\n    hist[\"eff_start_date\"] = pd.to_datetime(hist[\"eff_start_date\"])\n    hist[\"eff_end_date\"] = pd.to_datetime(hist[\"eff_end_date\"])\n    queries[\"as_of_date\"] = pd.to_datetime(queries[\"as_of_date\"])\n\n    merged = queries.merge(hist, on=\"emp_id\", how=\"inner\", suffixes=(\"\", \"_h\"))\n\n    cond_start = merged[\"as_of_date\"] >= merged[\"eff_start_date\"]\n    cond_end = merged[\"eff_end_date\"].isna() | (merged[\"as_of_date\"] < merged[\"eff_end_date\"])\n\n    result = merged[cond_start & cond_end]\n\n    out = result[[\"query_id\", \"emp_id\", \"dept\", \"grade\"]].reset_index(drop=True)\n\n    return {\"asof_result\": out}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 738,
+   "tokens_out": 511,
+   "usd": 0.009879,
+   "wall_s": 4.544560194015503
+  }
+ ]
+}

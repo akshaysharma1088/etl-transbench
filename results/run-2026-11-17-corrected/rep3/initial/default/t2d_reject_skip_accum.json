@@ -1,0 +1,17 @@
+{
+ "task": "t2d_reject_skip_accum",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    postings = inputs[\"postings\"].copy()\n\n    # Sort according to cursor order\n    postings = postings.sort_values(\n        by=[\"account_id\", \"post_date\", \"post_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # Determine validity of each row\n    def is_valid(row):\n        qty = row[\"qty\"]\n        price = row[\"unit_price\"]\n        if pd.isna(qty) or qty <= 0:\n            return False\n        if pd.isna(price) or price < 0:\n            return False\n        return True\n\n    postings[\"_valid\"] = postings.apply(is_valid, axis=1)\n\n    # Compute post_value only for valid rows\n    postings[\"_post_value\"] = postings[\"qty\"] * postings[\"unit_price\"]\n\n    # Build posted_totals: only valid rows, running_total = cumulative sum within account\n    valid_rows = postings[postings[\"_valid\"]].copy()\n    valid_rows[\"running_total\"] = valid_rows.groupby(\"account_id\")[\"_post_value\"].cumsum()\n\n    posted_totals = valid_rows[[\"account_id\", \"post_seq\", \"post_date\", \"_post_value\", \"running_total\"]].rename(\n        columns={\"_post_value\": \"post_value\"}\n    ).reset_index(drop=True)\n\n    # Build reject_counts: per account_id, count of invalid rows, including zero-reject accounts\n    all_accounts = postings[\"account_id\"].drop_duplicates().sort_values().reset_index(drop=True)\n    reject_counts_series = postings.groupby(\"account_id\")[\"_valid\"].apply(lambda s: (~s).sum())\n    reject_counts = reject_counts_series.reindex(all_accounts, fill_value=0).reset_index()\n    reject_counts.columns = [\"account_id\", \"reject_count\"]\n    reject_counts[\"reject_count\"] = reject_counts[\"reject_count\"].astype(\"int64\")\n\n    return {\n        \"posted_totals\": posted_totals,\n        \"reject_counts\": reject_counts\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1054,
+   "tokens_out": 998,
+   "usd": 0.018132,
+   "wall_s": 9.378879070281982,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

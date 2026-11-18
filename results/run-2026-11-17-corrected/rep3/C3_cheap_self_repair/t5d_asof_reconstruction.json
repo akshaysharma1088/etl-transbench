@@ -1,0 +1,48 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 3,
+ "task": "t5d_asof_reconstruction",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_emp_hist = inputs[\"dim_emp_hist\"].copy()\n    asof_queries = inputs[\"asof_queries\"].copy()\n    \n    # Perform the point-in-time join\n    # For each query, find the history record where:\n    # - emp_id matches\n    # - as_of_date >= eff_start_date (start INCLUSIVE)\n    # - eff_end_date IS NULL OR as_of_date < eff_end_date (end EXCLUSIVE)\n    \n    # Merge on emp_id first\n    merged = asof_queries.merge(dim_emp_hist, on=\"emp_id\", how=\"inner\")\n    \n    # Apply the date range conditions\n    # Condition 1: as_of_date >= eff_start_date\n    condition1 = merged[\"as_of_date\"] >= merged[\"eff_start_date\"]\n    \n    # Condition 2: eff_end_date IS NULL OR as_of_date < eff_end_date\n    condition2 = (merged[\"eff_end_date\"].isna()) | (merged[\"as_of_date\"] < merged[\"eff_end_date\"])\n    \n    # Apply both conditions\n    filtered = merged[condition1 & condition2]\n    \n    # Select output columns\n    asof_result = filtered[[\"query_id\", \"emp_id\", \"dept\", \"grade\"]].copy()\n    \n    # Sort to ensure consistent ordering (by query_id, emp_id, then by start date descending\n    # to handle ties - most recent version first, though inner join should give us one row per query)\n    asof_result = asof_result.sort_values(by=[\"query_id\", \"emp_id\"]).reset_index(drop=True)\n    \n    return {\"asof_result\": asof_result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 613,
+   "tokens_out": 482,
+   "usd": 0.003023,
+   "wall_s": 4.585485458374023,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

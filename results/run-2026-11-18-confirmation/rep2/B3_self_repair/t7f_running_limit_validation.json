@@ -1,0 +1,48 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t7f_running_limit_validation",
+ "category": "T7",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    account_limits = inputs[\"account_limits\"]\n    transfers = inputs[\"transfers\"]\n\n    limits_map = dict(zip(account_limits[\"account_id\"], account_limits[\"daily_limit\"]))\n\n    transfers_sorted = transfers.sort_values(\"row_num\", kind=\"mergesort\")\n\n    accepted_refs = set()\n    running_sums = {}  # (account_id, transfer_date) -> accumulated sum\n\n    accepted_rows = []\n    reject_rows = []\n\n    for row in transfers_sorted.itertuples(index=False):\n        row_num = row.row_num\n        transfer_ref = row.transfer_ref\n        account_id = row.account_id\n        amount = row.amount\n        transfer_date = row.transfer_date\n\n        # R1 UNKNOWN_ACCOUNT\n        if account_id not in limits_map:\n            reject_rows.append((row_num, \"UNKNOWN_ACCOUNT\"))\n            continue\n\n        # R2 BAD_AMOUNT\n        if pd.isna(amount) or amount <= 0:\n            reject_rows.append((row_num, \"BAD_AMOUNT\"))\n            continue\n\n        # R3 DUPLICATE_REF\n        if transfer_ref in accepted_refs:\n            reject_rows.append((row_num, \"DUPLICATE_REF\"))\n            continue\n\n        # R4 OVER_LIMIT\n        key = (account_id, transfer_date)\n        prior_sum = running_sums.get(key, 0.0)\n        daily_limit = limits_map[account_id]\n\n        if prior_sum + amount > daily_limit:\n            reject_rows.append((row_num, \"OVER_LIMIT\"))\n            continue\n\n        # Accept\n        new_sum = prior_sum + amount\n        running_sums[key] = new_sum\n        accepted_refs.add(transfer_ref)\n        accepted_rows.append((row_num, account_id, amount, new_sum))\n\n    accepted_transfers = pd.DataFrame(\n        accepted_rows,\n        columns=[\"row_num\", \"account_id\", \"amount\", \"running_total\"]\n    )\n    if len(accepted_transfers) > 0:\n        accepted_transfers[\"row_num\"] = accepted_transfers[\"row_num\"].astype(\"int64\")\n        accepted_transfers[\"account_id\"] = accepted_transfers[\"account_id\"].astype(\"int64\")\n        accepted_transfers[\"amount\"] = accepted_transfers[\"amount\"].astype(\"float64\")\n        accepted_transfers[\"running_total\"] = accepted_transfers[\"running_total\"].astype(\"float64\")\n    else:\n        accepted_transfers = pd.DataFrame({\n            \"row_num\": pd.Series(dtype=\"int64\"),\n            \"account_id\": pd.Series(dtype=\"int64\"),\n            \"amount\": pd.Series(dtype=\"float64\"),\n            \"running_total\": pd.Series(dtype=\"float64\"),\n        })\n\n    transfer_rejects = pd.DataFrame(\n        reject_rows,\n        columns=[\"row_num\", \"reason\"]\n    )\n    if len(transfer_rejects) > 0:\n        transfer_rejects[\"row_num\"] = transfer_rejects[\"row_num\"].astype(\"int64\")\n        transfer_rejects[\"reason\"] = transfer_rejects[\"reason\"].astype(str)\n    else:\n        transfer_rejects = pd.DataFrame({\n            \"row_num\": pd.Series(dtype=\"int64\"),\n            \"reason\": pd.Series(dtype=\"object\"),\n        })\n\n    return {\n        \"accepted_transfers\": accepted_transfers,\n        \"transfer_rejects\": transfer_rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 950,
+   "tokens_out": 1522,
+   "usd": 0.02568,
+   "wall_s": 11.752497673034668,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

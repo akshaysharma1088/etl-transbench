@@ -1,0 +1,53 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 1,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by (user_id, channel, event_ts, event_id)\n    events = events.sort_values(\n        by=[\"user_id\", \"channel\", \"event_ts\", \"event_id\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Create a session identifier by detecting gaps within each (user_id, channel) group\n    events[\"session_num\"] = 0\n    \n    session_num = 1\n    current_user = None\n    current_channel = None\n    previous_event_ts = None\n    \n    for idx, row in events.iterrows():\n        user_id = row[\"user_id\"]\n        channel = row[\"channel\"]\n        event_ts = row[\"event_ts\"]\n        \n        # Check if we need to start a new session\n        if user_id != current_user or channel != current_channel:\n            # New (user_id, channel) pair\n            session_num = 1\n            current_user = user_id\n            current_channel = channel\n            previous_event_ts = event_ts\n            events.at[idx, \"session_num\"] = session_num\n        else:\n            # Same (user_id, channel) pair; check if gap from previous event exceeds 25 minutes\n            if pd.isna(event_ts) or pd.isna(previous_event_ts):\n                # Handle null timestamps by staying in same session\n                events.at[idx, \"session_num\"] = session_num\n            else:\n                time_diff = event_ts - previous_event_ts\n                # 25 minutes = 25 * 60 seconds\n                if time_diff > pd.Timedelta(minutes=25):\n                    session_num += 1\n                events.at[idx, \"session_num\"] = session_num\n            previous_event_ts = event_ts\n    \n    # Aggregate to get session-level statistics\n    channel_sessions = events.groupby(\n        [\"user_id\", \"channel\", \"session_num\"],\n        as_index=False\n    ).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"size\")\n    )\n    \n    # Ensure columns are in the correct order\n    channel_sessions = channel_sessions[\n        [\"user_id\", \"channel\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]\n    ]\n    \n    return {\"channel_sessions\": channel_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 351,
+   "tokens_out": 665,
+   "usd": 0.003676,
+   "wall_s": 4.560734272003174,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1129,
+  "tokens_out": 942,
+  "usd": 0.005839,
+  "wall_s": 7.624624729156494
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

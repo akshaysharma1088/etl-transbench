@@ -1,0 +1,16 @@
+{
+ "task": "t2d_reject_skip_accum",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict) -> dict:\n    postings = inputs[\"POSTINGS\"].copy()\n\n    # Preserve stable ordering by account_id, post_date, post_seq\n    postings = postings.sort_values(\n        by=[\"account_id\", \"post_date\", \"post_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    qty = postings[\"qty\"]\n    unit_price = postings[\"unit_price\"]\n\n    valid_mask = (\n        qty.notna() & (qty > 0) &\n        unit_price.notna() & (unit_price >= 0)\n    )\n\n    posted = postings.loc[valid_mask].copy()\n    posted[\"post_value\"] = posted[\"qty\"] * posted[\"unit_price\"]\n    posted[\"running_total\"] = posted.groupby(\"account_id\")[\"post_value\"].cumsum()\n\n    posted_totals = posted[\n        [\"account_id\", \"post_seq\", \"post_date\", \"post_value\", \"running_total\"]\n    ].reset_index(drop=True)\n\n    # Reject counts: count invalid rows per account\n    reject_rows = postings.loc[~valid_mask]\n    reject_counts_series = reject_rows.groupby(\"account_id\").size()\n\n    # All accounts present in POSTINGS must appear, even with zero rejects\n    all_accounts = postings[\"account_id\"].drop_duplicates()\n    # Preserve the order accounts first appear (matching cursor's account transition order)\n    seen_order = postings[\"account_id\"].drop_duplicates().tolist()\n\n    reject_counts = pd.DataFrame({\"account_id\": seen_order})\n    reject_counts[\"reject_count\"] = reject_counts[\"account_id\"].map(\n        reject_counts_series\n    ).fillna(0).astype(int)\n\n    return {\n        \"posted_totals\": posted_totals,\n        \"reject_counts\": reject_counts\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 975,
+   "tokens_out": 1024,
+   "usd": 0.018285,
+   "wall_s": 9.701078414916992
+  }
+ ]
+}

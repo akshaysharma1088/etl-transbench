@@ -1,0 +1,31 @@
+{
+  "task_id": "t6f_cross_device_session_merge",
+  "relations": [
+    {
+      "name": "merged_sessions",
+      "key_columns": [
+        "user_id",
+        "merged_num"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "start_ts",
+          "kind": "timestamp"
+        },
+        {
+          "name": "end_ts",
+          "kind": "timestamp"
+        },
+        {
+          "name": "device_count",
+          "kind": "int"
+        },
+        {
+          "name": "source_count",
+          "kind": "int"
+        }
+      ]
+    }
+  ]
+}

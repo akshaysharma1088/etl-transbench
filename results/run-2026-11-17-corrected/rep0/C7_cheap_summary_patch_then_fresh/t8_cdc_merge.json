@@ -1,0 +1,48 @@
+{
+ "config": "C7_cheap_summary_patch_then_fresh",
+ "rep": 0,
+ "task": "t8_cdc_merge",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom typing import Dict\n\ndef run(inputs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n    \n    # Extract the watermark high_ts value\n    high_ts = watermark[\"high_ts\"].iloc[0]\n    \n    # Step 1: Filter events to only those after the watermark\n    new_events = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n    \n    # Step 2: For each product_id, get the latest event by (event_ts, event_seq)\n    # Sort by event_ts ascending, then event_seq ascending, and take the last row per product_id\n    if len(new_events) > 0:\n        new_events = new_events.sort_values(by=[\"product_id\", \"event_ts\", \"event_seq\"])\n        latest_events = new_events.drop_duplicates(subset=[\"product_id\"], keep=\"last\")\n    else:\n        latest_events = new_events\n    \n    # Step 3: Process the latest events\n    # Separate deletes from inserts/updates\n    if len(latest_events) > 0:\n        delete_events = latest_events[latest_events[\"op\"] == \"D\"]\n        upsert_events = latest_events[latest_events[\"op\"].isin([\"I\", \"U\"])]\n    else:\n        delete_events = pd.DataFrame()\n        upsert_events = pd.DataFrame()\n    \n    # Get product_ids to delete\n    delete_product_ids = set(delete_events[\"product_id\"].values) if len(delete_events) > 0 else set()\n    \n    # Remove deleted products from snapshot\n    new_snapshot = target_snapshot[~target_snapshot[\"product_id\"].isin(delete_product_ids)].copy()\n    \n    # Process upserts\n    if len(upsert_events) > 0:\n        # For each product in upsert_events, update or insert\n        for _, event in upsert_events.iterrows():\n            product_id = event[\"product_id\"]\n            name = event[\"name\"]\n            price = event[\"price\"]\n            event_ts = event[\"event_ts\"]\n            \n            # Check if product exists in snapshot\n            mask = new_snapshot[\"product_id\"] == product_id\n            if mask.any():\n                # Update existing product\n                new_snapshot.loc[mask, \"name\"] = name\n                new_snapshot.loc[mask, \"price\"] = price\n                new_snapshot.loc[mask, \"last_event_ts\"] = event_ts\n            else:\n                # Insert new product\n                new_row = pd.DataFrame({\n                    \"product_id\": [product_id],\n                    \"name\": [name],\n                    \"price\": [price],\n                    \"last_event_ts\": [event_ts]\n                })\n                new_snapshot = pd.concat([new_snapshot, new_row], ignore_index=True)\n    \n    # Ensure column order and types match target_snapshot schema\n    new_snapshot = new_snapshot[[\"product_id\", \"name\", \"price\", \"last_event_ts\"]]\n    new_snapshot[\"product_id\"] = new_snapshot[\"product_id\"].astype(\"int64\")\n    new_snapshot[\"name\"] = new_snapshot[\"name\"].astype(\"object\")\n    new_snapshot[\"price\"] = new_snapshot[\"price\"].astype(\"float64\")\n    new_snapshot[\"last_event_ts\"] = pd.to_datetime(new_snapshot[\"last_event_ts\"], utc=False)\n    \n    # Sort by product_id for deterministic output\n    new_snapshot = new_snapshot.sort_values(by=\"product_id\", ignore_index=True)\n    \n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 581,
+   "tokens_out": 970,
+   "usd": 0.005431,
+   "wall_s": 7.91584849357605,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

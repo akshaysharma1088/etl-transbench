@@ -1,0 +1,51 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t2c_locf_carry_forward",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    # Resolve the input key in a case-insensitive way to be robust to\n    # naming convention differences between legacy artifact and harness.\n    key = None\n    for k in inputs.keys():\n        if k.lower() == \"rate_feed\":\n            key = k\n            break\n    if key is None:\n        # fallback: try direct access, will raise a clear error if missing\n        key = \"RATE_FEED\"\n\n    df = inputs[key].copy()\n\n    # Preserve stable ordering exactly as the cursor: ORDER BY account_id, obs_date, obs_seq\n    df = df.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # Forward-fill rate within each account_id boundary (carry never crosses accounts)\n    filled = df.groupby(\"account_id\", sort=False)[\"rate\"].ffill()\n\n    was_carried = ((df[\"rate\"].isna()) & (filled.notna())).astype(\"int64\")\n\n    result = pd.DataFrame({\n        \"account_id\": df[\"account_id\"],\n        \"obs_seq\": df[\"obs_seq\"],\n        \"obs_date\": df[\"obs_date\"],\n        \"rate_filled\": filled,\n        \"was_carried\": was_carried,\n    })\n\n    return {\"rate_filled\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 734,
+   "tokens_out": 1044,
+   "usd": 0.017862,
+   "wall_s": 11.218365907669067
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1450,
+  "tokens_out": 520,
+  "usd": 0.01215,
+  "wall_s": 4.782860279083252
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

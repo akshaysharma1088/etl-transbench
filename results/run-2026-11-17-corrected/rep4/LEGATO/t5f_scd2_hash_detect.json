@@ -1,0 +1,48 @@
+{
+ "config": "LEGATO",
+ "rep": 4,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _sig(city, tier):\n    c = '' if pd.isna(city) else str(city)\n    t = '' if pd.isna(tier) else str(tier)\n    return c.rstrip(' ') + '|' + t.rstrip(' ')\n\n\ndef run(inputs: dict) -> dict:\n    dim_member = inputs[\"dim_member\"].copy()\n    stg_member = inputs[\"stg_member\"].copy()\n\n    # Ensure proper dtypes / working columns\n    records = dim_member.to_dict('records')\n    # Build a mutable list of dict rows to allow easy appends/updates\n    next_idx = len(records)\n\n    # Helper to find current row index for a member_id\n    def find_current(member_id):\n        for i, r in enumerate(records):\n            if r['member_id'] == member_id and r['is_current'] == 1:\n                return i\n        return None\n\n    for _, s in stg_member.iterrows():\n        member_id = s['member_id']\n        s_city = s['city']\n        s_tier = s['tier']\n        update_date = s['update_date']\n\n        cur_idx = find_current(member_id)\n\n        if cur_idx is None:\n            new_row = {\n                'member_id': member_id,\n                'city': s_city,\n                'tier': s_tier,\n                'eff_start_date': update_date,\n                'eff_end_date': pd.NaT,\n                'is_current': 1,\n            }\n            records.append(new_row)\n        else:\n            c = records[cur_idx]\n            sig_s = _sig(s_city, s_tier)\n            sig_c = _sig(c['city'], c['tier'])\n            if sig_s != sig_c:\n                records[cur_idx]['eff_end_date'] = update_date\n                records[cur_idx]['is_current'] = 0\n\n                new_row = {\n                    'member_id': member_id,\n                    'city': s_city,\n                    'tier': s_tier,\n                    'eff_start_date': update_date,\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1,\n                }\n                records.append(new_row)\n            else:\n                # no-op, keep as is\n                pass\n\n    out = pd.DataFrame(records, columns=[\n        'member_id', 'city', 'tier', 'eff_start_date', 'eff_end_date', 'is_current'\n    ])\n\n    # Type coercion to match expected output schema\n    out['member_id'] = out['member_id'].astype('int64')\n    out['is_current'] = out['is_current'].astype('int64')\n    out['eff_start_date'] = pd.to_datetime(out['eff_start_date'])\n    out['eff_end_date'] = pd.to_datetime(out['eff_end_date'])\n\n    return {\"dim_member_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1247,
+   "tokens_out": 1467,
+   "usd": 0.025746,
+   "wall_s": 12.233275651931763,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

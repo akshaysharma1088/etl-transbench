@@ -1,0 +1,31 @@
+-- Legacy validation step VAL_PAYMENTS (abstracted from a graphical ETL tool).
+-- Input:  raw_payments (row_num INT, payment_id VARCHAR, account_id INT,
+--                       amount_txt VARCHAR, currency VARCHAR, pay_date_txt VARCHAR)
+--         -- row_num is unique and gives the file order.
+-- Outputs:
+--   valid_payments (payment_id, account_id, amount, currency, pay_date)
+--   payment_rejects (row_num, reject_reason)
+-- Every input row lands in exactly one of the two outputs.
+--
+-- Rules are evaluated IN THIS ORDER. A row is rejected by the FIRST rule it
+-- fails and later rules are not evaluated for it. TRIM removes leading and
+-- trailing spaces only.
+--   R1 MISSING_ID    payment_id is NULL, or empty after TRIM.
+--   R2 BAD_AMOUNT    TRIM(amount_txt) is not a legacy number. A legacy number is
+--                    an optional '+' or '-', then one or more digits, then
+--                    optionally a '.' followed by ONE or TWO digits. Nothing
+--                    else is accepted: no thousands separators, no exponent,
+--                    no currency sign, no bare '.5' or '12.'. NULL fails.
+--   R3 NON_POSITIVE  the parsed amount is <= 0.
+--   R4 BAD_CURRENCY  UPPER(TRIM(currency)) is not one of 'USD', 'EUR', 'GBP'. NULL fails.
+--   R5 BAD_DATE      TRIM(pay_date_txt) is not exactly YYYY-MM-DD, or is not a
+--                    real calendar date (2023-02-29 fails). NULL fails.
+--   R6 DUPLICATE     among the rows that passed R1 to R5, rows are grouped by
+--                    TRIM(payment_id) (case-sensitive). The row with the LOWEST
+--                    row_num in a group is valid; every other row in the group
+--                    is rejected. A row rejected by R1 to R5 does not count as
+--                    an occurrence.
+--
+-- valid_payments columns: payment_id = TRIM(payment_id); account_id unchanged;
+--   amount = the parsed number; currency = UPPER(TRIM(currency));
+--   pay_date = the parsed date.

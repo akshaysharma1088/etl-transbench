@@ -1,0 +1,48 @@
+{
+ "config": "C5_cheap_counterexample",
+ "rep": 3,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    ledger = inputs[\"ledger\"].copy()\n    \n    # Sort by account_id, entry_date, row_seq to match cursor order\n    ledger = ledger.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Initialize output columns\n    cycle_no = []\n    cycle_balance = []\n    \n    # State variables\n    prev_acct = None\n    bal = 0.0\n    cyc = 1\n    \n    # Process each row in cursor order\n    for idx, row in ledger.iterrows():\n        curr_acct = row[\"account_id\"]\n        entry_type = row[\"entry_type\"]\n        amount = row[\"amount\"]\n        \n        # Account change: reset balance and cycle\n        if curr_acct != prev_acct:\n            bal = 0.0\n            cyc = 1\n            prev_acct = curr_acct\n        \n        # STMT entry: reset balance and increment cycle BEFORE adding amount\n        if entry_type == \"STMT\":\n            bal = 0.0\n            cyc = cyc + 1\n        \n        # Add amount to balance (coalesce null to 0)\n        amount_val = amount if pd.notna(amount) else 0.0\n        bal = bal + amount_val\n        \n        # Store current state\n        cycle_no.append(cyc)\n        cycle_balance.append(bal)\n    \n    # Build output dataframe\n    result = ledger.copy()\n    result[\"cycle_no\"] = cycle_no\n    result[\"cycle_balance\"] = cycle_balance\n    \n    # Ensure correct column order and types\n    result = result[[\n        \"account_id\", \"row_seq\", \"entry_date\", \"entry_type\", \"amount\",\n        \"cycle_no\", \"cycle_balance\"\n    ]]\n    \n    result[\"cycle_no\"] = result[\"cycle_no\"].astype(\"int64\")\n    result[\"cycle_balance\"] = result[\"cycle_balance\"].astype(\"float64\")\n    \n    return {\"cycle_balances\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 567,
+   "tokens_out": 565,
+   "usd": 0.003392,
+   "wall_s": 5.0461766719818115,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

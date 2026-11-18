@@ -1,0 +1,48 @@
+{
+ "config": "B1_single_pass",
+ "rep": 2,
+ "task": "t8c_out_of_order_late",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n\n    # Ensure proper dtypes\n    target[\"device_id\"] = target[\"device_id\"].astype(\"int64\")\n    target[\"reading\"] = target[\"reading\"].astype(\"float64\")\n    target[\"applied_event_ts\"] = pd.to_datetime(target[\"applied_event_ts\"])\n\n    cdc[\"event_seq\"] = cdc[\"event_seq\"].astype(\"int64\")\n    cdc[\"event_ts\"] = pd.to_datetime(cdc[\"event_ts\"])\n    cdc[\"device_id\"] = cdc[\"device_id\"].astype(\"int64\")\n    cdc[\"reading\"] = cdc[\"reading\"].astype(\"float64\")\n\n    # Map current watermark per device (NaT if device not yet in target -> new device)\n    watermark_map = target.set_index(\"device_id\")[\"applied_event_ts\"].to_dict()\n\n    cdc = cdc.copy()\n    cdc[\"_watermark\"] = cdc[\"device_id\"].map(watermark_map)\n\n    # Determine surviving events: event_ts > watermark, OR watermark is NaT (new device -> always survives)\n    is_new_device = cdc[\"_watermark\"].isna()\n    survives = is_new_device | (cdc[\"event_ts\"] > cdc[\"_watermark\"])\n\n    surviving = cdc[survives].copy()\n\n    if not surviving.empty:\n        # Sort to pick winner per device: latest by (event_ts, event_seq) wins\n        surviving = surviving.sort_values(\n            by=[\"device_id\", \"event_ts\", \"event_seq\"],\n            ascending=[True, False, False]\n        )\n        winners = surviving.groupby(\"device_id\", as_index=False).first()\n    else:\n        winners = surviving.iloc[0:0]  # empty frame with same columns\n\n    # Build output: start from target, apply winners' updates, then add new devices\n    result = target.set_index(\"device_id\")[[\"reading\", \"applied_event_ts\"]].copy()\n\n    if not winners.empty:\n        winners_indexed = winners.set_index(\"device_id\")[[\"reading\", \"event_ts\"]]\n        # Update existing devices\n        existing_updates = winners_indexed.index.intersection(result.index)\n        for dev_id in existing_updates:\n            result.loc[dev_id, \"reading\"] = winners_indexed.loc[dev_id, \"reading\"]\n            result.loc[dev_id, \"applied_event_ts\"] = winners_indexed.loc[dev_id, \"event_ts\"]\n\n        # Add new devices\n        new_devices = winners_indexed.index.difference(result.index)\n        if len(new_devices) > 0:\n            new_rows = winners_indexed.loc[new_devices].rename(columns={\"event_ts\": \"applied_event_ts\"})\n            result = pd.concat([result, new_rows], axis=0)\n\n    result = result.reset_index().rename(columns={\"index\": \"device_id\"})\n    result[\"device_id\"] = result[\"device_id\"].astype(\"int64\")\n    result[\"reading\"] = result[\"reading\"].astype(\"float64\")\n    result[\"applied_event_ts\"] = pd.to_datetime(result[\"applied_event_ts\"])\n\n    result = result[[\"device_id\", \"reading\", \"applied_event_ts\"]]\n\n    return {\"new_snapshot\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 867,
+   "tokens_out": 1739,
+   "usd": 0.028686,
+   "wall_s": 15.59180736541748,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

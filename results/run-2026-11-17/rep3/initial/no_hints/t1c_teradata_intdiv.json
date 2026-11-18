@@ -1,0 +1,16 @@
+{
+ "task": "t1c_teradata_intdiv",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy Teradata integer division semantics with ZEROIFNULL.\n    - INTEGER / INTEGER truncates toward zero (not floor division)\n    - ZEROIFNULL converts NULL to 0 before division\n    - CAST to INTEGER also truncates toward zero\n    \"\"\"\n    acct_balance = inputs['acct_balance'].copy()\n    \n    # Filter: WHERE acct_type <> 'CLOSED'\n    result = acct_balance[acct_balance['acct_type'] != 'CLOSED'].copy()\n    \n    # ZEROIFNULL(balance_cents) / 100 AS balance_bucket\n    # Replace NULLs with 0, then divide with truncate-toward-zero semantics\n    balance_cents_filled = result['balance_cents'].fillna(0)\n    balance_bucket = balance_cents_filled / 100\n    # Truncate toward zero (Python's int() does this)\n    balance_bucket = balance_bucket.apply(lambda x: int(np.trunc(x)))\n    \n    # CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER) AS fx_units\n    # Same ZEROIFNULL, then multiply by fx_rate, divide by 100, cast to INT (truncate toward zero)\n    fx_units = balance_cents_filled * result['fx_rate'] / 100\n    # Truncate toward zero\n    fx_units = fx_units.apply(lambda x: int(np.trunc(x)))\n    \n    # Build output dataframe\n    output = pd.DataFrame({\n        'account_id': result['account_id'].values,\n        'balance_bucket': balance_bucket.values,\n        'fx_units': fx_units.values\n    })\n    \n    return {'balance_buckets': output}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 342,
+   "tokens_out": 486,
+   "usd": 0.002772,
+   "wall_s": 3.286628007888794
+  }
+ ]
+}

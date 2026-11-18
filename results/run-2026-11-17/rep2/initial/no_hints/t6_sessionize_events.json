@@ -1,0 +1,16 @@
+{
+ "task": "t6_sessionize_events",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\nfrom datetime import timedelta\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize user events with 30-minute inactivity gap window semantics.\n    A new session starts when the gap from the previous event of the SAME user\n    is STRICTLY GREATER than 30 minutes.\n    \"\"\"\n    events = inputs['events'].copy()\n    \n    # Ensure event_ts is datetime\n    events['event_ts'] = pd.to_datetime(events['event_ts'])\n    \n    # Sort by user_id, event_ts, event_id to establish order\n    events = events.sort_values(['user_id', 'event_ts', 'event_id']).reset_index(drop=True)\n    \n    # Compute lag of event_ts within each user\n    events['prev_event_ts'] = events.groupby('user_id')['event_ts'].shift(1)\n    \n    # Calculate time gap (in seconds, converted to timedelta for comparison)\n    events['time_gap'] = events['event_ts'] - events['prev_event_ts']\n    \n    # Determine if this is a new session\n    # New session if: gap > 30 minutes OR previous event is NULL (first event of user)\n    thirty_minutes = timedelta(minutes=30)\n    events['new_sess'] = (events['time_gap'] > thirty_minutes) | (events['prev_event_ts'].isna())\n    events['new_sess'] = events['new_sess'].astype(int)\n    \n    # Cumulative sum of new_sess within each user to get session_num\n    events['session_num'] = events.groupby('user_id')['new_sess'].cumsum()\n    \n    # Group by user_id and session_num to aggregate\n    user_sessions = events.groupby(['user_id', 'session_num'], as_index=False).agg(\n        session_start=('event_ts', 'min'),\n        session_end=('event_ts', 'max'),\n        event_count=('event_ts', 'size')\n    )\n    \n    return {'user_sessions': user_sessions}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 424,
+   "tokens_out": 543,
+   "usd": 0.003139,
+   "wall_s": 4.852330446243286
+  }
+ ]
+}

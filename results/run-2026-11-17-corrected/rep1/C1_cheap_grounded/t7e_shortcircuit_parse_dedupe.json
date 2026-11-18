@@ -1,0 +1,63 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 1,
+ "task": "t7e_shortcircuit_parse_dedupe",
+ "category": "T7",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 3,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import datetime\nimport re\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    raw_payments = inputs[\"raw_payments\"].copy()\n    \n    # Initialize reject tracking\n    rejects = []\n    valid_indices = set(range(len(raw_payments)))\n    \n    # R1: MISSING_ID\n    for idx, row in raw_payments.iterrows():\n        payment_id = row[\"payment_id\"]\n        if pd.isna(payment_id) or (isinstance(payment_id, str) and payment_id.strip() == \"\"):\n            rejects.append({\"row_num\": row[\"row_num\"], \"reject_reason\": \"MISSING_ID\"})\n            valid_indices.discard(idx)\n    \n    # R2: BAD_AMOUNT\n    for idx in list(valid_indices):\n        row = raw_payments.loc[idx]\n        amount_txt = row[\"amount_txt\"]\n        \n        if pd.isna(amount_txt):\n            rejects.append({\"row_num\": row[\"row_num\"], \"reject_reason\": \"BAD_AMOUNT\"})\n            valid_indices.discard(idx)\n            continue\n        \n        amount_str = str(amount_txt).strip()\n        \n        # Legacy number pattern: optional +/-, one or more digits, optional .DD\n        if not re.match(r'^[+-]?\\d+(\\.\\d{1,2})?$', amount_str):\n            rejects.append({\"row_num\": row[\"row_num\"], \"reject_reason\": \"BAD_AMOUNT\"})\n            valid_indices.discard(idx)\n    \n    # R3: NON_POSITIVE\n    for idx in list(valid_indices):\n        row = raw_payments.loc[idx]\n        amount_txt = row[\"amount_txt\"]\n        amount_str = str(amount_txt).strip()\n        \n        try:\n            amount = float(amount_str)\n            if amount <= 0:\n                rejects.append({\"row_num\": row[\"row_num\"], \"reject_reason\": \"NON_POSITIVE\"})\n                valid_indices.discard(idx)\n        except ValueError:\n            pass\n    \n    # R4: BAD_CURRENCY\n    for idx in list(valid_indices):\n        row = raw_payments.loc[idx]\n        currency = row[\"currency\"]\n        \n        if pd.isna(currency):\n            rejects.append({\"row_num\": row[\"row_num\"], \"reject_reason\": \"BAD_CURRENCY\"})\n            valid_indices.discard(idx)\n            continue\n        \n        currency_upper = str(currency).strip().upper()\n        if currency_upper not in [\"USD\", \"EUR\", \"GBP\"]:\n            rejects.append({\"row_num\": row[\"row_num\"], \"reject_reason\": \"BAD_CURRENCY\"})\n            valid_indices.discard(idx)\n    \n    # R5: BAD_DATE\n    for idx in list(valid_indices):\n        row = raw_payments.loc[idx]\n        pay_date_txt = row[\"pay_date_txt\"]\n        \n        if pd.isna(pay_date_txt):\n            rejects.append({\"row_num\": row[\"row_num\"], \"reject_reason\": \"BAD_DATE\"})\n            valid_indices.discard(idx)\n            continue\n        \n        date_str = str(pay_date_txt).strip()\n        \n        # Must be exactly YYYY-MM-DD format\n        if not re.match(r'^\\d{4}-\\d{2}-\\d{2}$', date_str):\n            rejects.append({\"row_num\": row[\"row_num\"], \"reject_reason\": \"BAD_DATE\"})\n            valid_indices.discard(idx)\n            continue\n        \n        try:\n            datetime.strptime(date_str, \"%Y-%m-%d\")\n        except ValueError:\n            rejects.append({\"row_num\": row[\"row_num\"], \"reject_reason\": \"BAD_DATE\"})\n            valid_indices.discard(idx)\n    \n    # R6: DUPLICATE - among survivors, keep only the one with lowest row_num per payment_id\n    survivors = raw_payments.loc[list(valid_indices)].copy()\n    survivors[\"payment_id_trimmed\"] = survivors[\"payment_id\"].str.strip()\n    \n    # Find the minimum row_num for each payment_id\n    min_row_num_per_id = survivors.groupby(\"payment_id_trimmed\", as_index=False)[\"row_num\"].min()\n    min_row_num_dict = dict(zip(min_row_num_per_id[\"payment_id_trimmed\"], min_row_num_per_id[\"row_num\"]))\n    \n    # Mark duplicates for rejection\n    for idx in list(valid_indices):\n        row = raw_payments.loc[idx]\n        payment_id_trimmed = str(row[\"payment_id\"]).strip()\n        \n        if row[\"row_num\"] != min_row_num_dict.get(payment_id_trimmed):\n            rejects.append({\"row_num\": row[\"row_num\"], \"reject_reason\": \"DUPLICATE\"})\n            valid_indices.discard(idx)\n    \n    # Build valid_payments\n    valid_rows = []\n    for idx in sorted(valid_indices):\n        row = raw_payments.loc[idx]\n        amount_str = str(row[\"amount_txt\"]).strip()\n        amount = float(amount_str)\n        currency_upper = str(row[\"currency\"]).strip().upper()\n        date_str = str(row[\"pay_date_txt\"]).strip()\n        \n        valid_rows.append({\n            \"payment_id\": str(row[\"payment_id\"]).strip(),\n            \"account_id\": row[\"account_id\"],\n            \"amount\": amount,\n            \"currency\": currency_upper,\n            \"pay_date\": date_str\n        })\n    \n    valid_payments = pd.DataFrame(valid_rows) if valid_rows else pd.DataFrame(\n        columns=[\"payment_id\", \"account_id\", \"amount\", \"currency\", \"pay_date\"]\n    )\n    \n    # Build payment_rejects\n    payment_rejects = pd.DataFrame(rejects) if rejects else pd.DataFrame(\n        columns=[\"row_num\", \"reject_reason\"]\n    )\n    \n    return {\n        \"valid_payments\": valid_payments,\n        \"payment_rejects\": payment_rejects\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 818,
+   "tokens_out": 1512,
+   "usd": 0.008378,
+   "wall_s": 8.577354669570923,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6617,
+  "tokens_out": 5189,
+  "usd": 0.032562,
+  "wall_s": 34.85062646865845
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

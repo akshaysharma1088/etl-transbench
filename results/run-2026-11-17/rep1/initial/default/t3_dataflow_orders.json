@@ -1,0 +1,16 @@
+{
+ "task": "t3_dataflow_orders",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces the legacy ETL pipeline:\n    1. Filter orders where status == 'SHIPPED'\n    2. Lookup customer region, default to 'UNKNOWN' on miss\n    3. Compute net_amount = qty * unit_price * (1 - discount), treating NULL discount as 0\n    4. Output selected columns\n    \"\"\"\n    \n    orders = inputs[\"orders\"].copy()\n    customers = inputs[\"customers\"].copy()\n    \n    # Step 1: Filter (status == 'SHIPPED')\n    filtered = orders[orders[\"status\"] == \"SHIPPED\"].copy()\n    \n    # Step 2: Lookup with join\n    # Merge on customer_id, keeping only region from customers\n    lookup_cols = [\"customer_id\", \"region\"]\n    customers_lookup = customers[lookup_cols].copy()\n    \n    # Left join to preserve all filtered orders\n    merged = filtered.merge(\n        customers_lookup,\n        on=\"customer_id\",\n        how=\"left\"\n    )\n    \n    # Fill missing region values with 'UNKNOWN'\n    merged[\"region\"] = merged[\"region\"].fillna(\"UNKNOWN\")\n    \n    # Step 3: Reformat - compute net_amount\n    # NULL discount treated as 0\n    merged[\"discount\"] = merged[\"discount\"].fillna(0)\n    merged[\"net_amount\"] = merged[\"qty\"] * merged[\"unit_price\"] * (1 - merged[\"discount\"])\n    \n    # Step 4: Output - select specified columns\n    output_columns = [\"order_id\", \"customer_id\", \"region\", \"qty\", \"unit_price\", \"net_amount\"]\n    result = merged[output_columns].copy()\n    \n    return {\n        \"shipped_orders_enriched\": result\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 447,
+   "tokens_out": 461,
+   "usd": 0.002752,
+   "wall_s": 4.198717355728149
+  }
+ ]
+}

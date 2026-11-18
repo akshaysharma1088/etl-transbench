@@ -1,0 +1,67 @@
+{
+ "config": "B2_retranslate",
+ "rep": 2,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "syntactic"
+  }
+ ],
+ "final_code": "```python\nimport pandas as pd\nimport numpy as np\n\n\ndef _differs(a, b):\n    \"\"\"Compare two values treating NaN/None as equal only to NaN/None.\"\"\"\n    a_na = pd.isna(a)\n    b_na = pd.isna(b)\n    if a_na and b_na:\n        return False\n    if a_na != b_na:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs['DIM_CUSTOMER'].copy()\n    stg = inputs['STG_CUSTOMER'].copy()\n    fact = inputs['FACT_TXN'].copy()\n\n    # Normalize date columns\n    if not dim.empty:\n        dim['eff_start_date'] = pd.to_datetime(dim['eff_start_date'])\n        dim['eff_end_date'] = pd.to_datetime(dim['eff_end_date'])\n    else:\n        dim['eff_start_date'] = pd.to_datetime(dim.get('eff_start_date', pd.Series(dtype='datetime64[ns]')))\n        dim['eff_end_date'] = pd.to_datetime(dim.get('eff_end_date', pd.Series(dtype='datetime64[ns]')))\n\n    if not stg.empty:\n        stg['update_date'] = pd.to_datetime(stg['update_date'])\n\n    if not fact.empty:\n        fact['txn_date'] = pd.to_datetime(fact['txn_date'])\n\n    # Determine max existing surrogate key BEFORE the load\n    if not dim.empty and dim['customer_sk'].notna().any():\n        max_sk = dim['customer_sk'].max()\n    else:\n        max_sk = 0\n\n    # Build a lookup of current rows per customer_id (assume at most one current row per customer)\n    current_rows = dim[dim['is_current'] == 1].copy()\n    current_lookup = {}\n    for _, r in current_rows.iterrows():\n        current_lookup[r['customer_id']] = r\n\n    # Order staged records by customer_id for ROW_NUMBER assignment,\n    # but only over records that actually create a version.\n    stg_sorted = stg.sort_values('customer_id', kind='mergesort').reset_index(drop=True)\n\n    creates = []  # list of dicts describing new version rows\n    expirations = {}  # customer_sk -> end_date to expire existing current row\n\n    for _, row in stg_sorted.iterrows():\n        cid = row['customer_id']\n        seg_s = row['segment']\n        upd = row['update_date']\n\n        if cid in current_lookup:\n            cur = current_lookup[cid]\n            if _differs(seg_s, cur['segment']):\n                creates.append({\n                    'customer_id': cid,\n                    'segment': seg_s,\n                    'eff_start_date': upd,\n                })\n                expirations[cur['customer_sk']] = upd\n        else:\n            creates.append({\n                'customer_id': cid,\n                'segment': seg_s,\n                'eff_start_date': upd,\n            })\n\n    # Assign surrogate keys in order (row_number over creating records only)\n    new_rows = []\n    for i, c in enumerate(creates, start=1):\n        new_sk = max_sk + i\n        new_rows.append({\n            'customer_sk': new_sk,\n            'customer_id': c['customer_id'],\n            'segment': c['segment'],\n            'eff_start_date': c['eff_start_date'],\n            'eff_end_date': pd.NaT,\n            'is_current': 1,\n        })\n\n    # Apply expirations to the existing dim rows\n    dim_out = dim.copy()\n    for sk, end_date in expirations.items():\n        mask = dim_out['customer_sk'] == sk\n        dim_out.loc[mask, 'eff_end_date'] = end_date\n        dim_out.loc[mask, 'is_current'] = 0\n\n    if new_rows:\n        new_df = pd.DataF",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1162,
+   "tokens_out": 2625,
+   "usd": 0.042861,
+   "wall_s": 24.01876473426819
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4648,
+  "tokens_out": 14809,
+  "usd": 0.23607899999999998,
+  "wall_s": 123.84435868263245
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

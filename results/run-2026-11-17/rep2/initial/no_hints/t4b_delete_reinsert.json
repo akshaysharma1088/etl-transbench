@@ -1,0 +1,16 @@
+{
+ "task": "t4b_delete_reinsert",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces legacy multi-step partition refresh via DELETE + INSERT.\n    \n    Step 1: Create staging table with aggregations (qty > 0 only)\n    Step 2: Delete rows from target_snapshot for arriving batch_dates\n    Step 3: Insert staged rows into target_snapshot\n    \"\"\"\n    \n    inbound = inputs['inbound'].copy()\n    target_snapshot = inputs['target_snapshot'].copy()\n    \n    # Step 1: CREATE STG_NEW\n    # Filter for qty > 0, then aggregate by product_id and batch_date\n    stg_new = inbound[inbound['qty'] > 0].groupby(\n        ['product_id', 'batch_date'],\n        as_index=False\n    ).agg({\n        'qty': 'sum',\n        'unit_cost': 'max'\n    }).rename(columns={'qty': 'total_qty', 'unit_cost': 'max_unit_cost'})\n    \n    # Step 2: DELETE FROM TARGET_SNAPSHOT\n    # Identify distinct batch_dates in STG_NEW\n    arriving_batch_dates = stg_new['batch_date'].unique()\n    \n    # Remove rows from target_snapshot that have batch_dates in arriving_batch_dates\n    target_snapshot = target_snapshot[\n        ~target_snapshot['batch_date'].isin(arriving_batch_dates)\n    ]\n    \n    # Step 3: INSERT INTO TARGET_SNAPSHOT SELECT * FROM STG_NEW\n    # Concatenate the staged rows with the remaining target_snapshot rows\n    target_snapshot = pd.concat(\n        [target_snapshot, stg_new],\n        ignore_index=True\n    )\n    \n    return {'target_snapshot': target_snapshot}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 456,
+   "usd": 0.002678,
+   "wall_s": 3.1967735290527344
+  }
+ ]
+}

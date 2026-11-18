@@ -1,0 +1,58 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    events = inputs[\"events\"].copy()\n\n    if events.empty:\n        return {\n            \"channel_sessions\": pd.DataFrame(\n                columns=[\n                    \"user_id\", \"channel\", \"session_num\",\n                    \"session_start\", \"session_end\", \"event_count\"\n                ]\n            )\n        }\n\n    events = events.sort_values(\n        by=[\"user_id\", \"channel\", \"event_ts\", \"event_id\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    grp_keys = [\"user_id\", \"channel\"]\n\n    prev_ts = events.groupby(grp_keys)[\"event_ts\"].shift(1)\n    gap = events[\"event_ts\"] - prev_ts\n    new_session = prev_ts.isna() | (gap > pd.Timedelta(minutes=25))\n\n    session_id = new_session.groupby([events[\"user_id\"], events[\"channel\"]]).cumsum()\n\n    events[\"_session_id\"] = session_id\n\n    grouped = events.groupby(grp_keys + [\"_session_id\"], sort=False).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    ).reset_index()\n\n    grouped = grouped.sort_values(\n        by=[\"user_id\", \"channel\", \"session_start\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    grouped[\"session_num\"] = grouped.groupby(grp_keys).cumcount() + 1\n\n    result = grouped[\n        [\"user_id\", \"channel\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]\n    ].reset_index(drop=True)\n\n    return {\"channel_sessions\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 351,
+   "tokens_out": 730,
+   "usd": 0.004001,
+   "wall_s": 5.204728364944458,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1024,
+  "tokens_out": 1340,
+  "usd": 0.023171999999999998,
+  "wall_s": 12.018808364868164
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

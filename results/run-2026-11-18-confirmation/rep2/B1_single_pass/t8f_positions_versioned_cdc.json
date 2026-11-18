@@ -1,0 +1,48 @@
+{
+ "config": "B1_single_pass",
+ "rep": 2,
+ "task": "t8f_positions_versioned_cdc",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_positions\"].copy()\n    events = inputs[\"position_events\"].copy()\n\n    # 1. Distinct by batch_seq (same event delivered more than once -> apply once)\n    events = events.drop_duplicates(subset=[\"batch_seq\"], keep=\"first\")\n\n    # Build target lookup per key\n    target_map = {}\n    for _, row in target.iterrows():\n        key = (row[\"account_id\"], row[\"symbol\"])\n        target_map[key] = {\n            \"qty\": row[\"qty\"],\n            \"price\": row[\"price\"],\n            \"row_version\": row[\"row_version\"],\n        }\n\n    # 2. Replay guard\n    def guard(row):\n        key = (row[\"account_id\"], row[\"symbol\"])\n        if key in target_map:\n            return row[\"row_version\"] > target_map[key][\"row_version\"]\n        return True\n\n    if len(events):\n        mask = events.apply(guard, axis=1)\n        events = events[mask]\n\n    # 3. Order by row_version, batch_seq within each key\n    events = events.sort_values(by=[\"account_id\", \"symbol\", \"row_version\", \"batch_seq\"])\n\n    # state: current row per key (dict with qty/price/row_version) or None if removed/absent\n    state = dict(target_map)\n    last_effect = {}  # key -> (removed_bool, row_version)\n\n    if len(events):\n        for (acct, sym), group in events.groupby([\"account_id\", \"symbol\"], sort=False):\n            key = (acct, sym)\n            current = state.get(key)\n            last_removed = False\n            last_version = None\n\n            for _, ev in group.iterrows():\n                op = ev[\"op\"]\n                qty = ev[\"qty\"]\n                price = ev[\"price\"]\n                version = ev[\"row_version\"]\n\n                if op == \"D\":\n                    if current is not None:\n                        current = None\n                        removed = True\n                    else:\n                        removed = False\n                elif op in (\"I\", \"U\"):\n                    qty_val = qty\n                    is_zero = (not pd.isna(qty_val)) and (qty_val == 0)\n\n                    if is_zero:\n                        if current is not None:\n                            current = None\n                            removed = True\n                        else:\n                            removed = False\n                    else:\n                        if current is not None:\n                            if op == \"U\" and pd.isna(price):\n                                new_price = current[\"price\"]\n                            else:\n                                new_price = None if pd.isna(price) else price\n                            current = {\n                                \"qty\": qty_val,\n                                \"price\": new_price,\n                                \"row_version\": version,\n                            }\n                        else:\n                            new_price = None if pd.isna(price) else price\n                            current = {\n                                \"qty\": qty_val,\n                                \"price\": new_price,\n                                \"row_version\": version,\n                            }\n                        removed = False\n                else:\n                    # unknown op: treat as no-op\n                    removed = False\n\n                last_removed = removed\n                last_version = version\n\n            state[key] = current\n            last_effect[key] = (last_removed, last_version)\n\n    # Build new_positions\n    rows = []\n    for key, val in state.items():\n        if val is not None:\n            rows.append(\n                {\n                    \"account_id\": key[0],\n                    \"symbol\": key[1],\n                    \"qty\": val[\"qty\"],\n                    \"price\": val[\"price\"],\n                    \"row_version\": val[\"row_version\"],\n                }\n            )\n\n    new_positions = pd.DataFrame(\n        rows, columns=[\"account_id\", \"symbol\", \"qty\", \"price\", \"row_version\"]\n    )\n\n    if len(new_positions):\n        new_positions[\"account_id\"] = new_positions[\"account_id\"].astype(\"int64\")\n        new_positions[\"qty\"] = new_positions[\"qty\"].astype(\"int64\")\n        new_positions[\"row_version\"] = new_positions[\"row_version\"].astype(\"int64\")\n        new_positions[\"price\"] = new_positions[\"price\"].astype(\"float64\")\n    else:\n        new_positions = pd.DataFrame(\n            {\n                \"account_id\": pd.Series(dtype=\"int64\"),\n                \"symbol\": pd.Series(dtype=\"object\"),\n                \"qty\": pd.Series(dtype=\"int64\"),\n                \"price\": pd.Series(dtype=\"float64\"),\n                \"row_version\": pd.Series(dtype=\"int64\"),\n            }\n        )\n\n    # Build closed_positions\n    closed_rows = []\n    for key, (removed, version) in last_effect.items():\n        if removed:\n            closed_rows.append(\n                {\n                    \"account_id\": key[0],\n                    \"symbol\": key[1],\n                    \"closed_version\": version,\n                }\n            )\n\n    closed_positions = pd.DataFrame(\n        closed_rows, columns=[\"account_id\", \"symbol\", \"closed_version\"]\n    )\n\n    if len(closed_positions):\n        closed_positions[\"account_id\"] = closed_positions[\"account_id\"].astype(\"int64\")\n        closed_positions[\"closed_version\"] = closed_positions[\"closed_version\"].astype(\n            \"int64\"\n        )\n    else:\n        closed_positions = pd.DataFrame(\n            {\n                \"account_id\": pd.Series(dtype=\"int64\"),\n                \"symbol\": pd.Series(dtype=\"object\"),\n                \"closed_version\": pd.Series(dtype=\"int64\"),\n            }\n        )\n\n    return {\"new_positions\": new_positions, \"closed_positions\": closed_positions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1246,
+   "tokens_out": 5287,
+   "usd": 0.083043,
+   "wall_s": 48.50513482093811,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

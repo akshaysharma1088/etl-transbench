@@ -1,0 +1,16 @@
+{
+ "task": "t1c_teradata_intdiv",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicates Teradata-style integer division (truncate toward zero) and\n    ZEROIFNULL semantics for balance bucket calculation.\n    \"\"\"\n    acct_balance = inputs['acct_balance'].copy()\n    \n    # Filter: WHERE acct_type <> 'CLOSED'\n    acct_balance = acct_balance[acct_balance['acct_type'] != 'CLOSED'].copy()\n    \n    # Helper function: Teradata-style truncate-toward-zero division\n    def trunc_div(numerator, denominator):\n        \"\"\"Integer division that truncates toward zero (Teradata style).\"\"\"\n        # Convert to float for calculation, then truncate toward zero\n        with np.errstate(divide='ignore', invalid='ignore'):\n            result = numerator / denominator\n        # Truncate toward zero: int() does this in Python\n        return np.trunc(result).astype('Int64')\n    \n    # Helper function: ZEROIFNULL\n    def zeroifnull(col):\n        \"\"\"Map NULL to 0, keep other values.\"\"\"\n        return col.fillna(0)\n    \n    # Column: balance_bucket\n    # ZEROIFNULL(balance_cents) / 100\n    balance_cents_zero = zeroifnull(acct_balance['balance_cents'])\n    balance_bucket = trunc_div(balance_cents_zero, 100)\n    \n    # Column: fx_units\n    # CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER)\n    balance_cents_zero = zeroifnull(acct_balance['balance_cents'])\n    fx_rate = acct_balance['fx_rate']\n    \n    # Perform multiplication: balance_cents * fx_rate\n    product = balance_cents_zero * fx_rate\n    \n    # Divide by 100 and truncate toward zero\n    fx_units = trunc_div(product, 100)\n    \n    # Build output dataframe\n    result = pd.DataFrame({\n        'account_id': acct_balance['account_id'],\n        'balance_bucket': balance_bucket,\n        'fx_units': fx_units\n    })\n    \n    return {'balance_buckets': result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 373,
+   "tokens_out": 592,
+   "usd": 0.003333,
+   "wall_s": 4.022776365280151
+  }
+ ]
+}

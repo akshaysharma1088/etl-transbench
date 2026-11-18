@@ -1,0 +1,68 @@
+{
+ "config": "C5_cheap_counterexample",
+ "rep": 1,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 4,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values([\"user_id\", \"event_ts\", \"event_id\"]).reset_index(drop=True)\n    \n    # Extract the calendar date (local date) from event_ts\n    events[\"event_date\"] = events[\"event_ts\"].dt.date\n    \n    # Initialize session tracking columns\n    events[\"is_new_session\"] = False\n    \n    # Mark the first event of each user as a new session\n    events.loc[events.groupby(\"user_id\").cumcount() == 0, \"is_new_session\"] = True\n    \n    # For each user, check if we need to start a new session\n    for user_id in events[\"user_id\"].unique():\n        user_mask = events[\"user_id\"] == user_id\n        user_indices = events[user_mask].index.tolist()\n        \n        for i in range(1, len(user_indices)):\n            curr_idx = user_indices[i]\n            prev_idx = user_indices[i - 1]\n            \n            curr_ts = events.loc[curr_idx, \"event_ts\"]\n            prev_ts = events.loc[prev_idx, \"event_ts\"]\n            curr_date = events.loc[curr_idx, \"event_date\"]\n            prev_date = events.loc[prev_idx, \"event_date\"]\n            \n            # Check if different calendar date (force split at midnight)\n            if curr_date != prev_date:\n                events.loc[curr_idx, \"is_new_session\"] = True\n            else:\n                # Same date: check if gap > 45 minutes\n                time_diff_minutes = (curr_ts - prev_ts).total_seconds() / 60.0\n                if time_diff_minutes > 45:\n                    events.loc[curr_idx, \"is_new_session\"] = True\n    \n    # Assign session numbers\n    events[\"session_num\"] = events.groupby(\"user_id\")[\"is_new_session\"].cumsum()\n    \n    # Group by user_id and session_num to aggregate\n    user_sessions = events.groupby([\"user_id\", \"session_num\"], as_index=False).agg({\n        \"event_date\": \"first\",  # All events in a session have the same date\n        \"event_ts\": [\"min\", \"max\"],\n        \"event_id\": \"count\"\n    }).reset_index(drop=True)\n    \n    # Flatten multi-level columns\n    user_sessions.columns = [\"user_id\", \"session_num\", \"session_date\", \"session_start\", \"session_end\", \"event_count\"]\n    \n    # Ensure correct data types\n    user_sessions[\"user_id\"] = user_sessions[\"user_id\"].astype(\"int64\")\n    user_sessions[\"session_num\"] = user_sessions[\"session_num\"].astype(\"int64\")\n    user_sessions[\"event_count\"] = user_sessions[\"event_count\"].astype(\"int64\")\n    user_sessions[\"session_start\"] = pd.to_datetime(user_sessions[\"session_start\"])\n    user_sessions[\"session_end\"] = pd.to_datetime(user_sessions[\"session_end\"])\n    \n    return {\"user_sessions\": user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 1091,
+   "usd": 0.005835,
+   "wall_s": 8.985513687133789,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 9614,
+  "tokens_out": 4809,
+  "usd": 0.033658999999999994,
+  "wall_s": 37.73522067070007
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

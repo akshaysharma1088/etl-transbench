@@ -1,0 +1,51 @@
+{
+ "config": "A1_trace_only",
+ "rep": 2,
+ "task": "t2c_locf_carry_forward",
+ "category": "T2",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    # Resolve input key case-insensitively / robustly\n    df = None\n    for key in inputs:\n        if key.lower() == 'rate_feed':\n            df = inputs[key].copy()\n            break\n    if df is None:\n        # fallback: if only one input provided, use it\n        if len(inputs) == 1:\n            df = next(iter(inputs.values())).copy()\n        else:\n            raise KeyError('RATE_FEED')\n\n    # Preserve cursor ordering: ORDER BY account_id, obs_date, obs_seq\n    df = df.sort_values(\n        by=['account_id', 'obs_date', 'obs_seq'],\n        kind='mergesort'\n    ).reset_index(drop=True)\n\n    # Carry-forward last non-null rate within each account only\n    grouped = df.groupby('account_id', sort=False)['rate']\n    carried_rate = grouped.ffill()\n\n    rate_is_null = df['rate'].isna()\n    carried_available = carried_rate.notna()\n\n    was_carried = (rate_is_null & carried_available).astype('int64')\n\n    rate_filled = df['rate'].where(~rate_is_null, carried_rate)\n\n    result = pd.DataFrame({\n        'account_id': df['account_id'],\n        'obs_seq': df['obs_seq'],\n        'obs_date': df['obs_date'],\n        'rate_filled': rate_filled,\n        'was_carried': was_carried,\n    })\n\n    return {'rate_filled': result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 774,
+   "tokens_out": 661,
+   "usd": 0.012237,
+   "wall_s": 7.606861114501953
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1545,
+  "tokens_out": 561,
+  "usd": 0.01305,
+  "wall_s": 4.619610071182251
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

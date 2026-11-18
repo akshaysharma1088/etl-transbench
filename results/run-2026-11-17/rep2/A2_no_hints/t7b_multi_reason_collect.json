@@ -1,0 +1,46 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t7b_multi_reason_collect",
+ "category": "T7",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pandas.DataFrame]) -> dict[str, pandas.DataFrame]:\n    df = inputs[\"invoices\"].copy()\n\n    n = len(df)\n\n    amount = df[\"amount\"]\n    tax = df[\"tax\"]\n    due_date = df[\"due_date\"]\n    customer_ref = df[\"customer_ref\"]\n\n    amount_null = amount.isna()\n    tax_null = tax.isna()\n\n    # R1\n    r1 = amount_null | (amount < 0)\n\n    # R2\n    r2 = tax_null | (tax < 0)\n\n    # R3 (NULL-safe: skipped if amount or tax is NULL)\n    both_present = (~amount_null) & (~tax_null)\n    r3 = both_present & (tax > amount * 0.5)\n\n    # R4\n    r4 = due_date.isna()\n\n    # R5\n    ref_null = customer_ref.isna()\n    ref_blank = pd.Series(False, index=df.index)\n    non_null_mask = ~ref_null\n    if non_null_mask.any():\n        ref_blank.loc[non_null_mask] = (\n            customer_ref[non_null_mask].astype(str).str.strip() == \"\"\n        )\n    r5 = ref_null | ref_blank\n\n    codes = pd.DataFrame(\n        {\n            \"R1\": pd.Series([\"AMT_BAD\" if v else \"\" for v in r1], index=df.index),\n            \"R2\": pd.Series([\"TAX_BAD\" if v else \"\" for v in r2], index=df.index),\n            \"R3\": pd.Series([\"TAX_EXCESS\" if v else \"\" for v in r3], index=df.index),\n            \"R4\": pd.Series([\"DUE_NULL\" if v else \"\" for v in r4], index=df.index),\n            \"R5\": pd.Series([\"REF_EMPTY\" if v else \"\" for v in r5], index=df.index),\n        }\n    )\n\n    def join_codes(row):\n        parts = [c for c in row if c != \"\"]\n        return \"|\".join(parts)\n\n    reason_codes = codes.apply(join_codes, axis=1)\n\n    has_failure = r1 | r2 | r3 | r4 | r5\n\n    invoices_clean = df.loc[~has_failure].copy()\n\n    invoices_rejects = df.loc[has_failure].copy()\n    invoices_rejects[\"reason_codes\"] = reason_codes.loc[has_failure]\n\n    return {\n        \"invoices_clean\": invoices_clean.reset_index(drop=True),\n        \"invoices_rejects\": invoices_rejects.reset_index(drop=True),\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 667,
+   "tokens_out": 1175,
+   "usd": 0.019626,
+   "wall_s": 9.802698612213135
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

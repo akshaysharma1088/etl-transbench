@@ -1,0 +1,17 @@
+{
+ "task": "t8_cdc_merge",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n\n    # Determine watermark high_ts\n    if len(watermark) > 0:\n        high_ts = watermark[\"high_ts\"].iloc[0]\n    else:\n        high_ts = None\n\n    # Step 1: filter events strictly after watermark\n    if high_ts is not None:\n        cdc = cdc[cdc[\"event_ts\"] > high_ts]\n    else:\n        cdc = cdc.iloc[0:0]\n\n    # Step 2: per product_id, pick latest event by (event_ts, event_seq)\n    if len(cdc) > 0:\n        cdc_sorted = cdc.sort_values(\n            by=[\"product_id\", \"event_ts\", \"event_seq\"],\n            ascending=[True, True, True]\n        )\n        latest = cdc_sorted.groupby(\"product_id\", as_index=False).tail(1)\n    else:\n        latest = cdc.iloc[0:0]\n\n    # Build dict of target snapshot by product_id for easy update\n    target = target.set_index(\"product_id\", drop=False)\n\n    result_rows = {}\n    for _, row in target.iterrows():\n        result_rows[row[\"product_id\"]] = {\n            \"product_id\": row[\"product_id\"],\n            \"name\": row[\"name\"],\n            \"price\": row[\"price\"],\n            \"last_event_ts\": row[\"last_event_ts\"],\n        }\n\n    for _, ev in latest.iterrows():\n        pid = ev[\"product_id\"]\n        op = ev[\"op\"]\n        if op == \"D\":\n            if pid in result_rows:\n                del result_rows[pid]\n        else:  # 'I' or 'U'\n            result_rows[pid] = {\n                \"product_id\": pid,\n                \"name\": ev[\"name\"],\n                \"price\": ev[\"price\"],\n                \"last_event_ts\": ev[\"event_ts\"],\n            }\n\n    if len(result_rows) > 0:\n        new_snapshot = pd.DataFrame(list(result_rows.values()))\n    else:\n        new_snapshot = pd.DataFrame(columns=[\"product_id\", \"name\", \"price\", \"last_event_ts\"])\n\n    # Ensure proper dtypes\n    new_snapshot[\"product_id\"] = new_snapshot[\"product_id\"].astype(\"int64\")\n    new_snapshot[\"price\"] = new_snapshot[\"price\"].astype(\"float64\")\n    new_snapshot[\"last_event_ts\"] = pd.to_datetime(new_snapshot[\"last_event_ts\"])\n\n    new_snapshot = new_snapshot.sort_values(\"product_id\").reset_index(drop=True)\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 744,
+   "tokens_out": 1170,
+   "usd": 0.019782,
+   "wall_s": 9.986722469329834,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

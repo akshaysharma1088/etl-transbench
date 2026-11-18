@@ -1,0 +1,51 @@
+{
+ "config": "LEGATO",
+ "rep": 2,
+ "task": "t5d_asof_reconstruction",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _get_input(inputs: dict, name: str) -> pd.DataFrame:\n    if name in inputs:\n        return inputs[name]\n    lower_map = {k.lower(): k for k in inputs.keys()}\n    key = lower_map.get(name.lower())\n    if key is not None:\n        return inputs[key]\n    raise KeyError(name)\n\n\ndef run(inputs: dict) -> dict:\n    dim_hist = _get_input(inputs, \"DIM_EMP_HIST\").copy()\n    asof_q = _get_input(inputs, \"ASOF_QUERIES\").copy()\n\n    # Normalize types to ensure correct comparisons regardless of how the\n    # input DataFrames were constructed (e.g. object dtype dates, nullable\n    # ints, etc.)\n    dim_hist[\"emp_id\"] = dim_hist[\"emp_id\"].astype(\"Int64\")\n    dim_hist[\"eff_start_date\"] = pd.to_datetime(dim_hist[\"eff_start_date\"])\n    dim_hist[\"eff_end_date\"] = pd.to_datetime(dim_hist[\"eff_end_date\"])\n\n    asof_q = asof_q.copy()\n    asof_q[\"query_id\"] = asof_q[\"query_id\"].astype(\"Int64\")\n    asof_q[\"emp_id\"] = asof_q[\"emp_id\"].astype(\"Int64\")\n    asof_q[\"as_of_date\"] = pd.to_datetime(asof_q[\"as_of_date\"])\n\n    # Inner join on emp_id first (cartesian over matching emp_id), then\n    # apply the half-open interval predicate.\n    merged = asof_q.merge(\n        dim_hist,\n        on=\"emp_id\",\n        how=\"inner\",\n        suffixes=(\"\", \"_hist\"),\n    )\n\n    start_ok = merged[\"as_of_date\"] >= merged[\"eff_start_date\"]\n    end_ok = merged[\"eff_end_date\"].isna() | (\n        merged[\"as_of_date\"] < merged[\"eff_end_date\"]\n    )\n\n    filtered = merged[start_ok & end_ok]\n\n    result = filtered[[\"query_id\", \"emp_id\", \"dept\", \"grade\"]].reset_index(\n        drop=True\n    )\n\n    return {\"asof_result\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 738,
+   "tokens_out": 1136,
+   "usd": 0.019254,
+   "wall_s": 10.363462924957275
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1738,
+  "tokens_out": 867,
+  "usd": 0.018219,
+  "wall_s": 6.763912677764893
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

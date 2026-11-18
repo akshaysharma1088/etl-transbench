@@ -1,0 +1,61 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t5d_asof_reconstruction",
+ "category": "T5",
+ "dev_equivalent": true,
+ "iterations": 3,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    hist = inputs[\"dim_emp_hist\"].copy()\n    queries = inputs[\"asof_queries\"].copy()\n\n    # Ensure proper dtypes for comparison\n    hist[\"emp_id\"] = hist[\"emp_id\"]\n    hist[\"eff_start_date\"] = pd.to_datetime(hist[\"eff_start_date\"])\n    hist[\"eff_end_date\"] = pd.to_datetime(hist[\"eff_end_date\"])\n\n    queries[\"emp_id\"] = queries[\"emp_id\"]\n    queries[\"as_of_date\"] = pd.to_datetime(queries[\"as_of_date\"])\n\n    # Inner join on emp_id\n    merged = queries.merge(hist, on=\"emp_id\", how=\"inner\", suffixes=(\"\", \"_h\"))\n\n    # Apply interval conditions: start inclusive, end exclusive (NULL end = open)\n    start_ok = merged[\"as_of_date\"] >= merged[\"eff_start_date\"]\n    end_ok = merged[\"eff_end_date\"].isna() | (merged[\"as_of_date\"] < merged[\"eff_end_date\"])\n\n    result = merged.loc[start_ok & end_ok, [\"query_id\", \"emp_id\", \"dept\", \"grade\"]]\n\n    result = result.reset_index(drop=True)\n\n    return {\"asof_result\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 738,
+   "tokens_out": 1136,
+   "usd": 0.019254,
+   "wall_s": 10.363462924957275
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4002,
+  "tokens_out": 5662,
+  "usd": 0.096936,
+  "wall_s": 58.08699607849121
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}
