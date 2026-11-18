@@ -1,0 +1,48 @@
+{
+ "config": "LEGATO",
+ "rep": 1,
+ "task": "t2g_payment_waterfall",
+ "category": "T2",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _to_cents(x: float) -> int:\n    # Emulate DECIMAL(12,2) exact arithmetic by working in integer cents.\n    return int(round(float(x) * 100))\n\n\ndef run(inputs: dict) -> dict:\n    invoices = inputs[\"invoices\"].copy()\n    payments = inputs[\"payments\"].copy()\n\n    # Sort invoices: oldest due_date first, tie-break by invoice_id.\n    invoices = invoices.sort_values(\n        by=[\"customer_id\", \"due_date\", \"invoice_id\"]\n    ).reset_index(drop=True)\n\n    # Sort payments: chronological order, tie-break by payment_id.\n    payments = payments.sort_values(\n        by=[\"customer_id\", \"paid_ts\", \"payment_id\"]\n    ).reset_index(drop=True)\n\n    # Working state, in integer cents to avoid floating point drift.\n    open_amount_cents = {\n        int(row.invoice_id): _to_cents(row.amount) for row in invoices.itertuples()\n    }\n\n    invoices_by_customer = (\n        invoices.groupby(\"customer_id\")[\"invoice_id\"]\n        .apply(lambda s: [int(x) for x in s.tolist()])\n        .to_dict()\n    )\n\n    allocations = []  # list of (payment_id, invoice_id, applied_amount_cents)\n    credit_cents = {}  # customer_id -> unapplied cents\n\n    payments_by_customer = payments.groupby(\"customer_id\", sort=False)\n\n    for cust_id, pay_group in payments_by_customer:\n        inv_list = invoices_by_customer.get(int(cust_id), [])\n        for prow in pay_group.itertuples():\n            left = _to_cents(prow.amount)\n            pid = int(prow.payment_id)\n            if left <= 0:\n                continue\n            for iid in inv_list:\n                if left <= 0:\n                    break\n                oa = open_amount_cents.get(iid, 0)\n                if oa <= 0:\n                    continue\n                pay = left if left < oa else oa\n                open_amount_cents[iid] = oa - pay\n                left -= pay\n                allocations.append((pid, iid, pay))\n            if left > 0:\n                credit_cents[int(cust_id)] = credit_cents.get(int(cust_id), 0) + left\n\n    # Total applied per invoice (for status determination).\n    applied_total_cents = {}\n    for pid, iid, amt in allocations:\n        applied_total_cents[iid] = applied_total_cents.get(iid, 0) + amt\n\n    status_rows = []\n    for row in invoices.itertuples():\n        iid = int(row.invoice_id)\n        oa_cents = open_amount_cents[iid]\n        applied = applied_total_cents.get(iid, 0)\n        if oa_cents == 0:\n            status = \"PAID\"\n        elif applied == 0:\n            status = \"OPEN\"\n        else:\n            status = \"PARTIAL\"\n        status_rows.append((iid, oa_cents / 100.0, status))\n\n    invoice_status = pd.DataFrame(\n        status_rows, columns=[\"invoice_id\", \"open_amount\", \"status\"]\n    )\n    if len(invoice_status) == 0:\n        invoice_status = pd.DataFrame(\n            {\n                \"invoice_id\": pd.Series(dtype=\"int64\"),\n                \"open_amount\": pd.Series(dtype=\"float64\"),\n                \"status\": pd.Series(dtype=\"object\"),\n            }\n        )\n    else:\n        invoice_status[\"invoice_id\"] = invoice_status[\"invoice_id\"].astype(\"int64\")\n        invoice_status[\"open_amount\"] = invoice_status[\"open_amount\"].astype(\"float64\")\n        invoice_status[\"status\"] = invoice_status[\"status\"].astype(\"object\")\n\n    allocations_rows = [\n        (pid, iid, amt / 100.0) for (pid, iid, amt) in allocations\n    ]\n    allocations_df = pd.DataFrame(\n        allocations_rows, columns=[\"payment_id\", \"invoice_id\", \"applied_amount\"]\n    )\n    if len(allocations_df) == 0:\n        allocations_df = pd.DataFrame(\n            {\n                \"payment_id\": pd.Series(dtype=\"int64\"),\n                \"invoice_id\": pd.Series(dtype=\"int64\"),\n                \"applied_amount\": pd.Series(dtype=\"float64\"),\n            }\n        )\n    else:\n        allocations_df[\"payment_id\"] = allocations_df[\"payment_id\"].astype(\"int64\")\n        allocations_df[\"invoice_id\"] = allocations_df[\"invoice_id\"].astype(\"int64\")\n        allocations_df[\"applied_amount\"] = allocations_df[\"applied_amount\"].astype(\n            \"float64\"\n        )\n\n    credit_rows = [\n        (cust, amt / 100.0) for cust, amt in credit_cents.items() if amt > 0\n    ]\n    customer_credit = pd.DataFrame(\n        credit_rows, columns=[\"customer_id\", \"unapplied_amount\"]\n    )\n    if len(customer_credit) == 0:\n        customer_credit = pd.DataFrame(\n            {\n                \"customer_id\": pd.Series(dtype=\"int64\"),\n                \"unapplied_amount\": pd.Series(dtype=\"float64\"),\n            }\n        )\n    else:\n        customer_credit[\"customer_id\"] = customer_credit[\"customer_id\"].astype(\"int64\")\n        customer_credit[\"unapplied_amount\"] = customer_credit[\n            \"unapplied_amount\"\n        ].astype(\"float64\")\n\n    return {\n        \"invoice_status\": invoice_status,\n        \"allocations\": allocations_df,\n        \"customer_credit\": customer_credit,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1108,
+   "tokens_out": 3809,
+   "usd": 0.060459,
+   "wall_s": 31.547377347946167,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

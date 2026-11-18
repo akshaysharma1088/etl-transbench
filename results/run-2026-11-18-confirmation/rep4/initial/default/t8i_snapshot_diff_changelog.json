@@ -1,0 +1,17 @@
+{
+ "task": "t8i_snapshot_diff_changelog",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\nimport numpy as np\n\n\ndef _is_null(x):\n    if x is None:\n        return True\n    try:\n        if isinstance(x, float) and np.isnan(x):\n            return True\n    except TypeError:\n        pass\n    if isinstance(x, str):\n        return False\n    try:\n        return pd.isna(x)\n    except (TypeError, ValueError):\n        return False\n\n\ndef _null_safe_eq(a, b):\n    na, nb = _is_null(a), _is_null(b)\n    if na and nb:\n        return True\n    if na or nb:\n        return False\n    return a == b\n\n\ndef _label_eq(a, b):\n    na, nb = _is_null(a), _is_null(b)\n    if na and nb:\n        return True\n    if na or nb:\n        return False\n    sa = a.rstrip() if isinstance(a, str) else a\n    sb = b.rstrip() if isinstance(b, str) else b\n    return sa == sb\n\n\ndef run(inputs):\n    prev = inputs[\"snap_prev\"].copy()\n    curr = inputs[\"snap_curr\"].copy()\n\n    prev = prev.rename(columns={\n        \"price\": \"price_prev\",\n        \"stock\": \"stock_prev\",\n        \"label\": \"label_prev\",\n    })\n    curr = curr.rename(columns={\n        \"price\": \"price_curr\",\n        \"stock\": \"stock_curr\",\n        \"label\": \"label_curr\",\n    })\n\n    merged = pd.merge(\n        prev, curr,\n        on=[\"region\", \"sku\"],\n        how=\"outer\",\n        indicator=True,\n    )\n\n    rows = []\n\n    for _, row in merged.iterrows():\n        region = row[\"region\"]\n        sku = row[\"sku\"]\n        ind = row[\"_merge\"]\n\n        if ind == \"left_only\":\n            rows.append({\n                \"region\": region,\n                \"sku\": sku,\n                \"change_type\": \"D\",\n                \"changed_cols\": None,\n            })\n        elif ind == \"right_only\":\n            rows.append({\n                \"region\": region,\n                \"sku\": sku,\n                \"change_type\": \"I\",\n                \"changed_cols\": None,\n            })\n        else:\n            diffs = []\n            if not _null_safe_eq(row[\"price_prev\"], row[\"price_curr\"]):\n                diffs.append(\"price\")\n            if not _null_safe_eq(row[\"stock_prev\"], row[\"stock_curr\"]):\n                diffs.append(\"stock\")\n            if not _label_eq(row[\"label_prev\"], row[\"label_curr\"]):\n                diffs.append(\"label\")\n\n            if diffs:\n                rows.append({\n                    \"region\": region,\n                    \"sku\": sku,\n                    \"change_type\": \"U\",\n                    \"changed_cols\": \",\".join(diffs),\n                })\n\n    out = pd.DataFrame(rows, columns=[\"region\", \"sku\", \"change_type\", \"changed_cols\"])\n    if not out.empty:\n        out = out.sort_values([\"region\", \"sku\"]).reset_index(drop=True)\n\n    return {\"change_log\": out}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 951,
+   "tokens_out": 1278,
+   "usd": 0.022023,
+   "wall_s": 10.394378423690796,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

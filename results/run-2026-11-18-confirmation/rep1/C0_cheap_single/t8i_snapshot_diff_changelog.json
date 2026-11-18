@@ -1,0 +1,48 @@
+{
+ "config": "C0_cheap_single",
+ "rep": 1,
+ "task": "t8i_snapshot_diff_changelog",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    snap_prev = inputs[\"snap_prev\"].copy()\n    snap_curr = inputs[\"snap_curr\"].copy()\n    \n    # Ensure we have the right columns\n    for df in [snap_prev, snap_curr]:\n        for col in [\"region\", \"sku\", \"price\", \"stock\", \"label\"]:\n            if col not in df.columns:\n                df[col] = None\n    \n    # Convert label to string type and handle NaN as None\n    snap_prev[\"label\"] = snap_prev[\"label\"].astype(\"object\")\n    snap_curr[\"label\"] = snap_curr[\"label\"].astype(\"object\")\n    \n    # Create key column for merging\n    snap_prev[\"__key__\"] = snap_prev[\"region\"] + \"|\" + snap_prev[\"sku\"]\n    snap_curr[\"__key__\"] = snap_curr[\"region\"] + \"|\" + snap_curr[\"sku\"]\n    \n    # Merge on key to identify insert/update/delete\n    merged = pd.merge(\n        snap_prev,\n        snap_curr,\n        on=\"__key__\",\n        how=\"outer\",\n        suffixes=(\"_prev\", \"_curr\"),\n        indicator=True\n    )\n    \n    rows = []\n    \n    for idx, row in merged.iterrows():\n        merge_indicator = row[\"_merge\"]\n        \n        if merge_indicator == \"left_only\":\n            # Key only in previous snapshot: DELETE\n            region = row[\"region_prev\"]\n            sku = row[\"sku_prev\"]\n            change_type = \"D\"\n            changed_cols = None\n            rows.append({\n                \"region\": region,\n                \"sku\": sku,\n                \"change_type\": change_type,\n                \"changed_cols\": changed_cols\n            })\n        \n        elif merge_indicator == \"right_only\":\n            # Key only in current snapshot: INSERT\n            region = row[\"region_curr\"]\n            sku = row[\"sku_curr\"]\n            change_type = \"I\"\n            changed_cols = None\n            rows.append({\n                \"region\": region,\n                \"sku\": sku,\n                \"change_type\": change_type,\n                \"changed_cols\": changed_cols\n            })\n        \n        else:  # both\n            # Key in both snapshots: check for differences\n            region = row[\"region_prev\"]\n            sku = row[\"sku_prev\"]\n            \n            # Compare price (NULL-safe)\n            price_prev = row[\"price_prev\"]\n            price_curr = row[\"price_curr\"]\n            price_diff = False\n            if pd.isna(price_prev) and pd.isna(price_curr):\n                price_diff = False\n            elif pd.isna(price_prev) or pd.isna(price_curr):\n                price_diff = True\n            else:\n                price_diff = price_prev != price_curr\n            \n            # Compare stock (NULL-safe)\n            stock_prev = row[\"stock_prev\"]\n            stock_curr = row[\"stock_curr\"]\n            stock_diff = False\n            if pd.isna(stock_prev) and pd.isna(stock_curr):\n                stock_diff = False\n            elif pd.isna(stock_prev) or pd.isna(stock_curr):\n                stock_diff = True\n            else:\n                stock_diff = stock_prev != stock_curr\n            \n            # Compare label (RTRIM both sides, NULL-safe)\n            label_prev = row[\"label_prev\"]\n            label_curr = row[\"label_curr\"]\n            label_diff = False\n            \n            # Convert to string for RTRIM, handling NaN as None\n            label_prev_str = None if pd.isna(label_prev) else str(label_prev)\n            label_curr_str = None if pd.isna(label_curr) else str(label_curr)\n            \n            # RTRIM (remove trailing spaces)\n            if label_prev_str is not None:\n                label_prev_str = label_prev_str.rstrip(\" \")\n            if label_curr_str is not None:\n                label_curr_str = label_curr_str.rstrip(\" \")\n            \n            # Compare after RTRIM\n            if label_prev_str is None and label_curr_str is None:\n                label_diff = False\n            elif label_prev_str is None or label_curr_str is None:\n                label_diff = True\n            else:\n                label_diff = label_prev_str != label_curr_str\n            \n            # Build changed_cols list in fixed order\n            if price_diff or stock_diff or label_diff:\n                changed_cols_list = []\n                if price_diff:\n                    changed_cols_list.append(\"price\")\n                if stock_diff:\n                    changed_cols_list.append(\"stock\")\n                if label_diff:\n                    changed_cols_list.append(\"label\")\n                \n                changed_cols = \",\".join(changed_cols_list)\n                \n                rows.append({\n                    \"region\": region,\n                    \"sku\": sku,\n                    \"change_type\": \"U\",\n                    \"changed_cols\": changed_cols\n                })\n    \n    # Create output DataFrame\n    if rows:\n        change_log = pd.DataFrame(rows)\n    else:\n        change_log = pd.DataFrame(columns=[\"region\", \"sku\", \"change_type\", \"changed_cols\"])\n    \n    return {\n        \"change_log\": change_log\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 661,
+   "tokens_out": 1374,
+   "usd": 0.007531,
+   "wall_s": 7.640078544616699,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "B1_single_pass",
+ "rep": 1,
+ "task": "t5i_scd2_future_dated",
+ "category": "T5",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim_price = inputs[\"dim_price\"].copy()\n    stg_price = inputs[\"stg_price\"].copy()\n    batch_control = inputs[\"batch_control\"].copy()\n\n    batch_date = batch_control[\"batch_date\"].iloc[0]\n\n    # Build per-product list of version dicts from existing dim_price\n    versions_by_product = {}\n    for pid, grp in dim_price.groupby(\"product_id\"):\n        rows = []\n        for _, r in grp.iterrows():\n            rows.append({\n                \"product_id\": pid,\n                \"list_price\": r[\"list_price\"],\n                \"eff_start_date\": r[\"eff_start_date\"],\n                \"eff_end_date\": r[\"eff_end_date\"],\n            })\n        versions_by_product[pid] = rows\n\n    # Determine tail for each product: version with max eff_start_date\n    tails = {}\n    for pid, rows in versions_by_product.items():\n        if len(rows) == 0:\n            tails[pid] = None\n        else:\n            tail = max(rows, key=lambda r: r[\"eff_start_date\"])\n            tails[pid] = tail\n\n    # Ensure all products appearing in staging exist in versions_by_product/tails\n    for pid in stg_price[\"product_id\"].unique():\n        if pid not in versions_by_product:\n            versions_by_product[pid] = []\n            tails[pid] = None\n\n    # Process staging rows per product, ordered by effective_date ascending\n    stg_sorted = stg_price.sort_values([\"product_id\", \"effective_date\"], kind=\"stable\")\n\n    for pid, grp in stg_sorted.groupby(\"product_id\", sort=False):\n        tail = tails[pid]\n        rows = versions_by_product[pid]\n        for _, s in grp.iterrows():\n            s_price = s[\"list_price\"]\n            s_date = s[\"effective_date\"]\n            if tail is not None and tail[\"list_price\"] == s_price:\n                # unchanged, skip\n                continue\n            else:\n                if tail is not None:\n                    tail[\"eff_end_date\"] = s_date\n                new_row = {\n                    \"product_id\": pid,\n                    \"list_price\": s_price,\n                    \"eff_start_date\": s_date,\n                    \"eff_end_date\": pd.NaT,\n                }\n                rows.append(new_row)\n                tail = new_row\n        tails[pid] = tail\n        versions_by_product[pid] = rows\n\n    # Flatten all rows\n    all_rows = []\n    for pid, rows in versions_by_product.items():\n        for r in rows:\n            all_rows.append(r)\n\n    out = pd.DataFrame(all_rows, columns=[\"product_id\", \"list_price\", \"eff_start_date\", \"eff_end_date\"])\n\n    if len(out) == 0:\n        out[\"is_current\"] = pd.Series(dtype=\"int64\")\n    else:\n        def compute_is_current(row):\n            start = row[\"eff_start_date\"]\n            end = row[\"eff_end_date\"]\n            if start <= batch_date and (pd.isna(end) or batch_date < end):\n                return 1\n            return 0\n\n        out[\"is_current\"] = out.apply(compute_is_current, axis=1)\n\n    # Ensure proper dtypes\n    out[\"product_id\"] = out[\"product_id\"].astype(\"int64\")\n    out[\"list_price\"] = out[\"list_price\"].astype(\"float64\")\n    out[\"eff_start_date\"] = pd.to_datetime(out[\"eff_start_date\"])\n    out[\"eff_end_date\"] = pd.to_datetime(out[\"eff_end_date\"])\n    out[\"is_current\"] = out[\"is_current\"].astype(\"int64\")\n\n    out = out[[\"product_id\", \"list_price\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]]\n\n    return {\"dim_price_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1236,
+   "tokens_out": 2227,
+   "usd": 0.037113,
+   "wall_s": 18.930845499038696,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

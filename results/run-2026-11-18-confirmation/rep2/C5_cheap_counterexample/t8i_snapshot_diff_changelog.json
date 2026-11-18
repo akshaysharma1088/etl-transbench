@@ -1,0 +1,48 @@
+{
+ "config": "C5_cheap_counterexample",
+ "rep": 2,
+ "task": "t8i_snapshot_diff_changelog",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    snap_prev = inputs[\"snap_prev\"].copy()\n    snap_curr = inputs[\"snap_curr\"].copy()\n    \n    # Merge on key columns (region, sku) to find inserts, deletes, and updates\n    merged = pd.merge(\n        snap_prev,\n        snap_curr,\n        on=[\"region\", \"sku\"],\n        how=\"outer\",\n        suffixes=(\"_prev\", \"_curr\"),\n        indicator=True\n    )\n    \n    rows = []\n    \n    for _, row in merged.iterrows():\n        region = row[\"region\"]\n        sku = row[\"sku\"]\n        merge_indicator = row[\"_merge\"]\n        \n        if merge_indicator == \"left_only\":\n            # Key only in snap_prev -> DELETE\n            rows.append({\n                \"region\": region,\n                \"sku\": sku,\n                \"change_type\": \"D\",\n                \"changed_cols\": None\n            })\n        elif merge_indicator == \"right_only\":\n            # Key only in snap_curr -> INSERT\n            rows.append({\n                \"region\": region,\n                \"sku\": sku,\n                \"change_type\": \"I\",\n                \"changed_cols\": None\n            })\n        else:\n            # Key in both -> check if UPDATE is needed\n            changed_cols_list = []\n            \n            # Compare price (NULL-safe, by value)\n            price_prev = row[\"price_prev\"]\n            price_curr = row[\"price_curr\"]\n            if pd.isna(price_prev) and pd.isna(price_curr):\n                price_equal = True\n            elif pd.isna(price_prev) or pd.isna(price_curr):\n                price_equal = False\n            else:\n                price_equal = (price_prev == price_curr)\n            \n            if not price_equal:\n                changed_cols_list.append(\"price\")\n            \n            # Compare stock (NULL-safe, by value)\n            stock_prev = row[\"stock_prev\"]\n            stock_curr = row[\"stock_curr\"]\n            if pd.isna(stock_prev) and pd.isna(stock_curr):\n                stock_equal = True\n            elif pd.isna(stock_prev) or pd.isna(stock_curr):\n                stock_equal = False\n            else:\n                stock_equal = (stock_prev == stock_curr)\n            \n            if not stock_equal:\n                changed_cols_list.append(\"stock\")\n            \n            # Compare label (trailing space insensitive, NULL-safe)\n            label_prev = row[\"label_prev\"]\n            label_curr = row[\"label_curr\"]\n            \n            # Handle NaN/None as NULL\n            if pd.isna(label_prev):\n                label_prev_str = None\n            else:\n                label_prev_str = label_prev\n            \n            if pd.isna(label_curr):\n                label_curr_str = None\n            else:\n                label_curr_str = label_curr\n            \n            # Compare after RTRIM (trailing space removal)\n            if label_prev_str is None and label_curr_str is None:\n                label_equal = True\n            elif label_prev_str is None or label_curr_str is None:\n                label_equal = False\n            else:\n                label_prev_trimmed = label_prev_str.rstrip()\n                label_curr_trimmed = label_curr_str.rstrip()\n                label_equal = (label_prev_trimmed == label_curr_trimmed)\n            \n            if not label_equal:\n                changed_cols_list.append(\"label\")\n            \n            # Only emit row if there are changes\n            if changed_cols_list:\n                rows.append({\n                    \"region\": region,\n                    \"sku\": sku,\n                    \"change_type\": \"U\",\n                    \"changed_cols\": \",\".join(changed_cols_list)\n                })\n    \n    change_log = pd.DataFrame(rows)\n    \n    # Ensure correct column types\n    if len(change_log) > 0:\n        change_log = change_log.astype({\n            \"region\": \"object\",\n            \"sku\": \"object\",\n            \"change_type\": \"object\",\n            \"changed_cols\": \"object\"\n        })\n    else:\n        change_log = pd.DataFrame(\n            columns=[\"region\", \"sku\", \"change_type\", \"changed_cols\"]\n        )\n        change_log = change_log.astype({\n            \"region\": \"object\",\n            \"sku\": \"object\",\n            \"change_type\": \"object\",\n            \"changed_cols\": \"object\"\n        })\n    \n    return {\"change_log\": change_log}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 661,
+   "tokens_out": 1185,
+   "usd": 0.006586,
+   "wall_s": 6.95334267616272,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

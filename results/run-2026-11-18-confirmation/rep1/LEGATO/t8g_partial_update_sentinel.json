@@ -1,0 +1,48 @@
+{
+ "config": "LEGATO",
+ "rep": 1,
+ "task": "t8g_partial_update_sentinel",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    cp = inputs[\"customer_profile\"].copy()\n    pc = inputs[\"profile_changes\"].copy()\n\n    # ---- build existing profile dict ----\n    profile_dict = {}\n    for _, row in cp.iterrows():\n        cust_id = row[\"customer_id\"]\n        email = row[\"email\"] if pd.notna(row[\"email\"]) else None\n        phone = row[\"phone\"] if pd.notna(row[\"phone\"]) else None\n        tier = row[\"tier\"] if pd.notna(row[\"tier\"]) else None\n        profile_dict[cust_id] = {\n            \"email\": email,\n            \"phone\": phone,\n            \"tier\": tier,\n            \"updated_seq\": row[\"updated_seq\"],\n        }\n\n    # ---- group changes by customer, sorted by change_seq ----\n    changes_by_cust = {}\n    if len(pc) > 0:\n        for cust_id, group in pc.groupby(\"customer_id\"):\n            changes_by_cust[cust_id] = group.sort_values(\"change_seq\")\n\n    all_cust_ids = set(profile_dict.keys()) | set(changes_by_cust.keys())\n\n    def norm(v):\n        # treat NaN / None as \"null\" marker meaning \"unchanged\"\n        if v is None:\n            return None\n        try:\n            if pd.isna(v):\n                return None\n        except (TypeError, ValueError):\n            pass\n        return v\n\n    def apply_field_update(current, change_val, is_email=False):\n        # change_val already normalized: None means \"leave unchanged\"\n        if change_val is None:\n            return current\n        if isinstance(change_val, str) and change_val == \"<<NULL>>\":\n            return None\n        if is_email:\n            return change_val.strip().lower()\n        return change_val\n\n    def values_equal(a, b):\n        a_null = a is None\n        b_null = b is None\n        if a_null and b_null:\n            return True\n        if a_null != b_null:\n            return False\n        return a == b\n\n    results = []\n\n    for cust_id in all_cust_ids:\n        state = profile_dict.get(cust_id)\n        exists = state is not None\n\n        if exists:\n            cur_email = state[\"email\"]\n            cur_phone = state[\"phone\"]\n            cur_tier = state[\"tier\"]\n            cur_seq = state[\"updated_seq\"]\n        else:\n            cur_email = cur_phone = cur_tier = None\n            cur_seq = None\n\n        changes = changes_by_cust.get(cust_id)\n        if changes is not None:\n            for _, ch in changes.iterrows():\n                cseq = ch[\"change_seq\"]\n\n                if exists and cseq <= cur_seq:\n                    continue\n\n                ch_email = norm(ch[\"email\"])\n                ch_phone = norm(ch[\"phone\"])\n                ch_tier = norm(ch[\"tier\"])\n\n                if exists:\n                    new_email = apply_field_update(cur_email, ch_email, is_email=True)\n                    new_phone = apply_field_update(cur_phone, ch_phone)\n                    new_tier = apply_field_update(cur_tier, ch_tier)\n\n                    if (\n                        values_equal(new_email, cur_email)\n                        and values_equal(new_phone, cur_phone)\n                        and values_equal(new_tier, cur_tier)\n                    ):\n                        # no-op change: do not advance watermark, do not alter state\n                        continue\n                    else:\n                        cur_email, cur_phone, cur_tier = new_email, new_phone, new_tier\n                        cur_seq = cseq\n                else:\n                    # create new customer row\n                    cur_email = apply_field_update(None, ch_email, is_email=True)\n                    cur_phone = apply_field_update(None, ch_phone)\n                    cur_tier = apply_field_update(None, ch_tier)\n                    cur_seq = cseq\n                    exists = True\n\n        if exists:\n            results.append(\n                {\n                    \"customer_id\": cust_id,\n                    \"email\": cur_email if cur_email is not None else np.nan,\n                    \"phone\": cur_phone if cur_phone is not None else np.nan,\n                    \"tier\": cur_tier if cur_tier is not None else np.nan,\n                    \"updated_seq\": cur_seq,\n                }\n            )\n\n    new_profile = pd.DataFrame(\n        results, columns=[\"customer_id\", \"email\", \"phone\", \"tier\", \"updated_seq\"]\n    )\n\n    if len(new_profile) > 0:\n        new_profile[\"customer_id\"] = new_profile[\"customer_id\"].astype(\"int64\")\n        new_profile[\"updated_seq\"] = new_profile[\"updated_seq\"].astype(\"int64\")\n    else:\n        new_profile = pd.DataFrame(\n            {\n                \"customer_id\": pd.Series(dtype=\"int64\"),\n                \"email\": pd.Series(dtype=\"object\"),\n                \"phone\": pd.Series(dtype=\"object\"),\n                \"tier\": pd.Series(dtype=\"object\"),\n                \"updated_seq\": pd.Series(dtype=\"int64\"),\n            }\n        )\n\n    return {\"new_profile\": new_profile}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1049,
+   "tokens_out": 4765,
+   "usd": 0.074622,
+   "wall_s": 39.583481550216675,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

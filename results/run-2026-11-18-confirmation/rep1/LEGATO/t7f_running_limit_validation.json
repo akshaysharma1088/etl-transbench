@@ -1,0 +1,48 @@
+{
+ "config": "LEGATO",
+ "rep": 1,
+ "task": "t7f_running_limit_validation",
+ "category": "T7",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    account_limits = inputs[\"account_limits\"]\n    transfers = inputs[\"transfers\"]\n\n    limits_map = dict(zip(account_limits[\"account_id\"], account_limits[\"daily_limit\"]))\n\n    rows = transfers.sort_values(\"row_num\", kind=\"mergesort\")\n\n    accepted_refs = set()\n    running_sums = {}  # (account_id, transfer_date) -> sum\n\n    accepted_records = []\n    reject_records = []\n\n    for row in rows.itertuples(index=False):\n        row_num = row.row_num\n        transfer_ref = row.transfer_ref\n        account_id = row.account_id\n        amount = row.amount\n        transfer_date = row.transfer_date\n\n        # R1 UNKNOWN_ACCOUNT\n        if account_id not in limits_map:\n            reject_records.append((row_num, \"UNKNOWN_ACCOUNT\"))\n            continue\n\n        # R2 BAD_AMOUNT\n        if pd.isna(amount) or amount <= 0:\n            reject_records.append((row_num, \"BAD_AMOUNT\"))\n            continue\n\n        # R3 DUPLICATE_REF\n        if transfer_ref in accepted_refs:\n            reject_records.append((row_num, \"DUPLICATE_REF\"))\n            continue\n\n        # R4 OVER_LIMIT\n        key = (account_id, transfer_date)\n        prior_sum = running_sums.get(key, 0.0)\n        daily_limit = limits_map[account_id]\n        new_total = prior_sum + amount\n        if new_total > daily_limit:\n            reject_records.append((row_num, \"OVER_LIMIT\"))\n            continue\n\n        # Accepted\n        running_sums[key] = new_total\n        accepted_refs.add(transfer_ref)\n        accepted_records.append((row_num, account_id, amount, new_total))\n\n    accepted_transfers = pd.DataFrame(\n        accepted_records,\n        columns=[\"row_num\", \"account_id\", \"amount\", \"running_total\"]\n    )\n    transfer_rejects = pd.DataFrame(\n        reject_records,\n        columns=[\"row_num\", \"reason\"]\n    )\n\n    return {\n        \"accepted_transfers\": accepted_transfers,\n        \"transfer_rejects\": transfer_rejects\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 950,
+   "tokens_out": 919,
+   "usd": 0.016635,
+   "wall_s": 7.355167388916016,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

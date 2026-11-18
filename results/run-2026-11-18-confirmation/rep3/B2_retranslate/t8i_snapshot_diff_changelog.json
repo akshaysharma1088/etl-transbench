@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t8i_snapshot_diff_changelog",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _is_null(v):\n    return v is None or (isinstance(v, float) and pd.isna(v)) or (pd.isna(v) if not isinstance(v, (list, tuple)) else False)\n\n\ndef _dedupe_last(df: pd.DataFrame) -> pd.DataFrame:\n    # Keep the last occurrence for each (region, sku) key, preserving\n    # original row order as the deterministic tie-break (\"latest wins\").\n    if df.empty:\n        return df.copy()\n    df = df.reset_index(drop=True)\n    df['_ord'] = df.index\n    df = df.sort_values('_ord')\n    df = df.drop_duplicates(subset=['region', 'sku'], keep='last')\n    df = df.drop(columns=['_ord'])\n    return df.reset_index(drop=True)\n\n\ndef _num_equal(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return True\n    if a_null or b_null:\n        return False\n    return a == b\n\n\ndef _label_equal(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return True\n    if a_null or b_null:\n        return False\n    return a.rstrip(' ') == b.rstrip(' ')\n\n\ndef run(inputs: dict) -> dict:\n    snap_prev = inputs[\"snap_prev\"].copy()\n    snap_curr = inputs[\"snap_curr\"].copy()\n\n    # Ensure expected columns exist and types are reasonable\n    for df in (snap_prev, snap_curr):\n        for col in (\"region\", \"sku\", \"price\", \"stock\", \"label\"):\n            if col not in df.columns:\n                df[col] = pd.NA\n\n    # Deduplicate per key, deterministic \"latest wins\" on original order\n    snap_prev = _dedupe_last(snap_prev)\n    snap_curr = _dedupe_last(snap_curr)\n\n    merged = pd.merge(\n        snap_prev,\n        snap_curr,\n        on=[\"region\", \"sku\"],\n        how=\"outer\",\n        suffixes=(\"_prev\", \"_curr\"),\n        indicator=True,\n    )\n\n    rows = []\n\n    for _, row in merged.iterrows():\n        region = row[\"region\"]\n        sku = row[\"sku\"]\n        indicator = row[\"_merge\"]\n\n        if indicator == \"left_only\":\n            rows.append({\n                \"region\": region,\n                \"sku\": sku,\n                \"change_type\": \"D\",\n                \"changed_cols\": None,\n            })\n            continue\n\n        if indicator == \"right_only\":\n            rows.append({\n                \"region\": region,\n                \"sku\": sku,\n                \"change_type\": \"I\",\n                \"changed_cols\": None,\n            })\n            continue\n\n        # both present -> compare\n        price_prev = row[\"price_prev\"]\n        price_curr = row[\"price_curr\"]\n        stock_prev = row[\"stock_prev\"]\n        stock_curr = row[\"stock_curr\"]\n        label_prev = row[\"label_prev\"]\n        label_curr = row[\"label_curr\"]\n\n        diffs = []\n        if not _num_equal(price_prev, price_curr):\n            diffs.append(\"price\")\n        if not _num_equal(stock_prev, stock_curr):\n            diffs.append(\"stock\")\n        if not _label_equal(label_prev, label_curr):\n            diffs.append(\"label\")\n\n        if diffs:\n            rows.append({\n                \"region\": region,\n                \"sku\": sku,\n                \"change_type\": \"U\",\n                \"changed_cols\": \",\".join(diffs),\n            })\n        # else: no row, identical\n\n    change_log = pd.DataFrame(rows, columns=[\"region\", \"sku\", \"change_type\", \"changed_cols\"])\n\n    return {\"change_log\": change_log}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 951,
+   "tokens_out": 1927,
+   "usd": 0.031758,
+   "wall_s": 17.24766731262207,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

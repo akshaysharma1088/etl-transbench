@@ -1,0 +1,48 @@
+{
+ "config": "B1_single_pass",
+ "rep": 2,
+ "task": "t2e_overdraft_fee_cursor",
+ "category": "T2",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    accounts = inputs[\"accounts\"]\n    txns = inputs[\"txns\"]\n\n    # Only txns whose account_id is known\n    merged = txns.merge(accounts[[\"account_id\", \"opening_balance\"]], on=\"account_id\", how=\"inner\")\n\n    # Sort per legacy cursor order: per account, by txn_ts then txn_id\n    merged = merged.sort_values([\"account_id\", \"txn_ts\", \"txn_id\"], kind=\"mergesort\").reset_index(drop=True)\n\n    ledger_rows = []\n    fee_rows = []\n\n    cur_account = None\n    bal = 0.0\n    last_fee_date = None\n\n    for row in merged.itertuples(index=False):\n        if row.account_id != cur_account:\n            cur_account = row.account_id\n            bal = row.opening_balance\n            last_fee_date = None\n\n        bal = bal + row.amount\n\n        if row.amount < 0 and bal < 0:\n            txn_date = row.txn_ts.date() if hasattr(row.txn_ts, \"date\") else pd.Timestamp(row.txn_ts).date()\n            if last_fee_date != txn_date:\n                bal = bal - 35.00\n                fee_rows.append({\n                    \"account_id\": row.account_id,\n                    \"fee_date\": txn_date,\n                    \"trigger_txn_id\": row.txn_id\n                })\n                last_fee_date = txn_date\n\n        ledger_rows.append({\n            \"txn_id\": row.txn_id,\n            \"balance_after\": bal\n        })\n\n    txn_ledger = pd.DataFrame(ledger_rows, columns=[\"txn_id\", \"balance_after\"])\n    fees = pd.DataFrame(fee_rows, columns=[\"account_id\", \"fee_date\", \"trigger_txn_id\"])\n\n    if not fees.empty:\n        fees[\"fee_date\"] = pd.to_datetime(fees[\"fee_date\"])\n\n    return {\n        \"txn_ledger\": txn_ledger,\n        \"fees\": fees\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1002,
+   "tokens_out": 928,
+   "usd": 0.016926,
+   "wall_s": 8.78261947631836,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

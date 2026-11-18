@@ -1,0 +1,48 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 3,
+ "task": "t8i_snapshot_diff_changelog",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    snap_prev = inputs[\"snap_prev\"].copy()\n    snap_curr = inputs[\"snap_curr\"].copy()\n    \n    # Ensure string columns are object type for proper null handling\n    for col in [\"region\", \"sku\", \"label\"]:\n        snap_prev[col] = snap_prev[col].astype(\"object\")\n        snap_curr[col] = snap_curr[col].astype(\"object\")\n    \n    # Create key column for merging\n    snap_prev[\"__key\"] = snap_prev[\"region\"].astype(str) + \"|\" + snap_prev[\"sku\"].astype(str)\n    snap_curr[\"__key\"] = snap_curr[\"region\"].astype(str) + \"|\" + snap_curr[\"sku\"].astype(str)\n    \n    # Merge on key to identify inserts, deletes, and updates\n    merged = pd.merge(\n        snap_prev[[\"__key\", \"region\", \"sku\", \"price\", \"stock\", \"label\"]],\n        snap_curr[[\"__key\", \"region\", \"sku\", \"price\", \"stock\", \"label\"]],\n        on=\"__key\",\n        how=\"outer\",\n        suffixes=(\"_prev\", \"_curr\"),\n        indicator=True\n    )\n    \n    rows = []\n    \n    for idx, row in merged.iterrows():\n        merge_indicator = row[\"_merge\"]\n        \n        if merge_indicator == \"left_only\":\n            # Delete: key only in snap_prev\n            rows.append({\n                \"region\": row[\"region_prev\"],\n                \"sku\": row[\"sku_prev\"],\n                \"change_type\": \"D\",\n                \"changed_cols\": None\n            })\n        elif merge_indicator == \"right_only\":\n            # Insert: key only in snap_curr\n            rows.append({\n                \"region\": row[\"region_curr\"],\n                \"sku\": row[\"sku_curr\"],\n                \"change_type\": \"I\",\n                \"changed_cols\": None\n            })\n        else:  # both\n            # Update: key in both; check for differences\n            region = row[\"region_prev\"]\n            sku = row[\"sku_prev\"]\n            \n            price_prev = row[\"price_prev\"]\n            price_curr = row[\"price_curr\"]\n            stock_prev = row[\"stock_prev\"]\n            stock_curr = row[\"stock_curr\"]\n            label_prev = row[\"label_prev\"]\n            label_curr = row[\"label_curr\"]\n            \n            # NULL-safe comparison for price and stock\n            price_diff = not _null_safe_equal(price_prev, price_curr)\n            stock_diff = not _null_safe_equal(stock_prev, stock_curr)\n            \n            # For label: RTRIM both sides, then compare\n            # Handle None/NaN as None for comparison\n            label_prev_trimmed = _rtrim_label(label_prev)\n            label_curr_trimmed = _rtrim_label(label_curr)\n            label_diff = not _null_safe_equal(label_prev_trimmed, label_curr_trimmed)\n            \n            if price_diff or stock_diff or label_diff:\n                # Build changed_cols in fixed order: price, stock, label\n                changed = []\n                if price_diff:\n                    changed.append(\"price\")\n                if stock_diff:\n                    changed.append(\"stock\")\n                if label_diff:\n                    changed.append(\"label\")\n                \n                rows.append({\n                    \"region\": region,\n                    \"sku\": sku,\n                    \"change_type\": \"U\",\n                    \"changed_cols\": \",\".join(changed)\n                })\n    \n    change_log = pd.DataFrame(rows)\n    \n    # Ensure correct column order and types\n    if len(change_log) == 0:\n        change_log = pd.DataFrame(columns=[\"region\", \"sku\", \"change_type\", \"changed_cols\"])\n        change_log[\"region\"] = change_log[\"region\"].astype(\"object\")\n        change_log[\"sku\"] = change_log[\"sku\"].astype(\"object\")\n        change_log[\"change_type\"] = change_log[\"change_type\"].astype(\"object\")\n        change_log[\"changed_cols\"] = change_log[\"changed_cols\"].astype(\"object\")\n    else:\n        change_log = change_log[[\"region\", \"sku\", \"change_type\", \"changed_cols\"]]\n        change_log[\"region\"] = change_log[\"region\"].astype(\"object\")\n        change_log[\"sku\"] = change_log[\"sku\"].astype(\"object\")\n        change_log[\"change_type\"] = change_log[\"change_type\"].astype(\"object\")\n        change_log[\"changed_cols\"] = change_log[\"changed_cols\"].astype(\"object\")\n    \n    return {\"change_log\": change_log}\n\n\ndef _null_safe_equal(val1, val2):\n    \"\"\"\n    NULL-safe equality: NULL == NULL is True; NULL vs non-NULL is False.\n    For numeric types, NaN is treated as NULL.\n    \"\"\"\n    # Normalize NaN and None to None for comparison\n    v1 = None if (val1 is None or (isinstance(val1, float) and pd.isna(val1))) else val1\n    v2 = None if (val2 is None or (isinstance(val2, float) and pd.isna(val2))) else val2\n    \n    if v1 is None and v2 is None:\n        return True\n    if v1 is None or v2 is None:\n        return False\n    return v1 == v2\n\n\ndef _rtrim_label(label):\n    \"\"\"\n    RTRIM the label (remove trailing spaces).\n    Handle None/NaN as None.\n    A string that is all spaces becomes empty string.\n    \"\"\"\n    if label is None or (isinstance(label, float) and pd.isna(label)):\n        return None\n    if not isinstance(label, str):\n        label = str(label)\n    rtrimmed = label.rstrip(\" \")\n    return rtrimmed\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 661,
+   "tokens_out": 1522,
+   "usd": 0.008271,
+   "wall_s": 9.288262128829956,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

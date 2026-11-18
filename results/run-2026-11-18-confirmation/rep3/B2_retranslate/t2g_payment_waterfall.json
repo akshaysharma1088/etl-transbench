@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t2g_payment_waterfall",
+ "category": "T2",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    invoices = inputs[\"invoices\"].copy()\n    payments = inputs[\"payments\"].copy()\n\n    # Original invoice amounts (for OPEN/PARTIAL/PAID determination)\n    orig_amount = invoices.set_index(\"invoice_id\")[\"amount\"].astype(float).to_dict()\n\n    # Mutable open-amount state per invoice\n    inv_open = dict(orig_amount)\n\n    # Build per-customer ordered invoice lists: oldest due_date first, then invoice_id\n    invoices_sorted = invoices.sort_values([\"customer_id\", \"due_date\", \"invoice_id\"])\n    cust_invoices = (\n        invoices_sorted.groupby(\"customer_id\")[\"invoice_id\"]\n        .apply(list)\n        .to_dict()\n    )\n\n    # Order payments per customer by paid_ts then payment_id (cursor order)\n    payments_sorted = payments.sort_values([\"customer_id\", \"paid_ts\", \"payment_id\"])\n\n    allocations = []\n    credit = {}\n\n    for row in payments_sorted.itertuples(index=False):\n        cust = row.customer_id\n        left = float(row.amount)\n        pay_id = row.payment_id\n\n        inv_list = cust_invoices.get(cust, [])\n\n        if left > 0:\n            for inv_id in inv_list:\n                if left <= 0:\n                    break\n                open_amt = inv_open.get(inv_id, 0.0)\n                if open_amt <= 0:\n                    continue\n                pay = left if left < open_amt else open_amt\n                inv_open[inv_id] = open_amt - pay\n                left -= pay\n                allocations.append((pay_id, inv_id, pay))\n                if left == 0:\n                    break\n\n        if left > 0:\n            credit[cust] = credit.get(cust, 0.0) + left\n\n    # Build invoice_status preserving original invoice order\n    status_rows = []\n    for inv_id in invoices[\"invoice_id\"]:\n        orig = orig_amount[inv_id]\n        open_amt = inv_open[inv_id]\n        if open_amt == orig:\n            status = \"OPEN\"\n        elif open_amt == 0:\n            status = \"PAID\"\n        else:\n            status = \"PARTIAL\"\n        status_rows.append((inv_id, open_amt, status))\n\n    invoice_status = pd.DataFrame(\n        status_rows, columns=[\"invoice_id\", \"open_amount\", \"status\"]\n    )\n    if not invoice_status.empty:\n        invoice_status[\"invoice_id\"] = invoice_status[\"invoice_id\"].astype(\"int64\")\n        invoice_status[\"open_amount\"] = invoice_status[\"open_amount\"].astype(\"float64\")\n        invoice_status[\"status\"] = invoice_status[\"status\"].astype(object)\n    else:\n        invoice_status = pd.DataFrame(\n            columns=[\"invoice_id\", \"open_amount\", \"status\"]\n        ).astype({\"invoice_id\": \"int64\", \"open_amount\": \"float64\", \"status\": object})\n\n    allocations_df = pd.DataFrame(\n        allocations, columns=[\"payment_id\", \"invoice_id\", \"applied_amount\"]\n    )\n    if not allocations_df.empty:\n        allocations_df[\"payment_id\"] = allocations_df[\"payment_id\"].astype(\"int64\")\n        allocations_df[\"invoice_id\"] = allocations_df[\"invoice_id\"].astype(\"int64\")\n        allocations_df[\"applied_amount\"] = allocations_df[\"applied_amount\"].astype(\"float64\")\n    else:\n        allocations_df = pd.DataFrame(\n            columns=[\"payment_id\", \"invoice_id\", \"applied_amount\"]\n        ).astype({\"payment_id\": \"int64\", \"invoice_id\": \"int64\", \"applied_amount\": \"float64\"})\n\n    credit_rows = [(c, amt) for c, amt in credit.items() if amt > 0]\n    customer_credit = pd.DataFrame(\n        credit_rows, columns=[\"customer_id\", \"unapplied_amount\"]\n    )\n    if not customer_credit.empty:\n        customer_credit[\"customer_id\"] = customer_credit[\"customer_id\"].astype(\"int64\")\n        customer_credit[\"unapplied_amount\"] = customer_credit[\"unapplied_amount\"].astype(\n            \"float64\"\n        )\n    else:\n        customer_credit = pd.DataFrame(\n            columns=[\"customer_id\", \"unapplied_amount\"]\n        ).astype({\"customer_id\": \"int64\", \"unapplied_amount\": \"float64\"})\n\n    return {\n        \"invoice_status\": invoice_status,\n        \"allocations\": allocations_df,\n        \"customer_credit\": customer_credit,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1108,
+   "tokens_out": 3157,
+   "usd": 0.050679,
+   "wall_s": 24.749128818511963,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

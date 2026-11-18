@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 2,
+ "task": "t8g_partial_update_sentinel",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\nNULL_SENTINEL = \"<<NULL>>\"\n\n\ndef _resolve_field(value, current, is_email=False):\n    \"\"\"Apply the change-field rule for a single field.\n\n    value: the field value coming from the change row (may be NaN/None).\n    current: current value held for this field (may be None).\n    \"\"\"\n    if pd.isna(value):\n        # NULL in change -> leave unchanged\n        return current\n    if value == NULL_SENTINEL:\n        return None\n    if is_email:\n        return str(value).strip().lower()\n    return value\n\n\ndef _nullsafe_eq(a, b):\n    a_null = a is None or (isinstance(a, float) and pd.isna(a))\n    b_null = b is None or (isinstance(b, float) and pd.isna(b))\n    if a_null and b_null:\n        return True\n    if a_null != b_null:\n        return False\n    return a == b\n\n\ndef run(inputs: dict) -> dict:\n    customer_profile = inputs[\"customer_profile\"]\n    profile_changes = inputs[\"profile_changes\"]\n\n    # Index existing profiles by customer_id\n    existing_by_cust = {}\n    for _, row in customer_profile.iterrows():\n        existing_by_cust[row[\"customer_id\"]] = {\n            \"email\": row[\"email\"] if not pd.isna(row[\"email\"]) else None,\n            \"phone\": row[\"phone\"] if not pd.isna(row[\"phone\"]) else None,\n            \"tier\": row[\"tier\"] if not pd.isna(row[\"tier\"]) else None,\n            \"updated_seq\": row[\"updated_seq\"],\n        }\n\n    # Group changes by customer_id, sorted by change_seq\n    changes_by_cust = {}\n    for cust_id, grp in profile_changes.groupby(\"customer_id\"):\n        grp_sorted = grp.sort_values(\"change_seq\", kind=\"mergesort\")\n        changes_by_cust[cust_id] = grp_sorted.to_dict(\"records\")\n\n    all_customer_ids = set(existing_by_cust.keys()) | set(changes_by_cust.keys())\n\n    result_rows = []\n\n    for cust_id in all_customer_ids:\n        existing_row = existing_by_cust.get(cust_id)\n\n        if existing_row is not None:\n            current = {\n                \"email\": existing_row[\"email\"],\n                \"phone\": existing_row[\"phone\"],\n                \"tier\": existing_row[\"tier\"],\n            }\n            updated_seq = existing_row[\"updated_seq\"]\n            exists = True\n        else:\n            current = {\"email\": None, \"phone\": None, \"tier\": None}\n            updated_seq = None\n            exists = False\n\n        cust_changes = changes_by_cust.get(cust_id, [])\n\n        if exists:\n            cust_changes = [c for c in cust_changes if c[\"change_seq\"] > updated_seq]\n\n        for c in cust_changes:\n            new_email = _resolve_field(c[\"email\"], current[\"email\"], is_email=True)\n            new_phone = _resolve_field(c[\"phone\"], current[\"phone\"], is_email=False)\n            new_tier = _resolve_field(c[\"tier\"], current[\"tier\"], is_email=False)\n\n            if not exists:\n                # Creation: never a no-op\n                current = {\"email\": new_email, \"phone\": new_phone, \"tier\": new_tier}\n                updated_seq = c[\"change_seq\"]\n                exists = True\n            else:\n                same = (\n                    _nullsafe_eq(new_email, current[\"email\"])\n                    and _nullsafe_eq(new_phone, current[\"phone\"])\n                    and _nullsafe_eq(new_tier, current[\"tier\"])\n                )\n                if same:\n                    # no-op, do not advance updated_seq\n                    pass\n                else:\n                    current = {\"email\": new_email, \"phone\": new_phone, \"tier\": new_tier}\n                    updated_seq = c[\"change_seq\"]\n\n        result_rows.append(\n            {\n                \"customer_id\": cust_id,\n                \"email\": current[\"email\"],\n                \"phone\": current[\"phone\"],\n                \"tier\": current[\"tier\"],\n                \"updated_seq\": updated_seq,\n            }\n        )\n\n    new_profile = pd.DataFrame(\n        result_rows, columns=[\"customer_id\", \"email\", \"phone\", \"tier\", \"updated_seq\"]\n    )\n\n    if not new_profile.empty:\n        new_profile[\"customer_id\"] = new_profile[\"customer_id\"].astype(\"int64\")\n        new_profile[\"updated_seq\"] = new_profile[\"updated_seq\"].astype(\"int64\")\n    else:\n        new_profile = pd.DataFrame(\n            {\n                \"customer_id\": pd.Series(dtype=\"int64\"),\n                \"email\": pd.Series(dtype=\"object\"),\n                \"phone\": pd.Series(dtype=\"object\"),\n                \"tier\": pd.Series(dtype=\"object\"),\n                \"updated_seq\": pd.Series(dtype=\"int64\"),\n            }\n        )\n\n    new_profile = new_profile.sort_values(\"customer_id\", kind=\"mergesort\").reset_index(\n        drop=True\n    )\n\n    return {\"new_profile\": new_profile}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1049,
+   "tokens_out": 4021,
+   "usd": 0.063462,
+   "wall_s": 35.34264612197876,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

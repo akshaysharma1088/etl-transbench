@@ -1,0 +1,48 @@
+{
+ "config": "B1_single_pass",
+ "rep": 3,
+ "task": "t6f_cross_device_session_merge",
+ "category": "T6",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import timedelta\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"device_sessions\"].copy()\n\n    if df.empty:\n        return {\n            \"merged_sessions\": pd.DataFrame(\n                columns=[\n                    \"user_id\",\n                    \"merged_num\",\n                    \"start_ts\",\n                    \"end_ts\",\n                    \"device_count\",\n                    \"source_count\",\n                ]\n            )\n        }\n\n    df = df.sort_values(\n        by=[\"user_id\", \"start_ts\", \"end_ts\", \"session_id\"],\n        kind=\"mergesort\",\n    ).reset_index(drop=True)\n\n    results = []\n\n    for user_id, group in df.groupby(\"user_id\", sort=False):\n        rows = group.to_dict(\"records\")\n        merged_num = 0\n\n        group_start = None\n        group_end = None\n        devices = set()\n        source_count = 0\n\n        for row in rows:\n            start_ts = row[\"start_ts\"]\n            end_ts = row[\"end_ts\"]\n            device_id = row[\"device_id\"]\n\n            if group_end is None:\n                # open first group\n                group_start = start_ts\n                group_end = end_ts\n                devices = {device_id}\n                source_count = 1\n            else:\n                threshold = group_end + timedelta(minutes=5)\n                if start_ts <= threshold:\n                    # join existing group\n                    if end_ts > group_end:\n                        group_end = end_ts\n                    devices.add(device_id)\n                    source_count += 1\n                else:\n                    # close current group, emit it\n                    merged_num += 1\n                    results.append(\n                        {\n                            \"user_id\": user_id,\n                            \"merged_num\": merged_num,\n                            \"start_ts\": group_start,\n                            \"end_ts\": group_end,\n                            \"device_count\": len(devices),\n                            \"source_count\": source_count,\n                        }\n                    )\n                    # open new group\n                    group_start = start_ts\n                    group_end = end_ts\n                    devices = {device_id}\n                    source_count = 1\n\n        # emit final open group\n        if group_end is not None:\n            merged_num += 1\n            results.append(\n                {\n                    \"user_id\": user_id,\n                    \"merged_num\": merged_num,\n                    \"start_ts\": group_start,\n                    \"end_ts\": group_end,\n                    \"device_count\": len(devices),\n                    \"source_count\": source_count,\n                }\n            )\n\n    out_df = pd.DataFrame(\n        results,\n        columns=[\n            \"user_id\",\n            \"merged_num\",\n            \"start_ts\",\n            \"end_ts\",\n            \"device_count\",\n            \"source_count\",\n        ],\n    )\n\n    return {\"merged_sessions\": out_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 803,
+   "tokens_out": 998,
+   "usd": 0.017379,
+   "wall_s": 8.014875173568726,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

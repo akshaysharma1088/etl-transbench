@@ -1,0 +1,48 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 2,
+ "task": "t2e_overdraft_fee_cursor",
+ "category": "T2",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    accounts = inputs[\"accounts\"].copy()\n    txns = inputs[\"txns\"].copy()\n    \n    # Filter transactions to only known accounts\n    txns = txns.merge(accounts[[\"account_id\"]], on=\"account_id\", how=\"inner\")\n    \n    # Sort transactions by account_id, then by txn_ts, then by txn_id\n    txns = txns.sort_values(by=[\"account_id\", \"txn_ts\", \"txn_id\"]).reset_index(drop=True)\n    \n    # Initialize output lists\n    txn_ledger_rows = []\n    fees_rows = []\n    \n    # Create a dictionary to track which (account_id, date) pairs have been charged a fee\n    fees_charged = set()\n    \n    # Process each account\n    for account_id in accounts[\"account_id\"].unique():\n        # Get opening balance for this account\n        opening_bal = accounts[accounts[\"account_id\"] == account_id][\"opening_balance\"].iloc[0]\n        bal = opening_bal\n        \n        # Get all transactions for this account, already sorted\n        account_txns = txns[txns[\"account_id\"] == account_id]\n        \n        # Process each transaction in order\n        for _, txn in account_txns.iterrows():\n            txn_id = txn[\"txn_id\"]\n            amount = txn[\"amount\"]\n            txn_ts = txn[\"txn_ts\"]\n            \n            # Update balance with transaction amount\n            bal = bal + amount\n            \n            # Check if fee should be charged\n            # Fee is charged if:\n            # 1. This is a debit (amount < 0)\n            # 2. Balance is negative after the debit\n            # 3. No fee has been charged to this account on this date yet\n            txn_date = pd.Timestamp(txn_ts).date()\n            fee_key = (account_id, txn_date)\n            \n            if amount < 0 and bal < 0 and fee_key not in fees_charged:\n                bal = bal - 35.00\n                fees_rows.append({\n                    \"account_id\": account_id,\n                    \"fee_date\": txn_date,\n                    \"trigger_txn_id\": txn_id\n                })\n                fees_charged.add(fee_key)\n            \n            # Record the transaction ledger entry with balance after any fee\n            txn_ledger_rows.append({\n                \"txn_id\": txn_id,\n                \"balance_after\": bal\n            })\n    \n    # Create output DataFrames\n    txn_ledger = pd.DataFrame(txn_ledger_rows)\n    fees = pd.DataFrame(fees_rows)\n    \n    # Ensure correct column order and types\n    if len(txn_ledger) > 0:\n        txn_ledger = txn_ledger[[\"txn_id\", \"balance_after\"]]\n        txn_ledger[\"txn_id\"] = txn_ledger[\"txn_id\"].astype(\"int64\")\n        txn_ledger[\"balance_after\"] = txn_ledger[\"balance_after\"].astype(\"float64\")\n    else:\n        txn_ledger = pd.DataFrame(columns=[\"txn_id\", \"balance_after\"])\n        txn_ledger[\"txn_id\"] = txn_ledger[\"txn_id\"].astype(\"int64\")\n        txn_ledger[\"balance_after\"] = txn_ledger[\"balance_after\"].astype(\"float64\")\n    \n    if len(fees) > 0:\n        fees = fees[[\"account_id\", \"fee_date\", \"trigger_txn_id\"]]\n        fees[\"account_id\"] = fees[\"account_id\"].astype(\"int64\")\n        fees[\"trigger_txn_id\"] = fees[\"trigger_txn_id\"].astype(\"int64\")\n    else:\n        fees = pd.DataFrame(columns=[\"account_id\", \"fee_date\", \"trigger_txn_id\"])\n        fees[\"account_id\"] = fees[\"account_id\"].astype(\"int64\")\n        fees[\"trigger_txn_id\"] = fees[\"trigger_txn_id\"].astype(\"int64\")\n    \n    return {\n        \"txn_ledger\": txn_ledger,\n        \"fees\": fees\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 718,
+   "tokens_out": 1100,
+   "usd": 0.006218,
+   "wall_s": 6.671539068222046,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

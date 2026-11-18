@@ -1,0 +1,48 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 0,
+ "task": "t8h_inventory_movements",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom typing import Dict\n\ndef run(inputs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:\n    stock_balance = inputs[\"stock_balance\"].copy()\n    applied_movements = inputs[\"applied_movements\"].copy()\n    movements = inputs[\"movements\"].copy()\n    \n    # Initialize output structures\n    new_balance_dict = {}\n    applied_set = set(applied_movements[\"movement_id\"].dropna().unique())\n    rejects = []\n    \n    # Create a working copy of stock_balance as a dict for fast lookup/update\n    # Key: (sku, warehouse), Value: on_hand\n    balance = {}\n    if not stock_balance.empty:\n        for _, row in stock_balance.iterrows():\n            sku = row[\"sku\"]\n            warehouse = row[\"warehouse\"]\n            on_hand = row[\"on_hand\"]\n            balance[(sku, warehouse)] = on_hand\n            new_balance_dict[(sku, warehouse)] = on_hand\n    \n    # Sort movements by movement_ts, then by line_no\n    movements_sorted = movements.sort_values(\n        by=[\"movement_ts\", \"line_no\"],\n        ascending=[True, True]\n    ).reset_index(drop=True)\n    \n    # Process each line\n    for _, row in movements_sorted.iterrows():\n        line_no = row[\"line_no\"]\n        movement_id = row[\"movement_id\"]\n        sku = row[\"sku\"]\n        warehouse = row[\"warehouse\"]\n        qty = row[\"qty\"]\n        \n        # Step 1: Check if already applied\n        if movement_id in applied_set:\n            # Skip silently\n            continue\n        \n        # Step 2: Get current on_hand\n        key = (sku, warehouse)\n        current_on_hand = balance.get(key, 0)\n        \n        # Check if the movement would overdraw\n        new_on_hand = current_on_hand + qty\n        if new_on_hand < 0:\n            # REJECT\n            rejects.append({\n                \"line_no\": line_no,\n                \"reason\": \"INSUFFICIENT_STOCK\"\n            })\n            # Do NOT apply the movement, do NOT mark as applied\n            continue\n        \n        # Apply the movement\n        balance[key] = new_on_hand\n        new_balance_dict[key] = new_on_hand\n        applied_set.add(movement_id)\n    \n    # Build new_balance output\n    # Include all keys from stock_balance and all keys that had movements applied\n    new_balance_rows = []\n    for key in sorted(new_balance_dict.keys()):\n        sku, warehouse = key\n        on_hand = new_balance_dict[key]\n        new_balance_rows.append({\n            \"sku\": sku,\n            \"warehouse\": warehouse,\n            \"on_hand\": on_hand\n        })\n    \n    new_balance_df = pd.DataFrame(new_balance_rows) if new_balance_rows else pd.DataFrame(\n        columns=[\"sku\", \"warehouse\", \"on_hand\"]\n    )\n    \n    # Build applied_out output\n    applied_out_df = pd.DataFrame(\n        {\"movement_id\": sorted(applied_set)},\n        columns=[\"movement_id\"]\n    )\n    \n    # Build movement_rejects output\n    if rejects:\n        movement_rejects_df = pd.DataFrame(rejects)\n        movement_rejects_df = movement_rejects_df[[\"line_no\", \"reason\"]]\n    else:\n        movement_rejects_df = pd.DataFrame(columns=[\"line_no\", \"reason\"])\n    \n    return {\n        \"new_balance\": new_balance_df,\n        \"applied_out\": applied_out_df,\n        \"movement_rejects\": movement_rejects_df\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 780,
+   "tokens_out": 941,
+   "usd": 0.005485,
+   "wall_s": 5.786102771759033,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

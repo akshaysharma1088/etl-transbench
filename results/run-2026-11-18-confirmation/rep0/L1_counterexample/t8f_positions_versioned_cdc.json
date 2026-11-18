@@ -1,0 +1,53 @@
+{
+ "config": "L1_counterexample",
+ "rep": 0,
+ "task": "t8f_positions_versioned_cdc",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    target_positions = inputs[\"target_positions\"].copy()\n    position_events = inputs[\"position_events\"].copy()\n\n    # --- Step 1: dedup events by batch_seq (same event delivered more than once) ---\n    events = position_events.drop_duplicates(subset=[\"batch_seq\"], keep=\"first\").copy()\n\n    # --- Build initial state dict from target_positions ---\n    # key -> dict(qty, price, row_version) or None (no row)\n    state = {}\n    target_version = {}\n    for _, row in target_positions.iterrows():\n        key = (row[\"account_id\"], row[\"symbol\"])\n        state[key] = {\n            \"qty\": row[\"qty\"],\n            \"price\": row[\"price\"],\n            \"row_version\": row[\"row_version\"],\n        }\n        target_version[key] = row[\"row_version\"]\n\n    # --- Step 2: replay guard ---\n    def passes_guard(row):\n        key = (row[\"account_id\"], row[\"symbol\"])\n        if key in target_version:\n            return row[\"row_version\"] > target_version[key]\n        return True\n\n    if len(events) > 0:\n        mask = events.apply(passes_guard, axis=1)\n        events = events[mask]\n\n    # --- Step 3: order remaining events by row_version, batch_seq ---\n    events = events.sort_values(by=[\"row_version\", \"batch_seq\"], kind=\"mergesort\")\n\n    # track last-EFFECTIVE-applied-event removal status per key.\n    # Only events that actually change state (not no-ops) update this.\n    last_removed_version = {}  # key -> row_version if last effective event removed the row,\n                                # or None if last effective event left a row present.\n\n    for _, ev in events.iterrows():\n        key = (ev[\"account_id\"], ev[\"symbol\"])\n        op = ev[\"op\"]\n        ev_qty = ev[\"qty\"]\n        ev_price = ev[\"price\"]\n        rv = ev[\"row_version\"]\n\n        current = state.get(key, None)\n        acted = False\n        removal = False\n\n        if op == \"D\":\n            if current is not None:\n                state[key] = None\n                acted = True\n                removal = True\n            # else: no-op, do nothing, does not count\n        elif op in (\"I\", \"U\"):\n            is_zero = (not pd.isna(ev_qty)) and (ev_qty == 0)\n            if is_zero:\n                if current is not None:\n                    state[key] = None\n                    acted = True\n                    removal = True\n                # else: no-op on missing row\n            else:\n                if current is not None:\n                    new_price = ev_price\n                    if op == \"U\" and pd.isna(ev_price):\n                        new_price = current[\"price\"]\n                    state[key] = {\n                        \"qty\": ev_qty,\n                        \"price\": new_price,\n                        \"row_version\": rv,\n                    }\n                else:\n                    state[key] = {\n                        \"qty\": ev_qty,\n                        \"price\": ev_price,\n                        \"row_version\": rv,\n                    }\n                acted = True\n                removal = False\n        else:\n            # unknown op, ignore entirely (no-op)\n            acted = False\n\n        if acted:\n            if removal:\n                last_removed_version[key] = rv\n            else:\n                last_removed_version[key] = None\n        # if not acted, leave last_removed_version[key] untouched (no-op doesn't count)\n\n    # --- Step 4: build new_positions ---\n    new_rows = []\n    for key, val in state.items():\n        if val is not None:\n            account_id, symbol = key\n            qty = val[\"qty\"]\n            # cast qty to int where possible\n            try:\n                qty_out = int(qty)\n            except (ValueError, TypeError):\n                qty_out = qty\n            new_rows.append({\n                \"account_id\": account_id,\n                \"symbol\": symbol,\n                \"qty\": qty_out,\n                \"price\": val[\"price\"],\n                \"row_version\": val[\"row_version\"],\n            })\n\n    new_positions = pd.DataFrame(\n        new_rows, columns=[\"account_id\", \"symbol\", \"qty\", \"price\", \"row_version\"]\n    )\n    if len(new_positions) > 0:\n        new_positions[\"account_id\"] = new_positions[\"account_id\"].astype(\"int64\")\n        new_positions[\"qty\"] = new_positions[\"qty\"].astype(\"int64\")\n        new_positions[\"price\"] = new_positions[\"price\"].astype(\"float64\")\n        new_positions[\"row_version\"] = new_positions[\"row_version\"].astype(\"int64\")\n\n    # --- Step 5: build closed_positions ---\n    closed_rows = []\n    for key, rv in last_removed_version.items():\n        if rv is not None:\n            account_id, symbol = key\n            closed_rows.append({\n                \"account_id\": account_id,\n                \"symbol\": symbol,\n                \"closed_version\": rv,\n            })\n\n    closed_positions = pd.DataFrame(\n        closed_rows, columns=[\"account_id\", \"symbol\", \"closed_version\"]\n    )\n    if len(closed_positions) > 0:\n        closed_positions[\"account_id\"] = closed_positions[\"account_id\"].astype(\"int64\")\n        closed_positions[\"closed_version\"] = closed_positions[\"closed_version\"].astype(\"int64\")\n\n    return {\n        \"new_positions\": new_positions,\n        \"closed_positions\": closed_positions,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1246,
+   "tokens_out": 4495,
+   "usd": 0.071163,
+   "wall_s": 42.62992811203003,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4972,
+  "tokens_out": 6483,
+  "usd": 0.112161,
+  "wall_s": 58.93290591239929
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

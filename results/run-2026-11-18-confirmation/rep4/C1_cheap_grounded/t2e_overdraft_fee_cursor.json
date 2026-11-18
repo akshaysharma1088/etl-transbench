@@ -1,0 +1,48 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 4,
+ "task": "t2e_overdraft_fee_cursor",
+ "category": "T2",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\nfrom datetime import datetime\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    accounts = inputs[\"accounts\"].copy()\n    txns = inputs[\"txns\"].copy()\n    \n    # Filter txns to only those with known accounts\n    txns = txns[txns[\"account_id\"].isin(accounts[\"account_id\"])]\n    \n    # Sort txns by account_id, then by txn_ts, then by txn_id\n    txns = txns.sort_values([\"account_id\", \"txn_ts\", \"txn_id\"]).reset_index(drop=True)\n    \n    # Create a mapping of account_id to opening_balance\n    account_balances = dict(zip(accounts[\"account_id\"], accounts[\"opening_balance\"]))\n    \n    # Initialize output lists\n    txn_ledger_rows = []\n    fees_rows = []\n    \n    # Track fees charged per account per day: {account_id: {date: True/False}}\n    fees_charged = {}\n    \n    # Process each txn in order\n    for _, txn_row in txns.iterrows():\n        account_id = txn_row[\"account_id\"]\n        txn_id = txn_row[\"txn_id\"]\n        txn_ts = txn_row[\"txn_ts\"]\n        amount = txn_row[\"amount\"]\n        \n        # Initialize account tracking if needed\n        if account_id not in fees_charged:\n            fees_charged[account_id] = {}\n        \n        # Get current balance for this account\n        current_balance = account_balances[account_id]\n        \n        # Apply the transaction\n        current_balance = current_balance + amount\n        \n        # Check if we need to apply an overdraft fee\n        # Conditions:\n        # 1. amount < 0 (debit, not deposit)\n        # 2. current_balance < 0 (account is overdrafted after transaction)\n        # 3. no fee charged to this account on this date yet\n        \n        txn_date = pd.Timestamp(txn_ts).date()\n        fee_charged_today = fees_charged[account_id].get(txn_date, False)\n        \n        if amount < 0 and current_balance < 0 and not fee_charged_today:\n            # Apply overdraft fee\n            current_balance = current_balance - 35.00\n            fees_rows.append({\n                \"account_id\": account_id,\n                \"fee_date\": txn_date,\n                \"trigger_txn_id\": txn_id\n            })\n            fees_charged[account_id][txn_date] = True\n        \n        # Record the balance after this txn (and any fee)\n        txn_ledger_rows.append({\n            \"txn_id\": txn_id,\n            \"balance_after\": current_balance\n        })\n        \n        # Update the running balance for this account\n        account_balances[account_id] = current_balance\n    \n    # Create output DataFrames\n    txn_ledger = pd.DataFrame(txn_ledger_rows)\n    fees = pd.DataFrame(fees_rows)\n    \n    # Ensure correct dtypes\n    if len(txn_ledger) > 0:\n        txn_ledger[\"txn_id\"] = txn_ledger[\"txn_id\"].astype(\"int64\")\n        txn_ledger[\"balance_after\"] = txn_ledger[\"balance_after\"].astype(\"float64\")\n    else:\n        txn_ledger = pd.DataFrame(columns=[\"txn_id\", \"balance_after\"])\n        txn_ledger[\"txn_id\"] = txn_ledger[\"txn_id\"].astype(\"int64\")\n        txn_ledger[\"balance_after\"] = txn_ledger[\"balance_after\"].astype(\"float64\")\n    \n    if len(fees) > 0:\n        fees[\"account_id\"] = fees[\"account_id\"].astype(\"int64\")\n        fees[\"fee_date\"] = pd.to_datetime(fees[\"fee_date\"])\n        fees[\"trigger_txn_id\"] = fees[\"trigger_txn_id\"].astype(\"int64\")\n    else:\n        fees = pd.DataFrame(columns=[\"account_id\", \"fee_date\", \"trigger_txn_id\"])\n        fees[\"account_id\"] = fees[\"account_id\"].astype(\"int64\")\n        fees[\"fee_date\"] = fees[\"fee_date\"].astype(\"datetime64[ns]\")\n        fees[\"trigger_txn_id\"] = fees[\"trigger_txn_id\"].astype(\"int64\")\n    \n    return {\n        \"txn_ledger\": txn_ledger,\n        \"fees\": fees\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 718,
+   "tokens_out": 1182,
+   "usd": 0.006628,
+   "wall_s": 7.061739206314087,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

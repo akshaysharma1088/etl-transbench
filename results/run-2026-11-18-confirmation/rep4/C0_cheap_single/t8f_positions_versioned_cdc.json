@@ -1,0 +1,48 @@
+{
+ "config": "C0_cheap_single",
+ "rep": 4,
+ "task": "t8f_positions_versioned_cdc",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_positions = inputs[\"target_positions\"].copy()\n    position_events = inputs[\"position_events\"].copy()\n    \n    # Ensure proper types\n    target_positions[\"account_id\"] = target_positions[\"account_id\"].astype(\"int64\")\n    target_positions[\"symbol\"] = target_positions[\"symbol\"].astype(\"str\")\n    target_positions[\"qty\"] = target_positions[\"qty\"].astype(\"int64\")\n    target_positions[\"price\"] = target_positions[\"price\"].astype(\"float64\")\n    target_positions[\"row_version\"] = target_positions[\"row_version\"].astype(\"int64\")\n    \n    position_events[\"batch_seq\"] = position_events[\"batch_seq\"].astype(\"int64\")\n    position_events[\"account_id\"] = position_events[\"account_id\"].astype(\"int64\")\n    position_events[\"symbol\"] = position_events[\"symbol\"].astype(\"str\")\n    position_events[\"op\"] = position_events[\"op\"].astype(\"str\")\n    position_events[\"qty\"] = position_events[\"qty\"].astype(\"float64\")\n    position_events[\"price\"] = position_events[\"price\"].astype(\"float64\")\n    position_events[\"row_version\"] = position_events[\"row_version\"].astype(\"int64\")\n    \n    # Step 1: Deduplicate events by batch_seq (keep first occurrence)\n    position_events = position_events.drop_duplicates(subset=[\"batch_seq\"], keep=\"first\")\n    \n    # Step 2: Apply replay guard\n    # Merge target_positions to get existing row_version\n    events_with_guard = position_events.merge(\n        target_positions[[\"account_id\", \"symbol\", \"row_version\"]],\n        on=[\"account_id\", \"symbol\"],\n        how=\"left\",\n        suffixes=(\"\", \"_target\")\n    )\n    \n    # Filter: keep events where target row doesn't exist OR event row_version > target row_version\n    events_with_guard[\"keep_event\"] = (\n        events_with_guard[\"row_version_target\"].isna() | \n        (events_with_guard[\"row_version\"] > events_with_guard[\"row_version_target\"])\n    )\n    \n    position_events = events_with_guard[events_with_guard[\"keep_event\"]].copy()\n    position_events = position_events.drop(columns=[\"row_version_target\", \"keep_event\"])\n    \n    # Step 3: Sort events by row_version, then batch_seq\n    position_events = position_events.sort_values(\n        by=[\"account_id\", \"symbol\", \"row_version\", \"batch_seq\"],\n        ignore_index=True\n    )\n    \n    # Step 4: Apply events to target_positions\n    closed_positions_list = []\n    \n    # Create a working copy of target_positions as a dict for efficient updates\n    pos_dict = {}\n    for _, row in target_positions.iterrows():\n        key = (row[\"account_id\"], row[\"symbol\"])\n        pos_dict[key] = {\n            \"qty\": row[\"qty\"],\n            \"price\": row[\"price\"],\n            \"row_version\": row[\"row_version\"]\n        }\n    \n    # Apply each event\n    for _, event in position_events.iterrows():\n        key = (event[\"account_id\"], event[\"symbol\"])\n        op = event[\"op\"]\n        qty = event[\"qty\"]\n        price = event[\"price\"]\n        row_version = event[\"row_version\"]\n        \n        row_exists = key in pos_dict\n        \n        if op == \"D\":\n            # Delete: remove row if exists\n            if row_exists:\n                closed_positions_list.append({\n                    \"account_id\": event[\"account_id\"],\n                    \"symbol\": event[\"symbol\"],\n                    \"closed_version\": row_version\n                })\n                del pos_dict[key]\n        elif op in (\"I\", \"U\"):\n            # Check if qty == 0 (closes position)\n            if pd.isna(qty) or qty == 0:\n                # Close position\n                if row_exists:\n                    closed_positions_list.append({\n                        \"account_id\": event[\"account_id\"],\n                        \"symbol\": event[\"symbol\"],\n                        \"closed_version\": row_version\n                    })\n                    del pos_dict[key]\n            else:\n                # Update or insert\n                if row_exists:\n                    # Update existing row\n                    new_price = price if not pd.isna(price) else pos_dict[key][\"price\"]\n                    pos_dict[key] = {\n                        \"qty\": int(qty),\n                        \"price\": new_price,\n                        \"row_version\": row_version\n                    }\n                else:\n                    # Insert new row\n                    pos_dict[key] = {\n                        \"qty\": int(qty),\n                        \"price\": price,\n                        \"row_version\": row_version\n                    }\n    \n    # Step 5: Build output DataFrames\n    new_positions_list = []\n    for (account_id, symbol), pos_data in pos_dict.items():\n        new_positions_list.append({\n            \"account_id\": account_id,\n            \"symbol\": symbol,\n            \"qty\": pos_data[\"qty\"],\n            \"price\": pos_data[\"price\"],\n            \"row_version\": pos_data[\"row_version\"]\n        })\n    \n    if new_positions_list:\n        new_positions = pd.DataFrame(new_positions_list)\n    else:\n        new_positions = pd.DataFrame(columns=[\"account_id\", \"symbol\", \"qty\", \"price\", \"row_version\"])\n    \n    if closed_positions_list:\n        closed_positions = pd.DataFrame(closed_positions_list)\n    else:\n        closed_positions = pd.DataFrame(columns=[\"account_id\", \"symbol\", \"closed_version\"])\n    \n    # Ensure proper types in outputs\n    new_positions[\"account_id\"] = new_positions[\"account_id\"].astype(\"int64\")\n    new_positions[\"symbol\"] = new_positions[\"symbol\"].astype(\"str\")\n    new_positions[\"qty\"] = new_positions[\"qty\"].astype(\"int64\")\n    new_positions[\"price\"] = new_positions[\"price\"].astype(\"float64\")\n    new_positions[\"row_version\"] = new_positions[\"row_version\"].astype(\"int64\")\n    \n    closed_positions[\"account_id\"] = closed_positions[\"account_id\"].astype(\"int64\")\n    closed_positions[\"symbol\"] = closed_positions[\"symbol\"].astype(\"str\")\n    closed_positions[\"closed_version\"] = closed_positions[\"closed_version\"].astype(\"int64\")\n    \n    return {\n        \"new_positions\": new_positions,\n        \"closed_positions\": closed_positions\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 929,
+   "tokens_out": 1702,
+   "usd": 0.009439,
+   "wall_s": 9.84499478340149,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

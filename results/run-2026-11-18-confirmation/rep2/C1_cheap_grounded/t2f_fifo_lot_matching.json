@@ -1,0 +1,53 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 2,
+ "task": "t2f_fifo_lot_matching",
+ "category": "T2",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom decimal import Decimal\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    FIFO lot matching: sells consume the oldest buy lots.\n    Returns sell_results and open_lots.\n    \"\"\"\n    trades = inputs[\"trades\"].copy()\n    \n    # Ensure proper sorting by trade_ts, then trade_id\n    trades = trades.sort_values(by=[\"trade_ts\", \"trade_id\"]).reset_index(drop=True)\n    \n    sell_results_list = []\n    open_lots_list = []\n    \n    # Process each (account_id, symbol) group independently\n    # Use sort=False to preserve insertion order, but re-sort within group\n    for (account_id, symbol), group in trades.groupby([\"account_id\", \"symbol\"], sort=False):\n        group = group.sort_values(by=[\"trade_ts\", \"trade_id\"]).reset_index(drop=True)\n        \n        # Track open lots: list of (lot_trade_id, remaining_qty, price) in order\n        # Using a list of tuples to maintain strict FIFO order\n        open_lots_list_fifo = []\n        \n        # Process trades in order\n        for _, trade in group.iterrows():\n            trade_id = trade[\"trade_id\"]\n            side = trade[\"side\"]\n            qty = trade[\"qty\"]\n            price = trade[\"price\"]\n            \n            if side == \"BUY\":\n                # Open a new lot\n                open_lots_list_fifo.append({\n                    \"lot_trade_id\": trade_id,\n                    \"remaining_qty\": qty,\n                    \"price\": price\n                })\n            elif side == \"SELL\":\n                # Match against open lots in FIFO order (oldest first)\n                matched_qty = 0\n                realized_pnl = 0.0\n                still_to_sell = qty\n                \n                # Process lots in the order they appear in the list (FIFO)\n                for lot_info in open_lots_list_fifo:\n                    if still_to_sell <= 0:\n                        break\n                    \n                    if lot_info[\"remaining_qty\"] <= 0:\n                        continue\n                    \n                    # Take as much as we need from this lot\n                    take = min(lot_info[\"remaining_qty\"], still_to_sell)\n                    matched_qty += take\n                    \n                    # Calculate realized PnL with proper decimal precision\n                    # Mimic SQL DECIMAL(12,2) behavior: round to 2 decimal places\n                    pnl_increment = float(Decimal(str(take)) * (Decimal(str(price)) - Decimal(str(lot_info[\"price\"]))))\n                    realized_pnl += pnl_increment\n                    \n                    lot_info[\"remaining_qty\"] -= take\n                    still_to_sell -= take\n                \n                short_qty = qty - matched_qty\n                \n                sell_results_list.append({\n                    \"trade_id\": trade_id,\n                    \"matched_qty\": matched_qty,\n                    \"short_qty\": short_qty,\n                    \"realized_pnl\": realized_pnl\n                })\n        \n        # Collect remaining open lots with remaining_qty > 0\n        for lot_info in open_lots_list_fifo:\n            if lot_info[\"remaining_qty\"] > 0:\n                open_lots_list.append({\n                    \"lot_trade_id\": lot_info[\"lot_trade_id\"],\n                    \"account_id\": account_id,\n                    \"symbol\": symbol,\n                    \"remaining_qty\": lot_info[\"remaining_qty\"],\n                    \"price\": lot_info[\"price\"]\n                })\n    \n    # Create output DataFrames\n    if sell_results_list:\n        sell_results = pd.DataFrame(sell_results_list)\n        sell_results = sell_results.astype({\n            \"trade_id\": \"int64\",\n            \"matched_qty\": \"int64\",\n            \"short_qty\": \"int64\",\n            \"realized_pnl\": \"float64\"\n        })\n    else:\n        sell_results = pd.DataFrame(\n            columns=[\"trade_id\", \"matched_qty\", \"short_qty\", \"realized_pnl\"]\n        )\n        sell_results = sell_results.astype({\n            \"trade_id\": \"int64\",\n            \"matched_qty\": \"int64\",\n            \"short_qty\": \"int64\",\n            \"realized_pnl\": \"float64\"\n        })\n    \n    if open_lots_list:\n        open_lots = pd.DataFrame(open_lots_list)\n        open_lots = open_lots.astype({\n            \"lot_trade_id\": \"int64\",\n            \"account_id\": \"int64\",\n            \"symbol\": \"str\",\n            \"remaining_qty\": \"int64\",\n            \"price\": \"float64\"\n        })\n    else:\n        open_lots = pd.DataFrame(\n            columns=[\"lot_trade_id\", \"account_id\", \"symbol\", \"remaining_qty\", \"price\"]\n        )\n        open_lots = open_lots.astype({\n            \"lot_trade_id\": \"int64\",\n            \"account_id\": \"int64\",\n            \"symbol\": \"str\",\n            \"remaining_qty\": \"int64\",\n            \"price\": \"float64\"\n        })\n    \n    return {\n        \"sell_results\": sell_results,\n        \"open_lots\": open_lots\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 686,
+   "tokens_out": 1226,
+   "usd": 0.006816,
+   "wall_s": 7.3105974197387695,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2365,
+  "tokens_out": 1797,
+  "usd": 0.01135,
+  "wall_s": 12.9024178981781
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

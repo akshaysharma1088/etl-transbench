@@ -1,0 +1,48 @@
+{
+ "config": "B3_self_repair",
+ "rep": 0,
+ "task": "t2f_fifo_lot_matching",
+ "category": "T2",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    trades = inputs[\"trades\"].copy()\n\n    # Ensure deterministic ordering: by account/symbol group, then chronological,\n    # then trade_id as tie-breaker (matches cursor ORDER BY trade_ts, trade_id).\n    trades = trades.sort_values(\n        [\"account_id\", \"symbol\", \"trade_ts\", \"trade_id\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # state[(account_id, symbol)] -> list of [lot_trade_id, remaining_qty, price]\n    state = {}\n    sell_rows = []\n\n    for row in trades.itertuples(index=False):\n        key = (row.account_id, row.symbol)\n        lots = state.setdefault(key, [])\n\n        if row.side == \"BUY\":\n            lots.append([row.trade_id, row.qty, row.price])\n        elif row.side == \"SELL\":\n            still_to_sell = row.qty\n            realized_pnl = 0.0\n            matched_qty = 0\n\n            for lot in lots:\n                if still_to_sell <= 0:\n                    break\n                if lot[1] <= 0:\n                    continue\n                take = min(lot[1], still_to_sell)\n                realized_pnl += take * (row.price - lot[2])\n                lot[1] -= take\n                still_to_sell -= take\n                matched_qty += take\n\n            short_qty = row.qty - matched_qty\n            sell_rows.append(\n                {\n                    \"trade_id\": row.trade_id,\n                    \"matched_qty\": matched_qty,\n                    \"short_qty\": short_qty,\n                    \"realized_pnl\": realized_pnl,\n                }\n            )\n        # any other side value is ignored (not specified by legacy spec)\n\n    lot_rows = []\n    for (acct, sym), lots in state.items():\n        for lot_trade_id, remaining, price in lots:\n            if remaining > 0:\n                lot_rows.append(\n                    {\n                        \"lot_trade_id\": lot_trade_id,\n                        \"account_id\": acct,\n                        \"symbol\": sym,\n                        \"remaining_qty\": remaining,\n                        \"price\": price,\n                    }\n                )\n\n    sell_results = pd.DataFrame(\n        sell_rows, columns=[\"trade_id\", \"matched_qty\", \"short_qty\", \"realized_pnl\"]\n    )\n    open_lots = pd.DataFrame(\n        lot_rows,\n        columns=[\"lot_trade_id\", \"account_id\", \"symbol\", \"remaining_qty\", \"price\"],\n    )\n\n    if len(sell_results) > 0:\n        sell_results = sell_results.astype(\n            {\n                \"trade_id\": \"int64\",\n                \"matched_qty\": \"int64\",\n                \"short_qty\": \"int64\",\n                \"realized_pnl\": \"float64\",\n            }\n        )\n    else:\n        sell_results = pd.DataFrame(\n            {\n                \"trade_id\": pd.Series(dtype=\"int64\"),\n                \"matched_qty\": pd.Series(dtype=\"int64\"),\n                \"short_qty\": pd.Series(dtype=\"int64\"),\n                \"realized_pnl\": pd.Series(dtype=\"float64\"),\n            }\n        )\n\n    if len(open_lots) > 0:\n        open_lots = open_lots.astype(\n            {\n                \"lot_trade_id\": \"int64\",\n                \"account_id\": \"int64\",\n                \"symbol\": \"object\",\n                \"remaining_qty\": \"int64\",\n                \"price\": \"float64\",\n            }\n        )\n    else:\n        open_lots = pd.DataFrame(\n            {\n                \"lot_trade_id\": pd.Series(dtype=\"int64\"),\n                \"account_id\": pd.Series(dtype=\"int64\"),\n                \"symbol\": pd.Series(dtype=\"object\"),\n                \"remaining_qty\": pd.Series(dtype=\"int64\"),\n                \"price\": pd.Series(dtype=\"float64\"),\n            }\n        )\n\n    return {\"sell_results\": sell_results, \"open_lots\": open_lots}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 995,
+   "tokens_out": 3736,
+   "usd": 0.059025,
+   "wall_s": 30.29585862159729,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

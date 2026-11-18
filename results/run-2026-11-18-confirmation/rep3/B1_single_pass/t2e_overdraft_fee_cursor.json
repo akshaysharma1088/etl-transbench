@@ -1,0 +1,48 @@
+{
+ "config": "B1_single_pass",
+ "rep": 3,
+ "task": "t2e_overdraft_fee_cursor",
+ "category": "T2",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    accounts = inputs[\"accounts\"]\n    txns = inputs[\"txns\"]\n\n    valid_accounts = set(accounts[\"account_id\"])\n\n    txns_f = txns[txns[\"account_id\"].isin(valid_accounts)].copy()\n    txns_f = txns_f.sort_values(by=[\"account_id\", \"txn_ts\", \"txn_id\"], kind=\"mergesort\")\n\n    opening = dict(zip(accounts[\"account_id\"], accounts[\"opening_balance\"]))\n\n    ledger_txn_ids = []\n    ledger_balances = []\n\n    fee_account_ids = []\n    fee_dates = []\n    fee_trigger_ids = []\n\n    current_account = None\n    bal = 0.0\n    fee_dates_charged = set()\n\n    for row in txns_f.itertuples(index=False):\n        acct = row.account_id\n        if acct != current_account:\n            current_account = acct\n            bal = opening.get(acct, 0.0)\n            fee_dates_charged = set()\n\n        bal = bal + row.amount\n\n        if row.amount < 0 and bal < 0:\n            tx_date = pd.Timestamp(row.txn_ts).normalize()\n            if tx_date not in fee_dates_charged:\n                bal = bal - 35.00\n                fee_dates_charged.add(tx_date)\n                fee_account_ids.append(acct)\n                fee_dates.append(tx_date)\n                fee_trigger_ids.append(row.txn_id)\n\n        ledger_txn_ids.append(row.txn_id)\n        ledger_balances.append(bal)\n\n    txn_ledger = pd.DataFrame({\n        \"txn_id\": pd.Series(ledger_txn_ids, dtype=\"int64\"),\n        \"balance_after\": pd.Series(ledger_balances, dtype=\"float64\"),\n    })\n\n    fees = pd.DataFrame({\n        \"account_id\": pd.Series(fee_account_ids, dtype=\"int64\"),\n        \"fee_date\": pd.Series(fee_dates, dtype=\"datetime64[us]\"),\n        \"trigger_txn_id\": pd.Series(fee_trigger_ids, dtype=\"int64\"),\n    })\n\n    return {\"txn_ledger\": txn_ledger, \"fees\": fees}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1002,
+   "tokens_out": 987,
+   "usd": 0.017811,
+   "wall_s": 8.539868593215942,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

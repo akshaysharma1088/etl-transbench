@@ -1,0 +1,17 @@
+{
+ "task": "t6f_cross_device_session_merge",
+ "group": "cheap",
+ "tier": "cheap",
+ "code": "import pandas as pd\nfrom datetime import timedelta\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    device_sessions = inputs[\"device_sessions\"].copy()\n    \n    # Sort by user_id, start_ts, end_ts, session_id\n    device_sessions = device_sessions.sort_values(\n        by=[\"user_id\", \"start_ts\", \"end_ts\", \"session_id\"],\n        ignore_index=True\n    )\n    \n    # Process each user's sessions\n    merged_records = []\n    \n    for user_id, group in device_sessions.groupby(\"user_id\", sort=False):\n        sessions = group.reset_index(drop=True)\n        \n        # Group sessions into merged groups\n        current_group = []\n        group_end = None\n        \n        for _, row in sessions.iterrows():\n            session_id = row[\"session_id\"]\n            device_id = row[\"device_id\"]\n            start_ts = row[\"start_ts\"]\n            end_ts = row[\"end_ts\"]\n            \n            if group_end is None:\n                # Start a new group\n                current_group = [row]\n                group_end = end_ts\n            else:\n                # Check if session should join the current group\n                # start_ts <= group_end + 5 minutes\n                if start_ts <= group_end + timedelta(minutes=5):\n                    current_group.append(row)\n                    # Update group_end to the maximum of current group_end and session's end_ts\n                    group_end = max(group_end, end_ts)\n                else:\n                    # Session starts a new group, save current group\n                    merged_records.append(create_merged_record(user_id, len(merged_records) + 1, current_group))\n                    current_group = [row]\n                    group_end = end_ts\n        \n        # Save the last group\n        if current_group:\n            merged_records.append(create_merged_record(user_id, len(merged_records) + 1, current_group))\n    \n    merged_sessions = pd.DataFrame(merged_records)\n    \n    return {\"merged_sessions\": merged_sessions}\n\n\ndef create_merged_record(user_id: int, merged_num: int, group: list) -> dict:\n    group_df = pd.DataFrame(group)\n    \n    start_ts = group_df[\"start_ts\"].iloc[0]\n    end_ts = group_df[\"end_ts\"].max()\n    device_count = group_df[\"device_id\"].nunique()\n    source_count = len(group_df)\n    \n    return {\n        \"user_id\": user_id,\n        \"merged_num\": merged_num,\n        \"start_ts\": start_ts,\n        \"end_ts\": end_ts,\n        \"device_count\": device_count,\n        \"source_count\": source_count,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 575,
+   "tokens_out": 728,
+   "usd": 0.004215,
+   "wall_s": 4.410585880279541,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

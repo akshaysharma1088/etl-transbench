@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 1,
+ "task": "t8i_snapshot_diff_changelog",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _null_safe_diff_numeric(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef _null_safe_diff_label(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    a_str = str(a).rstrip(\" \")\n    b_str = str(b).rstrip(\" \")\n    return a_str != b_str\n\n\ndef run(inputs: dict) -> dict:\n    snap_prev = inputs[\"snap_prev\"].copy()\n    snap_curr = inputs[\"snap_curr\"].copy()\n\n    merged = pd.merge(\n        snap_prev,\n        snap_curr,\n        on=[\"region\", \"sku\"],\n        how=\"outer\",\n        suffixes=(\"_prev\", \"_curr\"),\n        indicator=True,\n    )\n\n    out_rows = []\n\n    for _, row in merged.iterrows():\n        region = row[\"region\"]\n        sku = row[\"sku\"]\n        merge_flag = row[\"_merge\"]\n\n        if merge_flag == \"left_only\":\n            out_rows.append(\n                {\n                    \"region\": region,\n                    \"sku\": sku,\n                    \"change_type\": \"D\",\n                    \"changed_cols\": None,\n                }\n            )\n        elif merge_flag == \"right_only\":\n            out_rows.append(\n                {\n                    \"region\": region,\n                    \"sku\": sku,\n                    \"change_type\": \"I\",\n                    \"changed_cols\": None,\n                }\n            )\n        else:\n            price_diff = _null_safe_diff_numeric(row[\"price_prev\"], row[\"price_curr\"])\n            stock_diff = _null_safe_diff_numeric(row[\"stock_prev\"], row[\"stock_curr\"])\n            label_diff = _null_safe_diff_label(row[\"label_prev\"], row[\"label_curr\"])\n\n            if price_diff or stock_diff or label_diff:\n                changed = []\n                if price_diff:\n                    changed.append(\"price\")\n                if stock_diff:\n                    changed.append(\"stock\")\n                if label_diff:\n                    changed.append(\"label\")\n                out_rows.append(\n                    {\n                        \"region\": region,\n                        \"sku\": sku,\n                        \"change_type\": \"U\",\n                        \"changed_cols\": \",\".join(changed),\n                    }\n                )\n            # else: no change, no row\n\n    change_log = pd.DataFrame(\n        out_rows, columns=[\"region\", \"sku\", \"change_type\", \"changed_cols\"]\n    )\n\n    return {\"change_log\": change_log}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 951,
+   "tokens_out": 1292,
+   "usd": 0.022233,
+   "wall_s": 11.077555894851685,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

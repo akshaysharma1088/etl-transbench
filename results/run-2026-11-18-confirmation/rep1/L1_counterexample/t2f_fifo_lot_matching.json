@@ -1,0 +1,48 @@
+{
+ "config": "L1_counterexample",
+ "rep": 1,
+ "task": "t2f_fifo_lot_matching",
+ "category": "T2",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom collections import deque\n\n\ndef run(inputs: dict) -> dict:\n    trades = inputs[\"trades\"].copy()\n\n    trades = trades.sort_values(\n        by=[\"account_id\", \"symbol\", \"trade_ts\", \"trade_id\"],\n        kind=\"mergesort\"\n    )\n\n    sell_rows = []\n    open_rows = []\n\n    for (acct, sym), grp in trades.groupby([\"account_id\", \"symbol\"], sort=False):\n        lots = deque()  # each element: [lot_trade_id, remaining_qty, price]\n\n        for _, row in grp.iterrows():\n            side = row[\"side\"]\n            if side == \"BUY\":\n                lots.append([row[\"trade_id\"], row[\"qty\"], row[\"price\"]])\n            elif side == \"SELL\":\n                still_to_sell = row[\"qty\"]\n                matched = 0\n                pnl = 0.0\n\n                while still_to_sell > 0 and lots and lots[0][1] > 0:\n                    lot = lots[0]\n                    take = min(lot[1], still_to_sell)\n                    pnl += take * (row[\"price\"] - lot[2])\n                    lot[1] -= take\n                    matched += take\n                    still_to_sell -= take\n                    if lot[1] == 0:\n                        lots.popleft()\n\n                short = row[\"qty\"] - matched\n\n                sell_rows.append({\n                    \"trade_id\": row[\"trade_id\"],\n                    \"matched_qty\": matched,\n                    \"short_qty\": short,\n                    \"realized_pnl\": pnl\n                })\n            # any other side value is ignored (not BUY/SELL)\n\n        for lot in lots:\n            if lot[1] > 0:\n                open_rows.append({\n                    \"lot_trade_id\": lot[0],\n                    \"account_id\": acct,\n                    \"symbol\": sym,\n                    \"remaining_qty\": lot[1],\n                    \"price\": lot[2]\n                })\n\n    sell_results = pd.DataFrame(\n        sell_rows,\n        columns=[\"trade_id\", \"matched_qty\", \"short_qty\", \"realized_pnl\"]\n    )\n    if len(sell_results) > 0:\n        sell_results[\"trade_id\"] = sell_results[\"trade_id\"].astype(\"int64\")\n        sell_results[\"matched_qty\"] = sell_results[\"matched_qty\"].astype(\"int64\")\n        sell_results[\"short_qty\"] = sell_results[\"short_qty\"].astype(\"int64\")\n        sell_results[\"realized_pnl\"] = sell_results[\"realized_pnl\"].astype(\"float64\")\n    else:\n        sell_results = pd.DataFrame({\n            \"trade_id\": pd.Series(dtype=\"int64\"),\n            \"matched_qty\": pd.Series(dtype=\"int64\"),\n            \"short_qty\": pd.Series(dtype=\"int64\"),\n            \"realized_pnl\": pd.Series(dtype=\"float64\"),\n        })\n\n    open_lots = pd.DataFrame(\n        open_rows,\n        columns=[\"lot_trade_id\", \"account_id\", \"symbol\", \"remaining_qty\", \"price\"]\n    )\n    if len(open_lots) > 0:\n        open_lots[\"lot_trade_id\"] = open_lots[\"lot_trade_id\"].astype(\"int64\")\n        open_lots[\"account_id\"] = open_lots[\"account_id\"].astype(\"int64\")\n        open_lots[\"symbol\"] = open_lots[\"symbol\"].astype(str)\n        open_lots[\"remaining_qty\"] = open_lots[\"remaining_qty\"].astype(\"int64\")\n        open_lots[\"price\"] = open_lots[\"price\"].astype(\"float64\")\n    else:\n        open_lots = pd.DataFrame({\n            \"lot_trade_id\": pd.Series(dtype=\"int64\"),\n            \"account_id\": pd.Series(dtype=\"int64\"),\n            \"symbol\": pd.Series(dtype=\"object\"),\n            \"remaining_qty\": pd.Series(dtype=\"int64\"),\n            \"price\": pd.Series(dtype=\"float64\"),\n        })\n\n    return {\"sell_results\": sell_results, \"open_lots\": open_lots}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 995,
+   "tokens_out": 2431,
+   "usd": 0.03945,
+   "wall_s": 18.185449600219727,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

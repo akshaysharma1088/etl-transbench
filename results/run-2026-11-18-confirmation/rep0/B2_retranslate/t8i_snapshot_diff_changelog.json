@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 0,
+ "task": "t8i_snapshot_diff_changelog",
+ "category": "T8",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _dedupe_last(df: pd.DataFrame) -> pd.DataFrame:\n    # Keep the last occurrence for each (region, sku) key, deterministic tie-break\n    # based on original row order (idempotent: re-running on same data gives\n    # the same result).\n    df = df.copy()\n    df[\"_rn\"] = range(len(df))\n    df = df.sort_values(\"_rn\")\n    df = df.drop_duplicates(subset=[\"region\", \"sku\"], keep=\"last\")\n    df = df.drop(columns=[\"_rn\"]).reset_index(drop=True)\n    return df\n\n\ndef _num_equal(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return True\n    if a_null or b_null:\n        return False\n    return a == b\n\n\ndef _label_equal(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return True\n    if a_null or b_null:\n        return False\n    return a.rstrip() == b.rstrip()\n\n\ndef run(inputs: dict) -> dict:\n    prev = inputs[\"snap_prev\"].copy()\n    curr = inputs[\"snap_curr\"].copy()\n\n    # Ensure key columns are string-typed for safe merging\n    for df in (prev, curr):\n        df[\"region\"] = df[\"region\"].astype(str)\n        df[\"sku\"] = df[\"sku\"].astype(str)\n\n    prev = _dedupe_last(prev)\n    curr = _dedupe_last(curr)\n\n    merged = prev.merge(\n        curr,\n        on=[\"region\", \"sku\"],\n        how=\"outer\",\n        suffixes=(\"_prev\", \"_curr\"),\n        indicator=True,\n    )\n\n    rows = []\n    for _, r in merged.iterrows():\n        region = r[\"region\"]\n        sku = r[\"sku\"]\n        indicator = r[\"_merge\"]\n\n        if indicator == \"left_only\":\n            rows.append({\n                \"region\": region,\n                \"sku\": sku,\n                \"change_type\": \"D\",\n                \"changed_cols\": None,\n            })\n        elif indicator == \"right_only\":\n            rows.append({\n                \"region\": region,\n                \"sku\": sku,\n                \"change_type\": \"I\",\n                \"changed_cols\": None,\n            })\n        else:\n            diffs = []\n\n            price_eq = _num_equal(r[\"price_prev\"], r[\"price_curr\"])\n            if not price_eq:\n                diffs.append(\"price\")\n\n            stock_eq = _num_equal(r[\"stock_prev\"], r[\"stock_curr\"])\n            if not stock_eq:\n                diffs.append(\"stock\")\n\n            label_eq = _label_equal(r[\"label_prev\"], r[\"label_curr\"])\n            if not label_eq:\n                diffs.append(\"label\")\n\n            if diffs:\n                rows.append({\n                    \"region\": region,\n                    \"sku\": sku,\n                    \"change_type\": \"U\",\n                    \"changed_cols\": \",\".join(diffs),\n                })\n            # else: no row, identical\n\n    if rows:\n        out = pd.DataFrame(rows, columns=[\"region\", \"sku\", \"change_type\", \"changed_cols\"])\n    else:\n        out = pd.DataFrame(columns=[\"region\", \"sku\", \"change_type\", \"changed_cols\"])\n\n    return {\"change_log\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 951,
+   "tokens_out": 1833,
+   "usd": 0.030348,
+   "wall_s": 16.78088641166687,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

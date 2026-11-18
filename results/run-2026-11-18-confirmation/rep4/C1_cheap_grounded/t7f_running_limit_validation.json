@@ -1,0 +1,48 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 4,
+ "task": "t7f_running_limit_validation",
+ "category": "T7",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    account_limits = inputs[\"account_limits\"].copy()\n    transfers = inputs[\"transfers\"].copy()\n    \n    # Sort by row_num to process in order\n    transfers = transfers.sort_values(\"row_num\").reset_index(drop=True)\n    \n    accepted_rows = []\n    rejected_rows = []\n    \n    # Build a dict for account_limits lookup\n    limits_dict = {}\n    for _, row in account_limits.iterrows():\n        limits_dict[row[\"account_id\"]] = row[\"daily_limit\"]\n    \n    # Track accepted transfer refs to detect duplicates\n    accepted_refs = set()\n    \n    # Track daily running totals by (account_id, transfer_date)\n    running_totals = {}\n    \n    for idx, row in transfers.iterrows():\n        row_num = row[\"row_num\"]\n        transfer_ref = row[\"transfer_ref\"]\n        account_id = row[\"account_id\"]\n        amount = row[\"amount\"]\n        transfer_date = row[\"transfer_date\"]\n        \n        reason = None\n        \n        # R1: UNKNOWN_ACCOUNT\n        if account_id not in limits_dict:\n            reason = \"UNKNOWN_ACCOUNT\"\n        \n        # R2: BAD_AMOUNT\n        elif pd.isna(amount) or amount <= 0:\n            reason = \"BAD_AMOUNT\"\n        \n        # R3: DUPLICATE_REF (check against accepted refs only)\n        elif transfer_ref in accepted_refs:\n            reason = \"DUPLICATE_REF\"\n        \n        # R4: OVER_LIMIT\n        else:\n            daily_key = (account_id, transfer_date)\n            current_total = running_totals.get(daily_key, 0.0)\n            daily_limit = limits_dict[account_id]\n            \n            if current_total + amount > daily_limit:\n                reason = \"OVER_LIMIT\"\n        \n        if reason:\n            rejected_rows.append({\n                \"row_num\": row_num,\n                \"reason\": reason\n            })\n        else:\n            # Accept the row\n            daily_key = (account_id, transfer_date)\n            current_total = running_totals.get(daily_key, 0.0)\n            new_total = current_total + amount\n            running_totals[daily_key] = new_total\n            \n            accepted_rows.append({\n                \"row_num\": row_num,\n                \"account_id\": account_id,\n                \"amount\": amount,\n                \"running_total\": new_total\n            })\n            \n            accepted_refs.add(transfer_ref)\n    \n    # Build output DataFrames\n    if accepted_rows:\n        accepted_transfers = pd.DataFrame(accepted_rows)\n    else:\n        accepted_transfers = pd.DataFrame(columns=[\"row_num\", \"account_id\", \"amount\", \"running_total\"])\n    \n    if rejected_rows:\n        transfer_rejects = pd.DataFrame(rejected_rows)\n    else:\n        transfer_rejects = pd.DataFrame(columns=[\"row_num\", \"reason\"])\n    \n    # Ensure correct dtypes\n    if not accepted_transfers.empty:\n        accepted_transfers[\"row_num\"] = accepted_transfers[\"row_num\"].astype(\"int64\")\n        accepted_transfers[\"account_id\"] = accepted_transfers[\"account_id\"].astype(\"int64\")\n        accepted_transfers[\"amount\"] = accepted_transfers[\"amount\"].astype(\"float64\")\n        accepted_transfers[\"running_total\"] = accepted_transfers[\"running_total\"].astype(\"float64\")\n    else:\n        accepted_transfers = accepted_transfers.astype({\n            \"row_num\": \"int64\",\n            \"account_id\": \"int64\",\n            \"amount\": \"float64\",\n            \"running_total\": \"float64\"\n        })\n    \n    if not transfer_rejects.empty:\n        transfer_rejects[\"row_num\"] = transfer_rejects[\"row_num\"].astype(\"int64\")\n        transfer_rejects[\"reason\"] = transfer_rejects[\"reason\"].astype(\"object\")\n    else:\n        transfer_rejects = transfer_rejects.astype({\n            \"row_num\": \"int64\",\n            \"reason\": \"object\"\n        })\n    \n    return {\n        \"accepted_transfers\": accepted_transfers,\n        \"transfer_rejects\": transfer_rejects\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 647,
+   "tokens_out": 1108,
+   "usd": 0.006187,
+   "wall_s": 6.539623498916626,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

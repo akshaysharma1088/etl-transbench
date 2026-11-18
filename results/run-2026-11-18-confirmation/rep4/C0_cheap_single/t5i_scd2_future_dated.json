@@ -1,0 +1,48 @@
+{
+ "config": "C0_cheap_single",
+ "rep": 4,
+ "task": "t5i_scd2_future_dated",
+ "category": "T5",
+ "set": "confirmation",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_price = inputs[\"dim_price\"].copy()\n    stg_price = inputs[\"stg_price\"].copy()\n    batch_control = inputs[\"batch_control\"].copy()\n    \n    batch_date = batch_control.iloc[0][\"batch_date\"]\n    \n    # Ensure datetime types\n    dim_price[\"eff_start_date\"] = pd.to_datetime(dim_price[\"eff_start_date\"])\n    dim_price[\"eff_end_date\"] = pd.to_datetime(dim_price[\"eff_end_date\"])\n    stg_price[\"effective_date\"] = pd.to_datetime(stg_price[\"effective_date\"])\n    batch_date = pd.to_datetime(batch_date)\n    \n    # Sort staged prices by product_id and effective_date\n    stg_price = stg_price.sort_values([\"product_id\", \"effective_date\"]).reset_index(drop=True)\n    \n    # Process each product\n    result_rows = []\n    \n    # Keep track of existing dimensions\n    dim_price_dict = {}\n    for _, row in dim_price.iterrows():\n        pid = row[\"product_id\"]\n        if pid not in dim_price_dict:\n            dim_price_dict[pid] = []\n        dim_price_dict[pid].append(row.to_dict())\n    \n    # Process staging data per product\n    for product_id in stg_price[\"product_id\"].unique():\n        stg_rows = stg_price[stg_price[\"product_id\"] == product_id].sort_values(\"effective_date\")\n        \n        if product_id not in dim_price_dict:\n            dim_price_dict[product_id] = []\n        \n        for _, stg_row in stg_rows.iterrows():\n            s_price = stg_row[\"list_price\"]\n            s_eff_date = stg_row[\"effective_date\"]\n            \n            # Find tail (latest version by eff_start_date)\n            tail = None\n            if dim_price_dict[product_id]:\n                tail = max(\n                    dim_price_dict[product_id],\n                    key=lambda x: x[\"eff_start_date\"]\n                )\n            \n            # Check if price unchanged\n            if tail is not None and tail[\"list_price\"] == s_price:\n                # Skip, no change\n                continue\n            else:\n                # Close tail if it exists\n                if tail is not None:\n                    tail[\"eff_end_date\"] = s_eff_date\n                \n                # Insert new version\n                new_version = {\n                    \"product_id\": product_id,\n                    \"list_price\": s_price,\n                    \"eff_start_date\": s_eff_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 0  # Will be set later\n                }\n                dim_price_dict[product_id].append(new_version)\n    \n    # Set is_current flag: 1 if version covers batch_date, else 0\n    for product_id in dim_price_dict:\n        for version in dim_price_dict[product_id]:\n            start = version[\"eff_start_date\"]\n            end = version[\"eff_end_date\"]\n            \n            # Version covers batch_date if: start <= batch_date < end (end is exclusive, NULL means open)\n            covers_batch = start <= batch_date\n            if pd.notna(end):\n                covers_batch = covers_batch and batch_date < end\n            \n            version[\"is_current\"] = 1 if covers_batch else 0\n    \n    # Flatten all versions into result\n    for product_id in dim_price_dict:\n        for version in dim_price_dict[product_id]:\n            result_rows.append(version)\n    \n    # Create result dataframe\n    if result_rows:\n        dim_price_out = pd.DataFrame(result_rows)\n    else:\n        dim_price_out = pd.DataFrame(columns=[\n            \"product_id\", \"list_price\", \"eff_start_date\", \"eff_end_date\", \"is_current\"\n        ])\n    \n    # Ensure correct dtypes\n    dim_price_out[\"product_id\"] = dim_price_out[\"product_id\"].astype(\"int64\")\n    dim_price_out[\"list_price\"] = dim_price_out[\"list_price\"].astype(\"float64\")\n    dim_price_out[\"eff_start_date\"] = pd.to_datetime(dim_price_out[\"eff_start_date\"])\n    dim_price_out[\"eff_end_date\"] = pd.to_datetime(dim_price_out[\"eff_end_date\"])\n    dim_price_out[\"is_current\"] = dim_price_out[\"is_current\"].astype(\"int64\")\n    \n    return {\"dim_price_out\": dim_price_out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 915,
+   "tokens_out": 1258,
+   "usd": 0.007205,
+   "wall_s": 7.663471460342407,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}
