@@ -1,0 +1,17 @@
+{
+ "task": "t1d_tsql_top_ties",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    branch_scores = inputs[\"branch_scores\"].copy()\n    \n    # Filter for active = 1\n    branch_scores = branch_scores[branch_scores[\"active\"] == 1].copy()\n    \n    # Sort by score descending\n    branch_scores = branch_scores.sort_values(by=\"score\", ascending=False, na_position=\"last\").reset_index(drop=True)\n    \n    # Get the 5th row's score (if it exists)\n    if len(branch_scores) < 5:\n        # If fewer than 5 rows, include all\n        cutoff_score = None\n    else:\n        # Get the score at index 4 (5th row, 0-indexed)\n        cutoff_score = branch_scores.iloc[4][\"score\"]\n    \n    # Filter for TOP (5) WITH TIES semantics:\n    # Include all rows where score >= cutoff_score\n    if cutoff_score is not None:\n        result = branch_scores[branch_scores[\"score\"] >= cutoff_score].copy()\n    else:\n        result = branch_scores.copy()\n    \n    # Create manager_norm: ISNULL(manager, 'UNASSIGNED')\n    result[\"manager_norm\"] = result[\"manager\"].fillna(\"UNASSIGNED\")\n    \n    # Create branch_label: branch_code + '-' + region_code\n    # In T-SQL, '+' propagates NULL, so if either operand is NULL, result is NULL\n    def concat_with_null_propagation(row):\n        if pd.isna(row[\"branch_code\"]) or pd.isna(row[\"region_code\"]):\n            return np.nan\n        return str(row[\"branch_code\"]) + \"-\" + str(row[\"region_code\"])\n    \n    result[\"branch_label\"] = result.apply(concat_with_null_propagation, axis=1)\n    \n    # Select only the required columns\n    result = result[[\"branch_id\", \"manager_norm\", \"branch_label\", \"score\"]]\n    \n    return {\"top_branches\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 393,
+   "tokens_out": 541,
+   "usd": 0.003098,
+   "wall_s": 4.788470029830933,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

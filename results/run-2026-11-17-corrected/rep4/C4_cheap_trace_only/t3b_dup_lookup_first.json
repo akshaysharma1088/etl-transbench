@@ -1,0 +1,63 @@
+{
+ "config": "C4_cheap_trace_only",
+ "rep": 4,
+ "task": "t3b_dup_lookup_first",
+ "category": "T3",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 3,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces the legacy ETL component graph:\n    1. Source: shipments table\n    2. Lookup: join with carrier_rates, resolving duplicates by effective_date DESC, rate_id DESC\n    3. Reformat: compute freight_cost = weight_kg * rate_per_kg\n    4. Output: select final columns\n    \"\"\"\n    \n    shipments = inputs[\"shipments\"].copy()\n    carrier_rates = inputs[\"carrier_rates\"].copy()\n    \n    # Step 1: Prepare for lookup\n    # Sort carrier_rates by carrier_id, then by effective_date DESC, then by rate_id DESC\n    # This ensures that when we group by carrier_id, the first row is the one we want\n    carrier_rates_sorted = carrier_rates.sort_values(\n        by=[\"carrier_id\", \"effective_date\", \"rate_id\"],\n        ascending=[True, False, False]\n    )\n    \n    # Step 2: Keep only the first (best) rate for each carrier_id\n    # This implements the duplicate_policy: first_by [effective_date DESC, rate_id DESC]\n    carrier_rates_deduped = carrier_rates_sorted.drop_duplicates(\n        subset=[\"carrier_id\"],\n        keep=\"first\"\n    )\n    \n    # Step 3: Left join shipments with deduplicated carrier_rates on carrier_id\n    # This ensures output row count equals input row count (no row explosion)\n    result = shipments.merge(\n        carrier_rates_deduped[[\"carrier_id\", \"rate_per_kg\", \"service_tier\"]],\n        on=\"carrier_id\",\n        how=\"left\"\n    )\n    \n    # Step 4: Handle missing values with on_miss defaults\n    result[\"rate_per_kg\"] = result[\"rate_per_kg\"].fillna(0.0)\n    result[\"service_tier\"] = result[\"service_tier\"].fillna(\"NONE\")\n    \n    # Step 5: Compute freight_cost\n    result[\"freight_cost\"] = result[\"weight_kg\"] * result[\"rate_per_kg\"]\n    \n    # Step 6: Select final columns in the specified order\n    output_columns = [\"shipment_id\", \"carrier_id\", \"service_tier\", \"weight_kg\", \"rate_per_kg\", \"freight_cost\"]\n    result = result[output_columns]\n    \n    return {\"shipment_costs\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 581,
+   "tokens_out": 591,
+   "usd": 0.003536,
+   "wall_s": 6.026569843292236,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3848,
+  "tokens_out": 2441,
+  "usd": 0.016052999999999998,
+  "wall_s": 19.71189522743225
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

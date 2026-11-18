@@ -1,0 +1,48 @@
+{
+ "config": "B1_single_pass",
+ "rep": 1,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _is_diff(a, b):\n    \"\"\"Return True if a and b differ, treating NaN/None as NULL.\n    NULL vs NULL -> not different. NULL vs non-NULL -> different.\"\"\"\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim_product = inputs[\"dim_product\"].copy()\n    stg_product = inputs[\"stg_product\"].copy()\n\n    # Build mutable list of output rows (dicts) from existing dim_product\n    output_rows = []\n    for _, row in dim_product.iterrows():\n        output_rows.append({\n            \"product_id\": row[\"product_id\"],\n            \"category\": row[\"category\"],\n            \"price_band\": row[\"price_band\"],\n            \"eff_start_date\": row[\"eff_start_date\"],\n            \"eff_end_date\": row[\"eff_end_date\"],\n            \"is_current\": row[\"is_current\"],\n        })\n\n    # Initialize current-row map: product_id -> reference to the dict in output_rows\n    current_map = {}\n    for r in output_rows:\n        if r[\"is_current\"] == 1:\n            pid = r[\"product_id\"]\n            # In case of data anomalies with multiple current rows, last one wins\n            current_map[pid] = r\n\n    # Sort staged records by product_id, update_date ascending\n    stg_sorted = stg_product.sort_values(by=[\"product_id\", \"update_date\"], kind=\"mergesort\")\n\n    for _, s in stg_sorted.iterrows():\n        pid = s[\"product_id\"]\n        s_category = s[\"category\"]\n        s_price_band = s[\"price_band\"]\n        s_date = s[\"update_date\"]\n\n        c = current_map.get(pid)\n\n        if c is None:\n            new_row = {\n                \"product_id\": pid,\n                \"category\": s_category,\n                \"price_band\": s_price_band,\n                \"eff_start_date\": s_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            }\n            output_rows.append(new_row)\n            current_map[pid] = new_row\n        else:\n            changed = _is_diff(c[\"category\"], s_category) or _is_diff(c[\"price_band\"], s_price_band)\n            if changed:\n                c[\"eff_end_date\"] = s_date\n                c[\"is_current\"] = 0\n\n                new_row = {\n                    \"product_id\": pid,\n                    \"category\": s_category,\n                    \"price_band\": s_price_band,\n                    \"eff_start_date\": s_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n                output_rows.append(new_row)\n                current_map[pid] = new_row\n            # else: no-op\n\n    result = pd.DataFrame(output_rows, columns=[\n        \"product_id\", \"category\", \"price_band\",\n        \"eff_start_date\", \"eff_end_date\", \"is_current\"\n    ])\n\n    # Enforce dtypes\n    result[\"product_id\"] = result[\"product_id\"].astype(\"int64\")\n    result[\"category\"] = result[\"category\"].astype(object)\n    result[\"price_band\"] = result[\"price_band\"].astype(object)\n    result[\"eff_start_date\"] = pd.to_datetime(result[\"eff_start_date\"]).astype(\"datetime64[us]\")\n    result[\"eff_end_date\"] = pd.to_datetime(result[\"eff_end_date\"]).astype(\"datetime64[s]\")\n    result[\"is_current\"] = result[\"is_current\"].astype(\"int64\")\n\n    return {\"dim_product_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 968,
+   "tokens_out": 2511,
+   "usd": 0.040569,
+   "wall_s": 23.20664930343628,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

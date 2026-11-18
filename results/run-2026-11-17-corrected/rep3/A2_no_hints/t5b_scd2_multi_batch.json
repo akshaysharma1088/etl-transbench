@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _is_change(old_val, new_val):\n    old_na = pd.isna(old_val)\n    new_na = pd.isna(new_val)\n    if old_na and new_na:\n        return False\n    if old_na != new_na:\n        return True\n    return old_val != new_val\n\n\ndef run(inputs: dict) -> dict:\n    dim_product = inputs[\"dim_product\"].copy()\n    stg_product = inputs[\"stg_product\"].copy()\n\n    # Ensure proper dtypes for working\n    dim_product = dim_product.reset_index(drop=True)\n    stg_product = stg_product.reset_index(drop=True)\n\n    staged_product_ids = set(stg_product[\"product_id\"].unique().tolist())\n\n    output_rows = []\n\n    # Current rows (is_current == 1) per product_id for quick lookup\n    current_rows = {}\n    for idx, row in dim_product.iterrows():\n        if row[\"is_current\"] == 1:\n            current_rows[row[\"product_id\"]] = {\n                \"product_id\": row[\"product_id\"],\n                \"category\": row[\"category\"],\n                \"price_band\": row[\"price_band\"],\n                \"eff_start_date\": row[\"eff_start_date\"],\n                \"eff_end_date\": row[\"eff_end_date\"],\n                \"is_current\": row[\"is_current\"],\n            }\n        else:\n            # historical rows pass through unchanged\n            output_rows.append({\n                \"product_id\": row[\"product_id\"],\n                \"category\": row[\"category\"],\n                \"price_band\": row[\"price_band\"],\n                \"eff_start_date\": row[\"eff_start_date\"],\n                \"eff_end_date\": row[\"eff_end_date\"],\n                \"is_current\": row[\"is_current\"],\n            })\n\n    # For products with a current row but NOT staged in this batch,\n    # just carry the current row through unchanged (added later).\n\n    # Process staged records grouped by product_id, ordered by update_date ascending\n    stg_sorted = stg_product.sort_values(\n        by=[\"product_id\", \"update_date\"], kind=\"mergesort\"\n    )\n\n    processed_products = set()\n\n    for product_id, grp in stg_sorted.groupby(\"product_id\", sort=False):\n        processed_products.add(product_id)\n        c = current_rows.get(product_id, None)\n\n        for _, srow in grp.iterrows():\n            s_category = srow[\"category\"]\n            s_price_band = srow[\"price_band\"]\n            s_update_date = srow[\"update_date\"]\n\n            if c is None:\n                c = {\n                    \"product_id\": product_id,\n                    \"category\": s_category,\n                    \"price_band\": s_price_band,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            else:\n                changed = _is_change(c[\"category\"], s_category) or _is_change(\n                    c[\"price_band\"], s_price_band\n                )\n                if changed:\n                    # expire old current row\n                    expired = dict(c)\n                    expired[\"eff_end_date\"] = s_update_date\n                    expired[\"is_current\"] = 0\n                    output_rows.append(expired)\n\n                    # new current row\n                    c = {\n                        \"product_id\": product_id,\n                        \"category\": s_category,\n                        \"price_band\": s_price_band,\n                        \"eff_start_date\": s_update_date,\n                        \"eff_end_date\": pd.NaT,\n                        \"is_current\": 1,\n                    }\n                # else no-op, c stays the same\n\n        current_rows[product_id] = c\n\n    # Add final current rows for all products (processed or not staged at all)\n    for product_id, c in current_rows.items():\n        output_rows.append(c)\n\n    out_df = pd.DataFrame(\n        output_rows,\n        columns=[\n            \"product_id\",\n            \"category\",\n            \"price_band\",\n            \"eff_start_date\",\n            \"eff_end_date\",\n            \"is_current\",\n        ],\n    )\n\n    # Enforce dtypes\n    out_df[\"product_id\"] = out_df[\"product_id\"].astype(\"int64\")\n    out_df[\"eff_start_date\"] = pd.to_datetime(out_df[\"eff_start_date\"]).astype(\n        \"datetime64[us]\"\n    )\n    out_df[\"eff_end_date\"] = pd.to_datetime(out_df[\"eff_end_date\"]).astype(\n        \"datetime64[s]\"\n    )\n    out_df[\"is_current\"] = out_df[\"is_current\"].astype(\"int64\")\n\n    out_df = out_df.sort_values(\n        by=[\"product_id\", \"eff_start_date\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    return {\"dim_product_out\": out_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 913,
+   "tokens_out": 2452,
+   "usd": 0.039519,
+   "wall_s": 21.932416200637817,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

@@ -1,0 +1,17 @@
+{
+ "task": "t1d_tsql_top_ties",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Translate T-SQL TOP (5) WITH TIES + ISNULL + NULL-propagating concat to pandas.\n    \n    Semantics:\n    - WHERE active = 1: filter to active rows\n    - ORDER BY score DESC: sort by score descending\n    - TOP (5) WITH TIES: return top 5 rows, plus all rows that tie on the 5th rank score\n    - ISNULL(manager, 'UNASSIGNED'): coalesce manager to 'UNASSIGNED'\n    - branch_code + '-' + region_code: NULL-propagating string concat (NULL + X = NULL)\n    \"\"\"\n    df = inputs[\"branch_scores\"].copy()\n    \n    # Filter to active = 1\n    df = df[df[\"active\"] == 1].copy()\n    \n    # Sort by score DESC\n    df = df.sort_values(\"score\", ascending=False, na_position=\"last\")\n    \n    # Implement TOP (5) WITH TIES\n    # Get the 5th row's score (if fewer than 5 rows, use the last row's score)\n    if len(df) >= 5:\n        cutoff_score = df.iloc[4][\"score\"]\n    else:\n        cutoff_score = df.iloc[-1][\"score\"] if len(df) > 0 else None\n    \n    # Keep all rows with score >= cutoff_score (ties included)\n    if cutoff_score is not None:\n        df = df[df[\"score\"] >= cutoff_score].copy()\n    \n    # Build manager_norm: ISNULL(manager, 'UNASSIGNED')\n    df[\"manager_norm\"] = df[\"manager\"].fillna(\"UNASSIGNED\")\n    \n    # Build branch_label: branch_code + '-' + region_code\n    # NULL-propagating concat: if either operand is NULL, result is NULL\n    def concat_with_null_propagation(row):\n        if pd.isna(row[\"branch_code\"]) or pd.isna(row[\"region_code\"]):\n            return None\n        return str(row[\"branch_code\"]) + \"-\" + str(row[\"region_code\"])\n    \n    df[\"branch_label\"] = df.apply(concat_with_null_propagation, axis=1)\n    \n    # Select and order output columns\n    result = df[[\"branch_id\", \"manager_norm\", \"branch_label\", \"score\"]].copy()\n    \n    return {\"top_branches\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 393,
+   "tokens_out": 636,
+   "usd": 0.003573,
+   "wall_s": 5.78422737121582,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

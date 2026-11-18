@@ -1,0 +1,17 @@
+{
+ "task": "t7d_quarantine_threshold",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"readings\"].copy()\n\n    # Row-level bad rule\n    df[\"is_bad\"] = df[\"value\"].isna() | (df[\"value\"] < 0) | (df[\"value\"] > 1000)\n\n    # Batch-level aggregates\n    grp = df.groupby(\"batch_id\")\n    total_rows = grp[\"reading_id\"].transform(\"count\")\n    bad_count = grp[\"is_bad\"].transform(\"sum\")\n\n    reject_pct = bad_count * 100.0 / total_rows\n    quarantine_mask = (bad_count * 100) > (total_rows * 20)\n\n    # Quarantined batches: all rows (good and bad) go here\n    quarantine_df = df[quarantine_mask].copy()\n    quarantine_df[\"batch_reject_pct\"] = reject_pct[quarantine_mask].round(2)\n    quarantine_df = quarantine_df[\n        [\"batch_id\", \"reading_id\", \"sensor\", \"value\", \"batch_reject_pct\"]\n    ]\n\n    # Non-quarantined batches: split by row rule\n    rest = df[~quarantine_mask]\n    clean_df = rest[~rest[\"is_bad\"]][[\"batch_id\", \"reading_id\", \"sensor\", \"value\"]]\n    rejects_df = rest[rest[\"is_bad\"]][[\"batch_id\", \"reading_id\", \"sensor\", \"value\"]]\n\n    return {\n        \"readings_clean\": clean_df.reset_index(drop=True),\n        \"readings_rejects\": rejects_df.reset_index(drop=True),\n        \"readings_quarantine\": quarantine_df.reset_index(drop=True),\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 623,
+   "tokens_out": 1430,
+   "usd": 0.023319,
+   "wall_s": 11.761429071426392,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

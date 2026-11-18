@@ -1,0 +1,17 @@
+{
+ "task": "t6_sessionize_events",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, event_ts, event_id\n    events = events.sort_values(by=[\"user_id\", \"event_ts\", \"event_id\"]).reset_index(drop=True)\n    \n    # Calculate time gap from previous event (within same user)\n    events[\"prev_event_ts\"] = events.groupby(\"user_id\")[\"event_ts\"].shift(1)\n    \n    # Calculate time difference in seconds\n    events[\"time_gap_seconds\"] = (events[\"event_ts\"] - events[\"prev_event_ts\"]).dt.total_seconds()\n    \n    # Mark new session: gap > 1800 seconds (30 minutes) or first event (NULL prev_event_ts)\n    events[\"new_sess\"] = ((events[\"time_gap_seconds\"] > 1800) | (events[\"prev_event_ts\"].isna())).astype(int)\n    \n    # Cumulative sum within each user to get session_num\n    events[\"session_num\"] = events.groupby(\"user_id\")[\"new_sess\"].cumsum()\n    \n    # Group by user_id and session_num to get session-level aggregates\n    user_sessions = events.groupby([\"user_id\", \"session_num\"]).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    ).reset_index()\n    \n    # Ensure session_num is 1-based (it already is due to cumsum starting at 1 on first event)\n    user_sessions = user_sessions.sort_values(by=[\"user_id\", \"session_num\"]).reset_index(drop=True)\n    \n    return {\"user_sessions\": user_sessions}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 472,
+   "tokens_out": 486,
+   "usd": 0.002902,
+   "wall_s": 4.459817409515381,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

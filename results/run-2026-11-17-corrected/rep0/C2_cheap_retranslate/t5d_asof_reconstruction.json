@@ -1,0 +1,48 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 0,
+ "task": "t5d_asof_reconstruction",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_emp_hist = inputs[\"dim_emp_hist\"].copy()\n    asof_queries = inputs[\"asof_queries\"].copy()\n    \n    # Perform the point-in-time join\n    # For each query, find the version record where:\n    # - emp_id matches\n    # - as_of_date >= eff_start_date (start inclusive)\n    # - eff_end_date IS NULL OR as_of_date < eff_end_date (end exclusive)\n    \n    # Merge on emp_id first\n    merged = asof_queries.merge(dim_emp_hist, on=\"emp_id\", how=\"inner\")\n    \n    # Apply the date range filter\n    # Start date filter: as_of_date >= eff_start_date\n    start_condition = merged[\"as_of_date\"] >= merged[\"eff_start_date\"]\n    \n    # End date filter: eff_end_date IS NULL OR as_of_date < eff_end_date\n    end_condition = merged[\"eff_end_date\"].isna() | (merged[\"as_of_date\"] < merged[\"eff_end_date\"])\n    \n    # Apply both conditions\n    result = merged[start_condition & end_condition]\n    \n    # Select only the required output columns\n    asof_result = result[[\"query_id\", \"emp_id\", \"dept\", \"grade\"]].copy()\n    \n    # Reset index to clean up after filtering\n    asof_result = asof_result.reset_index(drop=True)\n    \n    return {\"asof_result\": asof_result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 613,
+   "tokens_out": 682,
+   "usd": 0.004023,
+   "wall_s": 6.346626281738281,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

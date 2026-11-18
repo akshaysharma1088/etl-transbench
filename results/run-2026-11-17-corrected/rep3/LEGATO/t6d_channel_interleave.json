@@ -1,0 +1,58 @@
+{
+ "config": "LEGATO",
+ "rep": 3,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n\n    # Sort by (user_id, channel, event_ts, event_id) to establish order\n    events = events.sort_values(\n        by=[\"user_id\", \"channel\", \"event_ts\", \"event_id\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n\n    # Compute time diff within each (user_id, channel) group without apply\n    grp = events.groupby([\"user_id\", \"channel\"], sort=False)\n    time_diffs = grp[\"event_ts\"].diff()\n\n    gap_threshold = pd.Timedelta(minutes=25)\n    # Strict gap rule: a new session starts only when the gap STRICTLY\n    # exceeds 25 minutes (gap > 25min). A gap of exactly 25 minutes keeps\n    # the session alive.\n    new_session = time_diffs.isna() | (time_diffs > gap_threshold)\n\n    # Session number: cumulative sum of new_session flags within each group\n    events[\"_new_session\"] = new_session.astype(int)\n    events[\"session_num\"] = grp[\"_new_session\"].cumsum()\n\n    # Aggregate to get channel_sessions\n    channel_sessions = events.groupby(\n        [\"user_id\", \"channel\", \"session_num\"],\n        as_index=False\n    ).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    )\n\n    # Ensure strictly 1-based ordering per user+channel by session_start order\n    channel_sessions = channel_sessions.sort_values(\n        by=[\"user_id\", \"channel\", \"session_start\"]\n    ).reset_index(drop=True)\n\n    channel_sessions[\"session_num\"] = channel_sessions.groupby(\n        [\"user_id\", \"channel\"]\n    ).cumcount() + 1\n\n    channel_sessions = channel_sessions[\n        [\"user_id\", \"channel\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]\n    ]\n\n    return {\"channel_sessions\": channel_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 351,
+   "tokens_out": 730,
+   "usd": 0.004001,
+   "wall_s": 5.204728364944458,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4135,
+  "tokens_out": 1781,
+  "usd": 0.03912,
+  "wall_s": 15.132152557373047
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 4,
+ "task": "t7c_crossfield_reference",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    orders = inputs[\"orders\"].copy()\n    ref_customers = inputs[\"ref_customers\"].copy()\n    ref_skus = inputs[\"ref_skus\"].copy()\n    \n    # Initialize rejection reason column\n    orders[\"reason_code\"] = None\n    \n    # R1: customer_id not present in ref_customers\n    valid_customers = set(ref_customers[\"customer_id\"].dropna().unique())\n    r1_fail = orders[\"reason_code\"].isna() & ~orders[\"customer_id\"].isin(valid_customers)\n    orders.loc[r1_fail, \"reason_code\"] = \"CUST_UNKNOWN\"\n    \n    # R2: customer status <> 'ACTIVE'\n    # Join with ref_customers to get status\n    cust_status = ref_customers[[\"customer_id\", \"status\"]].copy()\n    orders_with_status = orders.merge(cust_status, on=\"customer_id\", how=\"left\")\n    r2_fail = (orders[\"reason_code\"].isna() & \n               (orders_with_status[\"status\"] != \"ACTIVE\"))\n    orders.loc[r2_fail, \"reason_code\"] = \"CUST_INACTIVE\"\n    \n    # R3: sku not present in ref_skus\n    valid_skus = set(ref_skus[\"sku\"].dropna().unique())\n    r3_fail = orders[\"reason_code\"].isna() & ~orders[\"sku\"].isin(valid_skus)\n    orders.loc[r3_fail, \"reason_code\"] = \"SKU_UNKNOWN\"\n    \n    # R4: sku discontinued = 1\n    sku_info = ref_skus[[\"sku\", \"discontinued\", \"allowed_countries\"]].copy()\n    orders_with_sku = orders.merge(sku_info, on=\"sku\", how=\"left\")\n    r4_fail = (orders[\"reason_code\"].isna() & \n               (orders_with_sku[\"discontinued\"] == 1))\n    orders.loc[r4_fail, \"reason_code\"] = \"SKU_DISC\"\n    \n    # R5: allowed_countries non-empty AND ship_country not in list\n    # Need to check country blocking\n    r5_fail_mask = orders[\"reason_code\"].isna()\n    \n    for idx in orders[r5_fail_mask].index:\n        sku_val = orders.loc[idx, \"sku\"]\n        country_val = orders.loc[idx, \"ship_country\"]\n        \n        # Find allowed_countries for this SKU\n        sku_rows = ref_skus[ref_skus[\"sku\"] == sku_val]\n        if len(sku_rows) > 0:\n            allowed_countries = sku_rows.iloc[0][\"allowed_countries\"]\n            \n            # Check if allowed_countries is non-empty and not null\n            if pd.notna(allowed_countries) and str(allowed_countries).strip() != \"\":\n                # Parse the comma-delimited list (trim each member)\n                allowed_list = [c.strip() for c in str(allowed_countries).split(\",\")]\n                allowed_list = [c for c in allowed_list if c]  # Remove empty strings\n                \n                # Check if ship_country is in the list\n                if pd.notna(country_val) and str(country_val).strip() not in allowed_list:\n                    orders.loc[idx, \"reason_code\"] = \"CTRY_BLOCKED\"\n    \n    # Split into clean and rejects\n    orders_clean = orders[orders[\"reason_code\"].isna()].drop(columns=[\"reason_code\"])\n    orders_rejects = orders[orders[\"reason_code\"].notna()][[\"order_id\", \"customer_id\", \"sku\", \"qty\", \"ship_country\", \"reason_code\"]]\n    \n    return {\n        \"orders_clean\": orders_clean,\n        \"orders_rejects\": orders_rejects\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 574,
+   "tokens_out": 1004,
+   "usd": 0.005594,
+   "wall_s": 8.403583288192749,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

@@ -1,0 +1,17 @@
+{
+ "task": "t6b_capped_session",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    events = inputs[\"events\"].copy()\n\n    # Ensure proper ordering within each user: by event_ts then event_id\n    events = events.sort_values([\"user_id\", \"event_ts\", \"event_id\"], kind=\"mergesort\")\n\n    results = []\n\n    for user_id, group in events.groupby(\"user_id\", sort=False):\n        group = group.reset_index(drop=True)\n\n        session_num = 0\n        session_start = None\n        prev_ts = None\n        current_session_events = []\n\n        sessions = []  # list of (session_num, start, end, count)\n\n        for _, row in group.iterrows():\n            ts = row[\"event_ts\"]\n\n            if session_start is None:\n                # first event for this user -> start new session\n                session_num += 1\n                session_start = ts\n                prev_ts = ts\n                current_session_events = [ts]\n                continue\n\n            gap = ts - prev_ts\n            gap_exceeded = gap > pd.Timedelta(minutes=20)\n\n            cap_exceeded = (ts - session_start) > pd.Timedelta(hours=4)\n\n            if gap_exceeded or cap_exceeded:\n                # close current session\n                sessions.append((\n                    session_num,\n                    current_session_events[0],\n                    current_session_events[-1],\n                    len(current_session_events)\n                ))\n                # start new session\n                session_num += 1\n                session_start = ts\n                current_session_events = [ts]\n            else:\n                current_session_events.append(ts)\n\n            prev_ts = ts\n\n        # close final session if any events were processed\n        if current_session_events:\n            sessions.append((\n                session_num,\n                current_session_events[0],\n                current_session_events[-1],\n                len(current_session_events)\n            ))\n\n        for s_num, s_start, s_end, s_count in sessions:\n            results.append({\n                \"user_id\": user_id,\n                \"session_num\": s_num,\n                \"session_start\": s_start,\n                \"session_end\": s_end,\n                \"event_count\": s_count\n            })\n\n    if results:\n        out_df = pd.DataFrame(results, columns=[\n            \"user_id\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"\n        ])\n    else:\n        out_df = pd.DataFrame(columns=[\n            \"user_id\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"\n        ])\n\n    return {\"user_sessions\": out_df}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 591,
+   "tokens_out": 995,
+   "usd": 0.016698,
+   "wall_s": 8.77635908126831,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

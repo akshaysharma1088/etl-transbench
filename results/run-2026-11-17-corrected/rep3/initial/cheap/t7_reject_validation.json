@@ -1,0 +1,17 @@
+{
+ "task": "t7_reject_validation",
+ "group": "cheap",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    payments = inputs[\"payments\"].copy()\n    \n    # Initialize columns for tracking validation state\n    payments['_valid'] = True\n    payments['_reason_code'] = None\n    \n    # R1: amount IS NULL -> reason_code 'AMT_NULL'\n    mask_r1 = payments['_valid'] & payments['amount'].isna()\n    payments.loc[mask_r1, '_valid'] = False\n    payments.loc[mask_r1, '_reason_code'] = 'AMT_NULL'\n    \n    # R2: amount <= 0 -> reason_code 'AMT_NONPOS'\n    mask_r2 = payments['_valid'] & (payments['amount'] <= 0)\n    payments.loc[mask_r2, '_valid'] = False\n    payments.loc[mask_r2, '_reason_code'] = 'AMT_NONPOS'\n    \n    # R3: currency NOT IN ('USD','EUR','GBP') -> reason_code 'CCY_INVALID'\n    mask_r3 = payments['_valid'] & ~payments['currency'].isin(['USD', 'EUR', 'GBP'])\n    payments.loc[mask_r3, '_valid'] = False\n    payments.loc[mask_r3, '_reason_code'] = 'CCY_INVALID'\n    \n    # R4: country IS NULL -> reason_code 'CTRY_NULL'\n    mask_r4 = payments['_valid'] & payments['country'].isna()\n    payments.loc[mask_r4, '_valid'] = False\n    payments.loc[mask_r4, '_reason_code'] = 'CTRY_NULL'\n    \n    # Split into clean and reject\n    clean = payments[payments['_valid']].copy()\n    reject = payments[~payments['_valid']].copy()\n    \n    # payments_clean: round amount to 2 decimals, drop helper columns\n    payments_clean = clean[['payment_id', 'amount', 'currency', 'country']].copy()\n    payments_clean['amount'] = payments_clean['amount'].round(2)\n    \n    # payments_rejects: include original amount and reason_code, drop helper columns\n    payments_rejects = reject[['payment_id', 'amount', 'currency', 'country', '_reason_code']].copy()\n    payments_rejects = payments_rejects.rename(columns={'_reason_code': 'reason_code'})\n    \n    return {\n        'payments_clean': payments_clean,\n        'payments_rejects': payments_rejects\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 415,
+   "tokens_out": 669,
+   "usd": 0.00376,
+   "wall_s": 3.8851940631866455,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

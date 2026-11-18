@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 4,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _null_safe_neq(a, b):\n    a_na = pd.isna(a)\n    b_na = pd.isna(b)\n    if a_na and b_na:\n        return False\n    if a_na or b_na:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim_acct = inputs[\"dim_acct\"].copy()\n    stg_acct = inputs[\"stg_acct\"].copy()\n\n    # Ensure proper dtypes\n    dim_acct[\"eff_start_date\"] = pd.to_datetime(dim_acct[\"eff_start_date\"])\n    dim_acct[\"eff_end_date\"] = pd.to_datetime(dim_acct[\"eff_end_date\"])\n    dim_acct[\"is_current\"] = dim_acct[\"is_current\"].astype(\"int64\")\n    stg_acct[\"update_date\"] = pd.to_datetime(stg_acct[\"update_date\"])\n\n    # Step 1: Dedup STG_ACCT to latest per acct_id by update_date,\n    # ties broken by greater (email, tier) lexicographic pair.\n    stg_sorted = stg_acct.sort_values(\n        by=[\"acct_id\", \"update_date\", \"email\", \"tier\"],\n        kind=\"mergesort\"\n    )\n    stg_dedup = stg_sorted.groupby(\"acct_id\", as_index=False).tail(1).reset_index(drop=True)\n\n    # Work on a mutable copy of dim_acct, preserving row order via index\n    df = dim_acct.reset_index(drop=True).copy()\n\n    new_rows = []\n\n    for s in stg_dedup.itertuples(index=False):\n        acct_id = s.acct_id\n        s_email = s.email\n        s_tier = s.tier\n        s_update_date = s.update_date\n\n        mask_cur = (df[\"acct_id\"] == acct_id) & (df[\"is_current\"] == 1)\n        cur_idx_list = df.index[mask_cur].tolist()\n\n        if len(cur_idx_list) == 0:\n            # Insert new current version\n            new_rows.append({\n                \"acct_id\": acct_id,\n                \"email\": s_email,\n                \"tier\": s_tier,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n        else:\n            idx = cur_idx_list[0]\n            c_tier = df.at[idx, \"tier\"]\n            c_email = df.at[idx, \"email\"]\n\n            tier_changed = _null_safe_neq(c_tier, s_tier)\n\n            if tier_changed:\n                # Expire current row\n                df.at[idx, \"eff_end_date\"] = s_update_date\n                df.at[idx, \"is_current\"] = 0\n\n                # Insert new current version\n                new_rows.append({\n                    \"acct_id\": acct_id,\n                    \"email\": s_email,\n                    \"tier\": s_tier,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n\n            email_changed = _null_safe_neq(c_email, s_email)\n\n            if email_changed:\n                mask_all = df[\"acct_id\"] == acct_id\n                df.loc[mask_all, \"email\"] = s_email\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows)\n        new_df[\"eff_start_date\"] = pd.to_datetime(new_df[\"eff_start_date\"])\n        new_df[\"eff_end_date\"] = pd.to_datetime(new_df[\"eff_end_date\"])\n        new_df[\"is_current\"] = new_df[\"is_current\"].astype(\"int64\")\n        new_df[\"acct_id\"] = new_df[\"acct_id\"].astype(\"int64\")\n        df = pd.concat([df, new_df], ignore_index=True)\n\n    df = df[[\"acct_id\", \"email\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]]\n\n    return {\"dim_acct_out\": df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1120,
+   "tokens_out": 2892,
+   "usd": 0.04674,
+   "wall_s": 24.783559560775757,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

@@ -1,0 +1,53 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_customer\"].copy()\n    stg = inputs[\"stg_customer\"].copy()\n\n    # ---------------------------------------------------------------\n    # Step 1: Deduplicate staging to latest record per customer_id,\n    # tie-break by greater (name, segment) lexicographic pair.\n    # ---------------------------------------------------------------\n    stg_sorted = stg.sort_values(\n        by=[\"customer_id\", \"update_date\", \"name\", \"segment\"],\n        ascending=[True, False, False, False],\n        kind=\"mergesort\",\n    )\n    dedup = stg_sorted.drop_duplicates(subset=\"customer_id\", keep=\"first\").reset_index(drop=True)\n\n    # ---------------------------------------------------------------\n    # Step 2: Apply SCD2 logic against dim_customer rows.\n    # ---------------------------------------------------------------\n    dim_records = dim.to_dict(\"records\")\n    new_records = []\n\n    def is_changed(a, b):\n        a_null = pd.isna(a)\n        b_null = pd.isna(b)\n        if a_null and b_null:\n            return False\n        if a_null != b_null:\n            return True\n        return a != b\n\n    for _, s in dedup.iterrows():\n        cid = s[\"customer_id\"]\n\n        cur_idx = None\n        for i, r in enumerate(dim_records):\n            if r[\"customer_id\"] == cid and r[\"is_current\"] == 1:\n                cur_idx = i\n                break\n\n        if cur_idx is None:\n            new_records.append({\n                \"customer_id\": cid,\n                \"name\": s[\"name\"],\n                \"segment\": s[\"segment\"],\n                \"eff_start_date\": s[\"update_date\"],\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n        else:\n            c = dim_records[cur_idx]\n            if is_changed(c[\"name\"], s[\"name\"]) or is_changed(c[\"segment\"], s[\"segment\"]):\n                dim_records[cur_idx][\"eff_end_date\"] = s[\"update_date\"]\n                dim_records[cur_idx][\"is_current\"] = 0\n\n                new_records.append({\n                    \"customer_id\": cid,\n                    \"name\": s[\"name\"],\n                    \"segment\": s[\"segment\"],\n                    \"eff_start_date\": s[\"update_date\"],\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            # else: unchanged -> no new version, no update\n\n    all_records = dim_records + new_records\n\n    result = pd.DataFrame(\n        all_records,\n        columns=[\"customer_id\", \"name\", \"segment\", \"eff_start_date\", \"eff_end_date\", \"is_current\"],\n    )\n\n    if not result.empty:\n        result[\"customer_id\"] = result[\"customer_id\"].astype(\"int64\")\n        result[\"is_current\"] = result[\"is_current\"].astype(\"int64\")\n        result[\"eff_start_date\"] = pd.to_datetime(result[\"eff_start_date\"])\n        result[\"eff_end_date\"] = pd.to_datetime(result[\"eff_end_date\"])\n    else:\n        result = pd.DataFrame(columns=[\"customer_id\", \"name\", \"segment\", \"eff_start_date\", \"eff_end_date\", \"is_current\"])\n\n    return {\"dim_customer_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1154,
+   "tokens_out": 1686,
+   "usd": 0.028752,
+   "wall_s": 13.867215633392334,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1154,
+  "tokens_out": 2645,
+  "usd": 0.043137,
+  "wall_s": 22.407382011413574
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t6e_session_heartbeat_logout",
+ "category": "T6",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import timedelta\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"app_events\"].copy()\n\n    df = df.sort_values([\"user_id\", \"event_ts\", \"event_id\"], kind=\"mergesort\")\n\n    results = []\n\n    thirty_min = timedelta(minutes=30)\n\n    for user_id, group in df.groupby(\"user_id\", sort=False):\n        open_session = None  # dict with session_num, session_start, last_activity_ts, event_count, heartbeat_count\n        session_num_counter = 0\n\n        for row in group.itertuples(index=False):\n            event_ts = row.event_ts\n            event_type = row.event_type\n\n            if event_type in (\"view\", \"click\", \"logout\"):\n                # activity event\n                starts_new = False\n                if open_session is None:\n                    starts_new = True\n                else:\n                    delta = event_ts - open_session[\"last_activity_ts\"]\n                    if delta > thirty_min:\n                        starts_new = True\n\n                if starts_new:\n                    # close any existing open session first (shouldn't normally happen\n                    # since we only have one open at a time, but handle defensively)\n                    if open_session is not None:\n                        results.append({\n                            \"user_id\": user_id,\n                            \"session_num\": open_session[\"session_num\"],\n                            \"session_start\": open_session[\"session_start\"],\n                            \"session_end\": open_session[\"last_activity_ts\"],\n                            \"event_count\": open_session[\"event_count\"],\n                            \"heartbeat_count\": open_session[\"heartbeat_count\"],\n                        })\n                    session_num_counter += 1\n                    open_session = {\n                        \"session_num\": session_num_counter,\n                        \"session_start\": event_ts,\n                        \"last_activity_ts\": event_ts,\n                        \"event_count\": 1,\n                        \"heartbeat_count\": 0,\n                    }\n                else:\n                    open_session[\"event_count\"] += 1\n                    open_session[\"last_activity_ts\"] = event_ts\n\n                if event_type == \"logout\":\n                    results.append({\n                        \"user_id\": user_id,\n                        \"session_num\": open_session[\"session_num\"],\n                        \"session_start\": open_session[\"session_start\"],\n                        \"session_end\": open_session[\"last_activity_ts\"],\n                        \"event_count\": open_session[\"event_count\"],\n                        \"heartbeat_count\": open_session[\"heartbeat_count\"],\n                    })\n                    open_session = None\n\n            elif event_type == \"heartbeat\":\n                if open_session is not None:\n                    delta = event_ts - open_session[\"last_activity_ts\"]\n                    if delta <= thirty_min:\n                        open_session[\"event_count\"] += 1\n                        open_session[\"heartbeat_count\"] += 1\n                    # else dropped\n                # else dropped (no open session)\n\n            else:\n                # unknown event type, ignore (not specified)\n                pass\n\n        # end of user's events: finalize any open session\n        if open_session is not None:\n            results.append({\n                \"user_id\": user_id,\n                \"session_num\": open_session[\"session_num\"],\n                \"session_start\": open_session[\"session_start\"],\n                \"session_end\": open_session[\"last_activity_ts\"],\n                \"event_count\": open_session[\"event_count\"],\n                \"heartbeat_count\": open_session[\"heartbeat_count\"],\n            })\n            open_session = None\n\n    out_cols = [\"user_id\", \"session_num\", \"session_start\", \"session_end\",\n                \"event_count\", \"heartbeat_count\"]\n\n    if results:\n        out_df = pd.DataFrame(results, columns=out_cols)\n    else:\n        out_df = pd.DataFrame(columns=out_cols)\n\n    out_df[\"user_id\"] = out_df[\"user_id\"].astype(\"int64\")\n    out_df[\"session_num\"] = out_df[\"session_num\"].astype(\"int64\")\n    out_df[\"event_count\"] = out_df[\"event_count\"].astype(\"int64\")\n    out_df[\"heartbeat_count\"] = out_df[\"heartbeat_count\"].astype(\"int64\")\n\n    return {\"user_sessions\": out_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 991,
+   "tokens_out": 1954,
+   "usd": 0.032283,
+   "wall_s": 16.11140203475952,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

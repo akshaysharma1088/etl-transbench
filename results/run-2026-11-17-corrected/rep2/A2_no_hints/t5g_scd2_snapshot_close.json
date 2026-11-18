@@ -1,0 +1,53 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _differs(a, b):\n    a_na = pd.isna(a)\n    b_na = pd.isna(b)\n    if a_na and b_na:\n        return False\n    if a_na != b_na:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim_store = inputs[\"dim_store\"].copy()\n    stg_raw = inputs[\"stg_store_full\"]\n    batch_control = inputs[\"batch_control\"]\n\n    # batch date (single row)\n    batch_date = batch_control[\"batch_date\"].iloc[0]\n\n    # DISTINCT store_id, region, format from staging\n    stg = stg_raw[[\"store_id\", \"region\", \"format\"]].drop_duplicates().reset_index(drop=True)\n\n    # current rows of dim_store\n    current_mask = dim_store[\"is_current\"] == 1\n    current_idx = dim_store.index[current_mask]\n    current_df = dim_store.loc[current_idx, [\"store_id\", \"region\", \"format\"]].copy()\n\n    # map store_id -> dim_store index (assume at most one current row per store_id)\n    current_map = {}\n    for idx, sid in zip(current_idx, current_df[\"store_id\"]):\n        current_map[sid] = idx\n\n    stg_ids = set(stg[\"store_id\"].tolist())\n\n    # merge staging with current rows to find matches\n    merged = stg.merge(\n        current_df,\n        on=\"store_id\",\n        how=\"left\",\n        suffixes=(\"_s\", \"_c\"),\n        indicator=\"merge_flag\",\n    )\n\n    close_indices = []\n    new_rows = []\n\n    for row in merged.itertuples(index=False):\n        sid = row.store_id\n        if row.merge_flag == \"left_only\":\n            # no current row: new store or reactivated store\n            new_rows.append(\n                {\n                    \"store_id\": sid,\n                    \"region\": row.region_s,\n                    \"format\": row.format_s,\n                    \"eff_start_date\": batch_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            )\n        else:\n            # both: compare attributes NULL-safely\n            region_diff = _differs(row.region_s, row.region_c)\n            format_diff = _differs(row.format_s, row.format_c)\n            if region_diff or format_diff:\n                # close old current row\n                close_indices.append(current_map[sid])\n                new_rows.append(\n                    {\n                        \"store_id\": sid,\n                        \"region\": row.region_s,\n                        \"format\": row.format_s,\n                        \"eff_start_date\": batch_date,\n                        \"eff_end_date\": pd.NaT,\n                        \"is_current\": 1,\n                    }\n                )\n            # else: no-op\n\n    # close current rows whose store_id is not present in staging at all\n    for sid, idx in current_map.items():\n        if sid not in stg_ids:\n            close_indices.append(idx)\n\n    # apply closures\n    if close_indices:\n        dim_store.loc[close_indices, \"eff_end_date\"] = batch_date\n        dim_store.loc[close_indices, \"is_current\"] = 0\n\n    # append new rows\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=[\n            \"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"\n        ])\n        # ensure dtypes align reasonably\n        new_df[\"eff_start_date\"] = pd.to_datetime(new_df[\"eff_start_date\"])\n        new_df[\"eff_end_date\"] = pd.to_datetime(new_df[\"eff_end_date\"])\n        new_df[\"store_id\"] = new_df[\"store_id\"].astype(dim_store[\"store_id\"].dtype)\n        new_df[\"is_current\"] = new_df[\"is_current\"].astype(dim_store[\"is_current\"].dtype)\n\n        result = pd.concat([dim_store, new_df], ignore_index=True)\n    else:\n        result = dim_store.reset_index(drop=True)\n\n    result = result[[\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]]\n\n    return {\"dim_store_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1186,
+   "tokens_out": 3143,
+   "usd": 0.050703,
+   "wall_s": 27.82823133468628,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2959,
+  "tokens_out": 1569,
+  "usd": 0.032412,
+  "wall_s": 11.674031257629395
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

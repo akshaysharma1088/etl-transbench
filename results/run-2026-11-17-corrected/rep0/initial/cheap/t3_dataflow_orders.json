@@ -1,0 +1,17 @@
+{
+ "task": "t3_dataflow_orders",
+ "group": "cheap",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    orders = inputs[\"orders\"].copy()\n    customers = inputs[\"customers\"].copy()\n    \n    # Step 1: Filter - status == 'SHIPPED'\n    filtered = orders[orders[\"status\"] == \"SHIPPED\"].copy()\n    \n    # Step 2: Lookup - join with customers on customer_id, select region\n    # on_miss: region = 'UNKNOWN' for unmatched rows\n    looked_up = filtered.merge(\n        customers[[\"customer_id\", \"region\"]],\n        on=\"customer_id\",\n        how=\"left\"\n    )\n    # Fill missing regions with 'UNKNOWN'\n    looked_up[\"region\"] = looked_up[\"region\"].fillna(\"UNKNOWN\")\n    \n    # Step 3: Reformat - compute net_amount = qty * unit_price * (1 - discount)\n    # NULL discount treated as 0\n    looked_up[\"discount\"] = looked_up[\"discount\"].fillna(0)\n    looked_up[\"net_amount\"] = looked_up[\"qty\"] * looked_up[\"unit_price\"] * (1 - looked_up[\"discount\"])\n    \n    # Step 4: Output - select specified columns\n    result = looked_up[[\"order_id\", \"customer_id\", \"region\", \"qty\", \"unit_price\", \"net_amount\"]]\n    \n    return {\"shipped_orders_enriched\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 525,
+   "tokens_out": 369,
+   "usd": 0.00237,
+   "wall_s": 2.54093337059021,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

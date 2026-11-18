@@ -1,0 +1,17 @@
+{
+ "task": "t8c_out_of_order_late",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n\n    # Ensure correct dtypes\n    target[\"applied_event_ts\"] = pd.to_datetime(target[\"applied_event_ts\"])\n    cdc[\"event_ts\"] = pd.to_datetime(cdc[\"event_ts\"])\n\n    # Map device_id -> current watermark (applied_event_ts), may be missing for new devices\n    watermark_map = target.set_index(\"device_id\")[\"applied_event_ts\"]\n\n    # Attach watermark to each cdc event\n    cdc = cdc.copy()\n    cdc[\"_watermark\"] = cdc[\"device_id\"].map(watermark_map)\n\n    # Determine which events survive:\n    # - device not in target (watermark is NaT/missing) -> all events qualify\n    # - device in target -> event_ts > watermark strictly\n    is_new_device = cdc[\"_watermark\"].isna() & ~cdc[\"device_id\"].isin(watermark_map.index)\n    qualifies = is_new_device | (cdc[\"event_ts\"] > cdc[\"_watermark\"])\n\n    surviving = cdc[qualifies].copy()\n\n    if not surviving.empty:\n        # Sort to pick winner per device: latest (event_ts, event_seq) wins\n        surviving = surviving.sort_values(\n            by=[\"device_id\", \"event_ts\", \"event_seq\"],\n            ascending=[True, False, False]\n        )\n        winners = surviving.drop_duplicates(subset=[\"device_id\"], keep=\"first\")\n    else:\n        winners = surviving  # empty\n\n    # Build winners lookup\n    winners_map = winners.set_index(\"device_id\")[[\"reading\", \"event_ts\"]]\n\n    # Start with target snapshot devices\n    result_rows = []\n\n    target_device_ids = set(target[\"device_id\"].tolist())\n    winner_device_ids = set(winners_map.index.tolist())\n\n    all_device_ids = target_device_ids | winner_device_ids\n\n    target_indexed = target.set_index(\"device_id\")\n\n    for device_id in all_device_ids:\n        if device_id in winner_device_ids:\n            # Winner takes precedence\n            reading = winners_map.loc[device_id, \"reading\"]\n            applied_event_ts = winners_map.loc[device_id, \"event_ts\"]\n        else:\n            # No surviving event for this device; carry forward\n            reading = target_indexed.loc[device_id, \"reading\"]\n            applied_event_ts = target_indexed.loc[device_id, \"applied_event_ts\"]\n\n        result_rows.append({\n            \"device_id\": device_id,\n            \"reading\": reading,\n            \"applied_event_ts\": applied_event_ts\n        })\n\n    new_snapshot = pd.DataFrame(result_rows, columns=[\"device_id\", \"reading\", \"applied_event_ts\"])\n\n    # Enforce dtypes\n    new_snapshot[\"device_id\"] = new_snapshot[\"device_id\"].astype(\"int64\")\n    new_snapshot[\"reading\"] = new_snapshot[\"reading\"].astype(\"float64\")\n    new_snapshot[\"applied_event_ts\"] = pd.to_datetime(new_snapshot[\"applied_event_ts\"])\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 867,
+   "tokens_out": 1572,
+   "usd": 0.026181,
+   "wall_s": 14.51367449760437,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

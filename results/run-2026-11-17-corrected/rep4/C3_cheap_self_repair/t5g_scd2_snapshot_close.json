@@ -1,0 +1,53 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 4,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_store = inputs[\"dim_store\"].copy()\n    stg_store_full = inputs[\"stg_store_full\"].copy()\n    batch_control = inputs[\"batch_control\"].copy()\n    \n    # Get batch_date\n    batch_date = batch_control[\"batch_date\"].iloc[0]\n    \n    # Get distinct rows from staging\n    stg_distinct = stg_store_full.drop_duplicates(subset=[\"store_id\", \"region\", \"format\"]).copy()\n    \n    # Track which store_ids are in staging\n    staged_store_ids = set(stg_distinct[\"store_id\"].unique())\n    \n    # Start with all non-current rows from dim_store (these never change)\n    result_rows = []\n    non_current = dim_store[dim_store[\"is_current\"] == 0].copy()\n    result_rows.extend(non_current.to_dict('records'))\n    \n    # Process each distinct staged store\n    for _, stg_row in stg_distinct.iterrows():\n        stg_store_id = stg_row[\"store_id\"]\n        stg_region = stg_row[\"region\"]\n        stg_format = stg_row[\"format\"]\n        \n        # Find current row for this store_id\n        current_rows = dim_store[\n            (dim_store[\"store_id\"] == stg_store_id) & (dim_store[\"is_current\"] == 1)\n        ]\n        \n        if len(current_rows) > 0:\n            # Current row exists\n            c = current_rows.iloc[0]\n            \n            # Check if region or format differs using NULL-aware comparison\n            region_differs = _values_differ(c[\"region\"], stg_region)\n            format_differs = _values_differ(c[\"format\"], stg_format)\n            \n            if region_differs or format_differs:\n                # Close current row\n                c_copy = c.copy()\n                c_copy[\"eff_end_date\"] = batch_date\n                c_copy[\"is_current\"] = 0\n                result_rows.append(c_copy)\n                \n                # Insert new version\n                new_row = {\n                    \"store_id\": stg_store_id,\n                    \"region\": stg_region,\n                    \"format\": stg_format,\n                    \"eff_start_date\": batch_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1\n                }\n                result_rows.append(new_row)\n            else:\n                # No changes, keep current row as-is\n                result_rows.append(c.copy())\n        else:\n            # No current row: new store or reactivation\n            new_row = {\n                \"store_id\": stg_store_id,\n                \"region\": stg_region,\n                \"format\": stg_format,\n                \"eff_start_date\": batch_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1\n            }\n            result_rows.append(new_row)\n    \n    # Close current rows whose store_id is NOT in staging\n    for _, row in dim_store.iterrows():\n        if row[\"is_current\"] == 1 and row[\"store_id\"] not in staged_store_ids:\n            row_copy = row.copy()\n            row_copy[\"eff_end_date\"] = batch_date\n            row_copy[\"is_current\"] = 0\n            result_rows.append(row_copy)\n    \n    # Build result dataframe\n    if result_rows:\n        result_df = pd.DataFrame(result_rows)\n    else:\n        result_df = pd.DataFrame(columns=[\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"])\n    \n    # Ensure correct dtypes\n    if len(result_df) > 0:\n        result_df[\"store_id\"] = result_df[\"store_id\"].astype(\"int64\")\n        result_df[\"region\"] = result_df[\"region\"].astype(\"str\")\n        result_df[\"format\"] = result_df[\"format\"].astype(\"str\")\n        result_df[\"eff_start_date\"] = result_df[\"eff_start_date\"].astype(\"datetime64[us]\")\n        result_df[\"eff_end_date\"] = result_df[\"eff_end_date\"].astype(\"datetime64[us]\")\n        result_df[\"is_current\"] = result_df[\"is_current\"].astype(\"int64\")\n    \n    result_df = result_df.reset_index(drop=True)\n    \n    return {\"dim_store_out\": result_df}\n\n\ndef _values_differ(val1, val2):\n    \"\"\"\n    Compare two values with NULL-aware semantics:\n    - NULL == NULL returns False (no difference)\n    - NULL != non-NULL returns True (differs)\n    - non-NULL == non-NULL uses standard equality\n    \"\"\"\n    if pd.isna(val1) and pd.isna(val2):\n        return False\n    elif pd.isna(val1) or pd.isna(val2):\n        return True\n    else:\n        return val1 != val2\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 902,
+   "tokens_out": 1419,
+   "usd": 0.007997,
+   "wall_s": 11.08073353767395,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2434,
+  "tokens_out": 1718,
+  "usd": 0.011024,
+  "wall_s": 14.327827215194702
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

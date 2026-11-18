@@ -1,0 +1,17 @@
+{
+ "task": "t2c_locf_carry_forward",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"rate_feed\"].copy()\n\n    # Sort per cursor ORDER BY account_id, obs_date, obs_seq\n    df = df.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # Forward-fill rate within each account group (carry never crosses accounts)\n    filled = df.groupby(\"account_id\", sort=False)[\"rate\"].ffill()\n\n    rate_filled = df[\"rate\"].where(df[\"rate\"].notna(), filled)\n    was_carried = (df[\"rate\"].isna() & filled.notna()).astype(\"int64\")\n\n    out = pd.DataFrame({\n        \"account_id\": df[\"account_id\"],\n        \"obs_seq\": df[\"obs_seq\"],\n        \"obs_date\": df[\"obs_date\"],\n        \"rate_filled\": rate_filled,\n        \"was_carried\": was_carried,\n    })\n\n    return {\"rate_filled\": out}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 810,
+   "tokens_out": 586,
+   "usd": 0.01122,
+   "wall_s": 6.009390592575073,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

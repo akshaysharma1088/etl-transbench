@@ -1,0 +1,48 @@
+{
+ "config": "LEGATO",
+ "rep": 1,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim_store = inputs[\"dim_store\"].copy()\n    stg = inputs[\"stg_store_full\"].copy()\n    batch = inputs[\"batch_control\"]\n\n    b = batch[\"batch_date\"].iloc[0]\n\n    # Distinct store rows from the full snapshot (exact-duplicate rows collapse)\n    S = stg.drop_duplicates(subset=[\"store_id\", \"region\", \"format\"]).reset_index(drop=True)\n    s_store_ids = set(S[\"store_id\"].tolist())\n\n    result = dim_store.reset_index(drop=True).copy()\n\n    def differs(a, b_):\n        a_is_na = pd.isna(a)\n        b_is_na = pd.isna(b_)\n        if a_is_na and b_is_na:\n            return False\n        if a_is_na or b_is_na:\n            return True\n        return a != b_\n\n    new_rows = []\n\n    for _, row in S.iterrows():\n        sid = row[\"store_id\"]\n        region = row[\"region\"]\n        fmt = row[\"format\"]\n\n        cur_idx = result.index[\n            (result[\"store_id\"] == sid) & (result[\"is_current\"] == 1)\n        ]\n\n        if len(cur_idx) > 0:\n            ci = cur_idx[0]\n            c_region = result.at[ci, \"region\"]\n            c_format = result.at[ci, \"format\"]\n\n            if differs(c_region, region) or differs(c_format, fmt):\n                # close the old current version\n                result.at[ci, \"eff_end_date\"] = b\n                result.at[ci, \"is_current\"] = 0\n\n                # insert new current version\n                new_rows.append(\n                    {\n                        \"store_id\": sid,\n                        \"region\": region,\n                        \"format\": fmt,\n                        \"eff_start_date\": b,\n                        \"eff_end_date\": pd.NaT,\n                        \"is_current\": 1,\n                    }\n                )\n            # else: no-op, unchanged record\n        else:\n            # brand-new store OR reactivated store (no current row exists)\n            new_rows.append(\n                {\n                    \"store_id\": sid,\n                    \"region\": region,\n                    \"format\": fmt,\n                    \"eff_start_date\": b,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            )\n\n    # Close current rows whose store_id is not present in the snapshot\n    not_in_S_mask = (result[\"is_current\"] == 1) & (~result[\"store_id\"].isin(s_store_ids))\n    result.loc[not_in_S_mask, \"eff_end_date\"] = b\n    result.loc[not_in_S_mask, \"is_current\"] = 0\n\n    cols = [\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=cols)\n    else:\n        new_df = pd.DataFrame(columns=cols)\n\n    final = pd.concat([result[cols], new_df[cols]], ignore_index=True)\n\n    final[\"store_id\"] = final[\"store_id\"].astype(\"int64\")\n    final[\"is_current\"] = final[\"is_current\"].astype(\"int64\")\n    final[\"eff_start_date\"] = pd.to_datetime(final[\"eff_start_date\"])\n    final[\"eff_end_date\"] = pd.to_datetime(final[\"eff_end_date\"])\n\n    return {\"dim_store_out\": final}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1241,
+   "tokens_out": 2653,
+   "usd": 0.043518,
+   "wall_s": 21.4081814289093,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

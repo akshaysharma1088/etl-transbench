@@ -1,0 +1,48 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 3,
+ "task": "t4_multistep_sales",
+ "category": "T4",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    sales = inputs[\"sales\"].copy()\n    store_dim = inputs[\"store_dim\"].copy()\n    \n    # Step 1: CREATE STG_DAILY\n    # SELECT store_id, sale_date, SUM(amount) AS gross, COUNT(*) AS txn_cnt\n    # FROM sales WHERE amount IS NOT NULL GROUP BY store_id, sale_date;\n    stg_daily = sales[sales[\"amount\"].notna()].groupby(\n        [\"store_id\", \"sale_date\"], as_index=False\n    ).agg(\n        gross=(\"amount\", \"sum\"),\n        txn_cnt=(\"amount\", \"count\")\n    )\n    \n    # Step 2: CREATE store_daily\n    # SELECT s.store_id, s.sale_date, s.gross, s.txn_cnt, d.region\n    # FROM STG_DAILY s JOIN store_dim d ON s.store_id = d.store_id;  -- INNER\n    store_daily = stg_daily.merge(\n        store_dim,\n        on=\"store_id\",\n        how=\"inner\"\n    )\n    \n    # Step 3: CREATE region_daily\n    # SELECT region, sale_date, SUM(gross) AS region_gross,\n    #        SUM(txn_cnt) AS region_txn_cnt\n    # FROM store_daily GROUP BY region, sale_date;\n    region_daily = store_daily.groupby(\n        [\"region\", \"sale_date\"], as_index=False\n    ).agg(\n        region_gross=(\"gross\", \"sum\"),\n        region_txn_cnt=(\"txn_cnt\", \"sum\")\n    )\n    \n    return {\n        \"store_daily\": store_daily,\n        \"region_daily\": region_daily\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 484,
+   "tokens_out": 466,
+   "usd": 0.002814,
+   "wall_s": 3.566537618637085,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

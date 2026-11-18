@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 4,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _nullable_eq(a, b):\n    a_na = pd.isna(a)\n    b_na = pd.isna(b)\n    if a_na and b_na:\n        return True\n    if a_na or b_na:\n        return False\n    return a == b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_customer\"].copy()\n    stg = inputs[\"stg_customer\"].copy()\n\n    # Ensure proper dtypes for working columns\n    dim[\"eff_start_date\"] = pd.to_datetime(dim[\"eff_start_date\"])\n    dim[\"eff_end_date\"] = pd.to_datetime(dim[\"eff_end_date\"])\n    dim[\"is_current\"] = dim[\"is_current\"].astype(\"int64\")\n    dim[\"customer_id\"] = dim[\"customer_id\"].astype(\"int64\")\n\n    stg[\"update_date\"] = pd.to_datetime(stg[\"update_date\"])\n    stg[\"customer_id\"] = stg[\"customer_id\"].astype(\"int64\")\n\n    # Step 1: Deduplicate STG_CUSTOMER to the latest record per customer_id\n    # by update_date; on ties, keep the record with the greater (name, segment)\n    # pair under lexicographic comparison.\n    stg_sorted = stg.sort_values(\n        by=[\"customer_id\", \"update_date\", \"name\", \"segment\"],\n        ascending=[True, False, False, False],\n        kind=\"mergesort\",\n    )\n    stg_dedup = stg_sorted.drop_duplicates(subset=[\"customer_id\"], keep=\"first\")\n    stg_dedup = stg_dedup.sort_values(by=[\"customer_id\"], kind=\"mergesort\").reset_index(drop=True)\n\n    # Work on a mutable copy of dim rows, tracking index of current row per customer\n    dim = dim.reset_index(drop=True)\n\n    new_rows = []\n\n    for _, s in stg_dedup.iterrows():\n        cust_id = s[\"customer_id\"]\n        s_name = s[\"name\"]\n        s_segment = s[\"segment\"]\n        s_update_date = s[\"update_date\"]\n\n        mask = (dim[\"customer_id\"] == cust_id) & (dim[\"is_current\"] == 1)\n        matching_idx = dim.index[mask]\n\n        if len(matching_idx) == 0:\n            # No current row exists -> insert new\n            new_rows.append({\n                \"customer_id\": cust_id,\n                \"name\": s_name,\n                \"segment\": s_segment,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n        else:\n            idx = matching_idx[0]\n            c_name = dim.at[idx, \"name\"]\n            c_segment = dim.at[idx, \"segment\"]\n\n            name_changed = not _nullable_eq(c_name, s_name)\n            segment_changed = not _nullable_eq(c_segment, s_segment)\n\n            if name_changed or segment_changed:\n                # Expire current row\n                dim.at[idx, \"eff_end_date\"] = s_update_date\n                dim.at[idx, \"is_current\"] = 0\n\n                # Insert new version\n                new_rows.append({\n                    \"customer_id\": cust_id,\n                    \"name\": s_name,\n                    \"segment\": s_segment,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            # else: no change, do nothing\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=[\n            \"customer_id\", \"name\", \"segment\", \"eff_start_date\", \"eff_end_date\", \"is_current\"\n        ])\n        new_df[\"customer_id\"] = new_df[\"customer_id\"].astype(\"int64\")\n        new_df[\"eff_start_date\"] = pd.to_datetime(new_df[\"eff_start_date\"])\n        new_df[\"eff_end_date\"] = pd.to_datetime(new_df[\"eff_end_date\"])\n        new_df[\"is_current\"] = new_df[\"is_current\"].astype(\"int64\")\n\n        result = pd.concat([dim, new_df], ignore_index=True)\n    else:\n        result = dim.copy()\n\n    result = result[[\"customer_id\", \"name\", \"segment\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]]\n    result[\"customer_id\"] = result[\"customer_id\"].astype(\"int64\")\n    result[\"is_current\"] = result[\"is_current\"].astype(\"int64\")\n    result[\"eff_start_date\"] = pd.to_datetime(result[\"eff_start_date\"])\n    result[\"eff_end_date\"] = pd.to_datetime(result[\"eff_end_date\"])\n\n    return {\"dim_customer_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1099,
+   "tokens_out": 2630,
+   "usd": 0.042747,
+   "wall_s": 23.09981060028076,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

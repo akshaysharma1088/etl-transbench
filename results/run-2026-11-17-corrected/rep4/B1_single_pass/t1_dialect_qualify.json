@@ -1,0 +1,48 @@
+{
+ "config": "B1_single_pass",
+ "rep": 4,
+ "task": "t1_dialect_qualify",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Teradata-style QUALIFY filter: latest high-value transaction per account.\n    \n    Semantics:\n    1. Filter WHERE amount > 100\n    2. Add window function ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC)\n    3. QUALIFY filters to keep only rows where ROW_NUMBER() = 1 (latest per account)\n    4. Add CASE-based size_band column\n    5. Return specified columns\n    \"\"\"\n    acct_txn = inputs[\"acct_txn\"].copy()\n    \n    # Step 1: WHERE clause filter\n    filtered = acct_txn[acct_txn[\"amount\"] > 100].copy()\n    \n    # Step 2: Compute window function ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC)\n    # In Teradata, NULL values sort last in DESC order. Pandas by default puts NaN last in DESC.\n    # We need to handle the ordering carefully.\n    filtered[\"row_num\"] = filtered.groupby(\n        \"account_id\",\n        sort=False\n    ).cumcount(ascending=False) + 1\n    \n    # Actually, we need proper ordering. Let's use rank with the right sort order.\n    # ROW_NUMBER with DESC ordering on txn_ts, then DESC on txn_id\n    filtered = filtered.sort_values(\n        by=[\"account_id\", \"txn_ts\", \"txn_id\"],\n        ascending=[True, False, False],\n        na_position=\"last\"\n    )\n    \n    filtered[\"row_num\"] = filtered.groupby(\n        \"account_id\",\n        sort=False\n    ).cumcount() + 1\n    \n    # Step 3: QUALIFY - keep only rows where row_num = 1\n    qualified = filtered[filtered[\"row_num\"] == 1].copy()\n    \n    # Step 4: Compute size_band\n    qualified[\"size_band\"] = qualified[\"amount\"].apply(\n        lambda x: (\n            \"JUMBO\" if x >= 1000\n            else \"LARGE\" if x >= 500\n            else \"STANDARD\"\n        )\n    )\n    \n    # Step 5: Select and order output columns\n    result = qualified[[\n        \"account_id\",\n        \"txn_id\",\n        \"txn_ts\",\n        \"amount\",\n        \"channel\",\n        \"size_band\"\n    ]].reset_index(drop=True)\n    \n    return {\"latest_high_value_txn\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 432,
+   "tokens_out": 667,
+   "usd": 0.003767,
+   "wall_s": 6.123180150985718,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

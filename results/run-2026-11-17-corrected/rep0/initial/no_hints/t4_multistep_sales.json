@@ -1,0 +1,17 @@
+{
+ "task": "t4_multistep_sales",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    sales = inputs[\"sales\"].copy()\n    store_dim = inputs[\"store_dim\"].copy()\n    \n    # Step 1: Create STG_DAILY\n    # SELECT store_id, sale_date, SUM(amount) AS gross, COUNT(*) AS txn_cnt\n    # FROM sales WHERE amount IS NOT NULL GROUP BY store_id, sale_date;\n    sales_filtered = sales[sales[\"amount\"].notna()]\n    stg_daily = sales_filtered.groupby([\"store_id\", \"sale_date\"], as_index=False).agg(\n        gross=(\"amount\", \"sum\"),\n        txn_cnt=(\"amount\", \"count\")\n    )\n    \n    # Step 2: Create store_daily\n    # SELECT s.store_id, s.sale_date, s.gross, s.txn_cnt, d.region\n    # FROM STG_DAILY s JOIN store_dim d ON s.store_id = d.store_id;  -- INNER\n    store_daily = stg_daily.merge(store_dim, on=\"store_id\", how=\"inner\")\n    \n    # Step 3: Create region_daily\n    # SELECT region, sale_date, SUM(gross) AS region_gross,\n    #        SUM(txn_cnt) AS region_txn_cnt\n    # FROM store_daily GROUP BY region, sale_date;\n    region_daily = store_daily.groupby([\"region\", \"sale_date\"], as_index=False).agg(\n        region_gross=(\"gross\", \"sum\"),\n        region_txn_cnt=(\"txn_cnt\", \"sum\")\n    )\n    \n    return {\n        \"store_daily\": store_daily,\n        \"region_daily\": region_daily\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 484,
+   "tokens_out": 458,
+   "usd": 0.002774,
+   "wall_s": 3.711115837097168,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

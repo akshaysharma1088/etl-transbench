@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(\n        by=[\"user_id\", \"event_ts\", \"event_id\"],\n        ascending=[True, True, True]\n    ).reset_index(drop=True)\n    \n    # Extract the local date (calendar date) from event_ts\n    events[\"event_date\"] = events[\"event_ts\"].dt.date\n    \n    # Initialize session tracking columns\n    events[\"session_num\"] = 0\n    session_num = 0\n    \n    # Iterate through events and assign session numbers\n    for i in range(len(events)):\n        if i == 0:\n            session_num = 1\n            events.at[i, \"session_num\"] = session_num\n        else:\n            prev_user = events.at[i - 1, \"user_id\"]\n            curr_user = events.at[i, \"user_id\"]\n            \n            # Same user - check for gap or date change\n            if curr_user == prev_user:\n                prev_ts = events.at[i - 1, \"event_ts\"]\n                curr_ts = events.at[i, \"event_ts\"]\n                prev_date = events.at[i - 1, \"event_date\"]\n                curr_date = events.at[i, \"event_date\"]\n                \n                # Check if dates are different (forced split at midnight)\n                if curr_date != prev_date:\n                    session_num += 1\n                else:\n                    # Same date - check gap in minutes\n                    gap_minutes = (curr_ts - prev_ts).total_seconds() / 60.0\n                    if gap_minutes > 45:\n                        session_num += 1\n                \n                events.at[i, \"session_num\"] = session_num\n            else:\n                # Different user - new session\n                session_num = 1\n                events.at[i, \"session_num\"] = session_num\n    \n    # Group by user_id and session_num to create user_sessions\n    user_sessions_list = []\n    \n    for (user_id, sess_num), group in events.groupby([\"user_id\", \"session_num\"]):\n        session_date = group[\"event_date\"].iloc[0]\n        session_start = group[\"event_ts\"].min()\n        session_end = group[\"event_ts\"].max()\n        event_count = len(group)\n        \n        user_sessions_list.append({\n            \"user_id\": user_id,\n            \"session_num\": sess_num,\n            \"session_date\": session_date,\n            \"session_start\": session_start,\n            \"session_end\": session_end,\n            \"event_count\": event_count\n        })\n    \n    user_sessions = pd.DataFrame(user_sessions_list)\n    \n    # Ensure correct data types\n    if len(user_sessions) > 0:\n        user_sessions[\"user_id\"] = user_sessions[\"user_id\"].astype(\"int64\")\n        user_sessions[\"session_num\"] = user_sessions[\"session_num\"].astype(\"int64\")\n        user_sessions[\"session_date\"] = pd.to_datetime(user_sessions[\"session_date\"]).dt.date\n        user_sessions[\"session_start\"] = pd.to_datetime(user_sessions[\"session_start\"])\n        user_sessions[\"session_end\"] = pd.to_datetime(user_sessions[\"session_end\"])\n        user_sessions[\"event_count\"] = user_sessions[\"event_count\"].astype(\"int64\")\n    else:\n        user_sessions[\"user_id\"] = user_sessions[\"user_id\"].astype(\"int64\")\n        user_sessions[\"session_num\"] = user_sessions[\"session_num\"].astype(\"int64\")\n        user_sessions[\"session_start\"] = pd.to_datetime(user_sessions[\"session_start\"])\n        user_sessions[\"session_end\"] = pd.to_datetime(user_sessions[\"session_end\"])\n        user_sessions[\"event_count\"] = user_sessions[\"event_count\"].astype(\"int64\")\n    \n    return {\"user_sessions\": user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 1064,
+   "usd": 0.0057,
+   "wall_s": 8.351144552230835,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

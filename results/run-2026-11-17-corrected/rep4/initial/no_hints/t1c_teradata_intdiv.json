@@ -1,0 +1,17 @@
+{
+ "task": "t1c_teradata_intdiv",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Reproduces Teradata legacy SQL semantics for integer division with ZEROIFNULL\n    and truncation toward zero.\n    \"\"\"\n    df = inputs[\"acct_balance\"].copy()\n    \n    # Filter: WHERE acct_type <> 'CLOSED'\n    df = df[df[\"acct_type\"] != \"CLOSED\"]\n    \n    # ZEROIFNULL(balance_cents) / 100 AS balance_bucket\n    # ZEROIFNULL: NULL -> 0, otherwise keep value\n    balance_cents_filled = df[\"balance_cents\"].fillna(0.0)\n    \n    # Integer division truncating toward zero (Teradata semantics)\n    # Python's // floors toward negative infinity, so we need to use np.trunc\n    balance_bucket = np.trunc(balance_cents_filled / 100.0)\n    \n    # CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER)\n    # This performs: (balance_cents_filled * fx_rate) / 100, then truncates toward zero\n    fx_units = np.trunc(balance_cents_filled * df[\"fx_rate\"] / 100.0)\n    \n    # Build result DataFrame\n    result = pd.DataFrame({\n        \"account_id\": df[\"account_id\"],\n        \"balance_bucket\": balance_bucket.astype(\"int64\"),\n        \"fx_units\": fx_units.astype(\"int64\")\n    })\n    \n    return {\"balance_buckets\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 398,
+   "tokens_out": 413,
+   "usd": 0.002463,
+   "wall_s": 4.041379928588867,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

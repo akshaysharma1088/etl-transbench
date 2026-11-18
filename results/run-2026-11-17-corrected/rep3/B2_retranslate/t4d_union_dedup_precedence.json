@@ -1,0 +1,53 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t4d_union_dedup_precedence",
+ "category": "T4",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    crm = inputs[\"crm_feed\"].copy()\n    web = inputs[\"web_feed\"].copy()\n\n    crm[\"src_rank\"] = 1\n    web[\"src_rank\"] = 2\n\n    combined = pd.concat([crm, web], ignore_index=True)\n\n    combined = combined.sort_values(\n        by=[\"customer_id\", \"src_rank\", \"updated_at\", \"email\"],\n        ascending=[True, True, False, True],\n        kind=\"mergesort\"\n    )\n\n    golden = combined.groupby(\"customer_id\", as_index=False, sort=False).first()\n\n    golden = golden[[\"customer_id\", \"email\", \"updated_at\"]]\n\n    return {\"golden\": golden}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 494,
+   "tokens_out": 453,
+   "usd": 0.002759,
+   "wall_s": 4.1133317947387695,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 748,
+  "tokens_out": 289,
+  "usd": 0.006579,
+  "wall_s": 2.6821985244750977
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

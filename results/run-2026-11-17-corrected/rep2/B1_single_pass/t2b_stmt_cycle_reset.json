@@ -1,0 +1,48 @@
+{
+ "config": "B1_single_pass",
+ "rep": 2,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    df = inputs[\"ledger\"].copy()\n\n    # Order exactly as the legacy cursor: ORDER BY account_id, entry_date, row_seq\n    df = df.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # Coalesce amount to 0 for accumulation purposes\n    amt_filled = df[\"amount\"].fillna(0.0)\n\n    # Flag STMT rows; cycle increments happen BEFORE the amount is added,\n    # so cycle_no = 1 (initial) + cumulative count of STMT rows up to and\n    # including the current row, within each account.\n    is_stmt = (df[\"entry_type\"] == \"STMT\").astype(int)\n    cycle_no = is_stmt.groupby(df[\"account_id\"]).cumsum() + 1\n\n    df[\"cycle_no\"] = cycle_no.astype(\"int64\")\n    df[\"_amt_filled\"] = amt_filled\n\n    # Within each (account_id, cycle_no) group, balance is a running sum\n    # starting fresh at 0 whenever the cycle changes (account change or\n    # STMT reset), matching the cursor's reset-before-add behavior.\n    df[\"cycle_balance\"] = df.groupby([\"account_id\", \"cycle_no\"])[\"_amt_filled\"].cumsum()\n\n    result = df[\n        [\n            \"account_id\",\n            \"row_seq\",\n            \"entry_date\",\n            \"entry_type\",\n            \"amount\",\n            \"cycle_no\",\n            \"cycle_balance\",\n        ]\n    ].reset_index(drop=True)\n\n    return {\"cycle_balances\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 830,
+   "tokens_out": 2208,
+   "usd": 0.03561,
+   "wall_s": 20.629452228546143,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

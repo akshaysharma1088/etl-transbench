@@ -1,0 +1,17 @@
+{
+ "task": "t3c_router_first_match",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    claims = inputs[\"claims\"].copy()\n    \n    # Initialize output DataFrames\n    fast_track = pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    high_value = pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    manual_review = pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    standard = pd.DataFrame(columns=[\"claim_id\", \"amount\", \"photos_attached\"])\n    \n    # Track which rows have been matched\n    matched = pd.Series([False] * len(claims), index=claims.index)\n    \n    # Rule 1: amount <= 500 and photos_attached == 1\n    rule1_mask = (claims[\"amount\"] <= 500) & (claims[\"photos_attached\"] == 1) & ~matched\n    fast_track = pd.concat([fast_track, claims[rule1_mask][[\"claim_id\", \"amount\", \"photos_attached\"]]], ignore_index=False)\n    matched = matched | rule1_mask\n    \n    # Rule 2: amount > 10000\n    rule2_mask = (claims[\"amount\"] > 10000) & ~matched\n    high_value = pd.concat([high_value, claims[rule2_mask][[\"claim_id\", \"amount\", \"photos_attached\"]]], ignore_index=False)\n    matched = matched | rule2_mask\n    \n    # Rule 3: photos_attached == 0 or amount > 500\n    rule3_mask = ((claims[\"photos_attached\"] == 0) | (claims[\"amount\"] > 500)) & ~matched\n    manual_review = pd.concat([manual_review, claims[rule3_mask][[\"claim_id\", \"amount\", \"photos_attached\"]]], ignore_index=False)\n    matched = matched | rule3_mask\n    \n    # Default port: unmatched rows go to standard\n    default_mask = ~matched\n    standard = pd.concat([standard, claims[default_mask][[\"claim_id\", \"amount\", \"photos_attached\"]]], ignore_index=False)\n    \n    # Reset indices for output\n    fast_track = fast_track.reset_index(drop=True)\n    high_value = high_value.reset_index(drop=True)\n    manual_review = manual_review.reset_index(drop=True)\n    standard = standard.reset_index(drop=True)\n    \n    return {\n        \"claims_fast_track\": fast_track,\n        \"claims_high_value\": high_value,\n        \"claims_manual_review\": manual_review\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 593,
+   "tokens_out": 659,
+   "usd": 0.003888,
+   "wall_s": 5.181224822998047,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

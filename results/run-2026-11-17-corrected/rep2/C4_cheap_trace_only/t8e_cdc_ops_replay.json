@@ -1,0 +1,68 @@
+{
+ "config": "C4_cheap_trace_only",
+ "rep": 2,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_state = inputs[\"target_state\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    \n    # Ensure proper types\n    target_state[\"order_id\"] = target_state[\"order_id\"].astype(\"int64\")\n    target_state[\"last_seq\"] = target_state[\"last_seq\"].astype(\"int64\")\n    cdc_events[\"seq\"] = cdc_events[\"seq\"].astype(\"int64\")\n    cdc_events[\"order_id\"] = cdc_events[\"order_id\"].astype(\"int64\")\n    \n    # Step 1: Remove duplicate events (keep first occurrence of each seq)\n    cdc_events = cdc_events.drop_duplicates(subset=[\"seq\"], keep=\"first\").reset_index(drop=True)\n    \n    # Step 2: Apply replay guard - filter events where seq > last_seq for existing orders\n    # Create a dict of order_id -> last_seq from target_state for quick lookup\n    last_seq_map = dict(zip(target_state[\"order_id\"], target_state[\"last_seq\"]))\n    \n    # Mark events to keep: either order not in target_state, or seq > last_seq\n    def should_apply(row):\n        order_id = row[\"order_id\"]\n        seq = row[\"seq\"]\n        if order_id not in last_seq_map:\n            return True\n        return seq > last_seq_map[order_id]\n    \n    cdc_events[\"should_apply\"] = cdc_events.apply(should_apply, axis=1)\n    cdc_events = cdc_events[cdc_events[\"should_apply\"]].drop(columns=[\"should_apply\"]).reset_index(drop=True)\n    \n    # Step 3: Sort events by seq (order of application)\n    cdc_events = cdc_events.sort_values(\"seq\").reset_index(drop=True)\n    \n    # Step 4: Apply events in order\n    # Build a working state dict: order_id -> {status, amount, last_seq, had_row, last_op}\n    state = {}\n    \n    for _, row in target_state.iterrows():\n        order_id = row[\"order_id\"]\n        state[order_id] = {\n            \"status\": row[\"status\"],\n            \"amount\": row[\"amount\"],\n            \"last_seq\": row[\"last_seq\"],\n            \"had_row\": True,\n            \"last_op\": None\n        }\n    \n    # Apply each event in seq order\n    for _, row in cdc_events.iterrows():\n        order_id = row[\"order_id\"]\n        seq = row[\"seq\"]\n        op = row[\"op\"]\n        status = row[\"status\"]\n        amount = row[\"amount\"]\n        \n        if order_id not in state:\n            state[order_id] = {\n                \"status\": None,\n                \"amount\": None,\n                \"last_seq\": None,\n                \"had_row\": False,\n                \"last_op\": None\n            }\n        \n        if op == \"I\":\n            # Insert or update\n            state[order_id][\"status\"] = status\n            state[order_id][\"amount\"] = amount\n            state[order_id][\"last_seq\"] = seq\n            state[order_id][\"had_row\"] = True\n            state[order_id][\"last_op\"] = \"I\"\n            \n        elif op == \"U\":\n            # Update or create\n            state[order_id][\"status\"] = status\n            # Only update amount if it's not NULL; otherwise keep existing\n            if pd.notna(amount):\n                state[order_id][\"amount\"] = amount\n            # If this is the first operation on this order (no row), set amount from event\n            elif state[order_id][\"last_seq\"] is None:\n                state[order_id][\"amount\"] = amount\n            state[order_id][\"last_seq\"] = seq\n            state[order_id][\"had_row\"] = True\n            state[order_id][\"last_op\"] = \"U\"\n            \n        elif op == \"D\":\n            # Delete\n            state[order_id][\"status\"] = None\n            state[order_id][\"amount\"] = None\n            state[order_id][\"last_seq\"] = seq\n            state[order_id][\"had_row\"] = True\n            state[order_id][\"last_op\"] = \"D\"\n    \n    # Step 5: Build new_state (only include orders that have a row now)\n    new_state_rows = []\n    for order_id, s in state.items():\n        if s[\"last_op\"] != \"D\" and s[\"last_op\"] is not None:\n            new_state_rows.append({\n                \"order_id\": order_id,\n                \"status\": s[\"status\"],\n                \"amount\": s[\"amount\"],\n                \"last_seq\": s[\"last_seq\"]\n            })\n        elif s[\"last_op\"] != \"D\" and s[\"last_op\"] is None:\n            # Order was in target_state but no events applied (carry forward)\n            new_state_rows.append({\n                \"order_id\": order_id,\n                \"status\": s[\"status\"],\n                \"amount\": s[\"amount\"],\n                \"last_seq\": s[\"last_seq\"]\n            })\n    \n    if new_state_rows:\n        new_state_df = pd.DataFrame(new_state_rows)\n    else:\n        new_state_df = pd.DataFrame(columns=[\"order_id\", \"status\", \"amount\", \"last_seq\"])\n    \n    new_state_df[\"order_id\"] = new_state_df[\"order_id\"].astype(\"int64\")\n    new_state_df[\"last_seq\"] = new_state_df[\"last_seq\"].astype(\"int64\")\n    new_state_df = new_state_df.sort_values(\"order_id\").reset_index(drop=True)\n    \n    # Step 6: Build tombstones (orders that had a row and whose last op is 'D')\n    tombstone_rows = []\n    for order_id, s in state.items():\n        if s[\"had_row\"] and s[\"last_op\"] == \"D\":\n            tombstone_rows.append({\n                \"order_id\": order_id,\n                \"deleted_seq\": s[\"last_seq\"]\n            })\n    \n    if tombstone_rows:\n        tombstones_df = pd.DataFrame(tombstone_rows)\n    else:\n        tombstones_df = pd.DataFrame(columns=[\"order_id\", \"deleted_seq\"])\n    \n    tombstones_df[\"order_id\"] = tombstones_df[\"order_id\"].astype(\"int64\")\n    tombstones_df[\"deleted_seq\"] = tombstones_df[\"deleted_seq\"].astype(\"int64\")\n    tombstones_df = tombstones_df.sort_values(\"order_id\").reset_index(drop=True)\n    \n    return {\n        \"new_state\": new_state_df,\n        \"tombstones\": tombstones_df\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 948,
+   "tokens_out": 1523,
+   "usd": 0.008563,
+   "wall_s": 9.000327825546265,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6964,
+  "tokens_out": 7183,
+  "usd": 0.04287900000000001,
+  "wall_s": 50.97663903236389
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

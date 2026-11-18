@@ -1,0 +1,53 @@
+{
+ "config": "A2_no_hints",
+ "rep": 4,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n\n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(by=[\"user_id\", \"event_ts\", \"event_id\"]).reset_index(drop=True)\n\n    # Extract date (calendar date in server local time)\n    events[\"event_date\"] = events[\"event_ts\"].dt.date\n\n    prev_user = None\n    prev_ts = None\n    prev_date = None\n\n    session_num = 0\n    session_assignments = []\n\n    for idx, row in events.iterrows():\n        current_user = row[\"user_id\"]\n        current_ts = row[\"event_ts\"]\n        current_date = row[\"event_date\"]\n\n        if prev_user is None or current_user != prev_user:\n            # New user always starts session numbering at 1\n            session_num = 1\n        else:\n            time_gap = (current_ts - prev_ts).total_seconds() / 60.0\n            date_changed = current_date != prev_date\n\n            if time_gap > 45 or date_changed:\n                session_num += 1\n\n        session_assignments.append(session_num)\n        prev_user = current_user\n        prev_ts = current_ts\n        prev_date = current_date\n\n    events[\"session_num\"] = session_assignments\n\n    grouped = events.groupby([\"user_id\", \"session_num\"], as_index=False).agg(\n        session_date=(\"event_date\", \"first\"),\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    )\n\n    user_sessions = grouped[[\"user_id\", \"session_num\", \"session_date\", \"session_start\", \"session_end\", \"event_count\"]]\n\n    return {\"user_sessions\": user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 622,
+   "usd": 0.00349,
+   "wall_s": 5.412585735321045,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1972,
+  "tokens_out": 752,
+  "usd": 0.017196,
+  "wall_s": 6.258552074432373
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

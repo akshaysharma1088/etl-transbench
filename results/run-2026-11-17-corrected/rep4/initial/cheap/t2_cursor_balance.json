@@ -1,0 +1,17 @@
+{
+ "task": "t2_cursor_balance",
+ "group": "cheap",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    transactions = inputs[\"transactions\"].copy()\n    \n    # Sort by account_id, txn_date, txn_seq to match cursor order\n    transactions = transactions.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Handle NULL amounts as 0 for balance calculation\n    transactions[\"amount_coalesced\"] = transactions[\"amount\"].fillna(0.0)\n    \n    # Compute running balance per account\n    # Group by account_id and compute cumulative sum within each group\n    transactions[\"running_balance\"] = transactions.groupby(\"account_id\")[\"amount_coalesced\"].cumsum()\n    \n    # Compute overdraft flag: 1 if running_balance < 0, else 0\n    transactions[\"overdraft_flag\"] = (transactions[\"running_balance\"] < 0).astype(\"int16\")\n    \n    # Select output columns in the expected order\n    result = transactions[[\n        \"account_id\",\n        \"txn_seq\",\n        \"txn_date\",\n        \"amount\",\n        \"running_balance\",\n        \"overdraft_flag\"\n    ]].copy()\n    \n    return {\"acct_balance_flags\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 520,
+   "tokens_out": 345,
+   "usd": 0.002245,
+   "wall_s": 3.2476987838745117,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

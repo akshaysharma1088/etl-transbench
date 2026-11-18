@@ -1,0 +1,48 @@
+{
+ "config": "B3_self_repair",
+ "rep": 1,
+ "task": "t3e_effective_lookup_route",
+ "category": "T3",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _normalize_sku(s):\n    if pd.isna(s):\n        return None\n    return str(s).strip().upper()\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    price_list = inputs[\"price_list\"].copy()\n\n    # --- src -> exp: derive sku_norm ---\n    orders[\"sku_norm\"] = orders[\"sku\"].apply(_normalize_sku)\n\n    # prepare price_list with normalized sku for matching\n    price_list = price_list.copy()\n    price_list[\"sku_norm\"] = price_list[\"sku\"].apply(_normalize_sku)\n\n    # --- lkp: effective-dated lookup with tie-break ---\n    def do_lookup(row):\n        sku_norm = row[\"sku_norm\"]\n        order_date = row[\"order_date\"]\n\n        if sku_norm is None or pd.isna(sku_norm):\n            return pd.Series({\"unit_price\": 0.0, \"price_flag\": \"NO_PRICE\"})\n\n        if pd.isna(order_date):\n            candidates = price_list[\n                (price_list[\"sku_norm\"] == sku_norm)\n                & price_list[\"valid_from\"].notna()\n                & False  # order_date NaT -> no valid_from <= NaT comparison holds\n            ]\n        else:\n            candidates = price_list[\n                (price_list[\"sku_norm\"] == sku_norm)\n                & (price_list[\"valid_from\"] <= order_date)\n            ]\n\n        if candidates.empty:\n            return pd.Series({\"unit_price\": 0.0, \"price_flag\": \"NO_PRICE\"})\n\n        max_date = candidates[\"valid_from\"].max()\n        candidates2 = candidates[candidates[\"valid_from\"] == max_date]\n        min_list_id = candidates2[\"list_id\"].min()\n        best_rows = candidates2[candidates2[\"list_id\"] == min_list_id]\n        best = best_rows.iloc[0]\n\n        return pd.Series({\"unit_price\": float(best[\"unit_price\"]), \"price_flag\": \"OK\"})\n\n    lookup_results = orders.apply(do_lookup, axis=1)\n    orders = pd.concat([orders, lookup_results], axis=1)\n\n    # --- ext: ext_amount = qty * unit_price (NULL qty -> NULL ext_amount) ---\n    def compute_ext(row):\n        qty = row[\"qty\"]\n        unit_price = row[\"unit_price\"]\n        if pd.isna(qty):\n            return np.nan\n        return qty * unit_price\n\n    orders[\"ext_amount\"] = orders.apply(compute_ext, axis=1)\n\n    # --- router: first matching rule wins, NULL predicate not true ---\n    def route_fn(row):\n        price_flag = row[\"price_flag\"]\n        qty = row[\"qty\"]\n        ext_amount = row[\"ext_amount\"]\n\n        # REVIEW: price_flag == 'NO_PRICE' or qty is NULL or qty >= 100\n        cond_review = False\n        if price_flag == \"NO_PRICE\":\n            cond_review = True\n        elif pd.isna(qty):\n            cond_review = True\n        else:\n            if qty >= 100:\n                cond_review = True\n\n        if cond_review:\n            return \"REVIEW\"\n\n        # BULK: ext_amount >= 1000 (NULL predicate -> not true)\n        if not pd.isna(ext_amount) and ext_amount >= 1000:\n            return \"BULK\"\n\n        # SMALL: ext_amount < 50 (NULL predicate -> not true)\n        if not pd.isna(ext_amount) and ext_amount < 50:\n            return \"SMALL\"\n\n        return \"STANDARD\"\n\n    orders[\"route\"] = orders.apply(route_fn, axis=1)\n\n    # --- out1: order_enriched ---\n    order_enriched = orders[[\"order_id\", \"sku_norm\", \"unit_price\", \"route\"]].copy()\n\n    # --- agg: group by route, order_date ---\n    grouped = orders.groupby([\"route\", \"order_date\"], dropna=False).agg(\n        order_count=(\"order_id\", \"count\"),\n        total_ext=(\"ext_amount\", \"sum\"),\n    ).reset_index()\n\n    # Ensure sum of all-NaN group is 0 (pandas default sum behavior already gives 0.0)\n    grouped[\"total_ext\"] = grouped[\"total_ext\"].fillna(0.0)\n\n    route_daily = grouped[[\"route\", \"order_date\", \"order_count\", \"total_ext\"]].copy()\n\n    return {\n        \"order_enriched\": order_enriched,\n        \"route_daily\": route_daily,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1518,
+   "tokens_out": 3195,
+   "usd": 0.052479,
+   "wall_s": 26.76988124847412,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

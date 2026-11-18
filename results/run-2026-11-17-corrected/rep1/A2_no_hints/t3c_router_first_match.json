@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t3c_router_first_match",
+ "category": "T3",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Router component that directs claims to different outputs based on ordered rules.\n    Rules are evaluated IN ORDER; a row goes to the FIRST matching port only.\n    Unmatched rows go to the default port.\n    \"\"\"\n    claims = inputs[\"claims\"].copy()\n    \n    # Initialize output dictionaries to store rows for each port\n    fast_track_rows = []\n    high_value_rows = []\n    manual_review_rows = []\n    standard_rows = []\n    \n    # Track which rows have been matched\n    matched = set()\n    \n    for idx, row in claims.iterrows():\n        amount = row[\"amount\"]\n        photos_attached = row[\"photos_attached\"]\n        \n        # Rule 1: amount <= 500 and photos_attached == 1\n        if idx not in matched:\n            if amount <= 500 and photos_attached == 1:\n                fast_track_rows.append(row)\n                matched.add(idx)\n                continue\n        \n        # Rule 2: amount > 10000\n        if idx not in matched:\n            if amount > 10000:\n                high_value_rows.append(row)\n                matched.add(idx)\n                continue\n        \n        # Rule 3: photos_attached == 0 or amount > 500\n        if idx not in matched:\n            if photos_attached == 0 or amount > 500:\n                manual_review_rows.append(row)\n                matched.add(idx)\n                continue\n        \n        # Default: standard (unmatched rows)\n        if idx not in matched:\n            standard_rows.append(row)\n            matched.add(idx)\n    \n    # Create output DataFrames with specified columns\n    output_columns = [\"claim_id\", \"amount\", \"photos_attached\"]\n    \n    if fast_track_rows:\n        claims_fast_track = pd.DataFrame(fast_track_rows)[output_columns].reset_index(drop=True)\n    else:\n        claims_fast_track = pd.DataFrame(columns=output_columns)\n    \n    if high_value_rows:\n        claims_high_value = pd.DataFrame(high_value_rows)[output_columns].reset_index(drop=True)\n    else:\n        claims_high_value = pd.DataFrame(columns=output_columns)\n    \n    if manual_review_rows:\n        claims_manual_review = pd.DataFrame(manual_review_rows)[output_columns].reset_index(drop=True)\n    else:\n        claims_manual_review = pd.DataFrame(columns=output_columns)\n    \n    return {\n        \"claims_fast_track\": claims_fast_track,\n        \"claims_high_value\": claims_high_value,\n        \"claims_manual_review\": claims_manual_review\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 593,
+   "tokens_out": 703,
+   "usd": 0.004108,
+   "wall_s": 5.4436936378479,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

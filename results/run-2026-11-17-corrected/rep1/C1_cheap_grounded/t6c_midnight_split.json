@@ -1,0 +1,53 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 1,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Sessionize events with gap rule (>45 min) PLUS forced midnight split.\n    Sessions never cross calendar dates (server local time).\n    Per-user session numbering.\n    \"\"\"\n    events = inputs[\"events\"].copy()\n    \n    # Handle empty input\n    if events.empty:\n        user_sessions = pd.DataFrame(columns=[\n            'user_id', 'session_num', 'session_date', \n            'session_start', 'session_end', 'event_count'\n        ])\n        return {'user_sessions': user_sessions}\n    \n    # Ensure proper types\n    events['user_id'] = events['user_id'].astype('int64')\n    events['event_id'] = events['event_id'].astype('int64')\n    events['event_ts'] = pd.to_datetime(events['event_ts'], utc=False)\n    \n    # Sort by user_id, event_ts, event_id\n    events = events.sort_values(by=['user_id', 'event_ts', 'event_id']).reset_index(drop=True)\n    \n    # Extract date (calendar date, server local)\n    events['event_date'] = events['event_ts'].dt.date\n    \n    # Initialize session column\n    events['session_num'] = np.nan\n    \n    # Track per-user session counters\n    user_session_counters = {}\n    \n    prev_state = {}  # Maps user_id -> {'ts': prev_ts, 'date': prev_date}\n    \n    for idx in events.index:\n        user_id = events.loc[idx, 'user_id']\n        event_ts = events.loc[idx, 'event_ts']\n        event_date = events.loc[idx, 'event_date']\n        \n        # Initialize session counter for this user if first time\n        if user_id not in user_session_counters:\n            user_session_counters[user_id] = 0\n        \n        # Check if we start a new session\n        if user_id not in prev_state:\n            # First event for this user: start session 1\n            user_session_counters[user_id] += 1\n            prev_state[user_id] = {'ts': event_ts, 'date': event_date}\n        else:\n            # Same user: check gap and date change\n            prev_ts = prev_state[user_id]['ts']\n            prev_date = prev_state[user_id]['date']\n            \n            time_gap = (event_ts - prev_ts).total_seconds() / 60  # gap in minutes\n            date_changed = (event_date != prev_date)\n            \n            if time_gap > 45 or date_changed:\n                # Start new session for this user\n                user_session_counters[user_id] += 1\n            \n            prev_state[user_id] = {'ts': event_ts, 'date': event_date}\n        \n        events.loc[idx, 'session_num'] = user_session_counters[user_id]\n    \n    # Build user_sessions output\n    sessions_data = []\n    \n    for (user_id, session_num), group in events.groupby(['user_id', 'session_num'], sort=False):\n        group_sorted = group.sort_values('event_ts')\n        \n        session_date = group_sorted['event_date'].iloc[0]\n        session_start = group_sorted['event_ts'].min()\n        session_end = group_sorted['event_ts'].max()\n        event_count = len(group)\n        \n        sessions_data.append({\n            'user_id': user_id,\n            'session_num': int(session_num),\n            'session_date': session_date,\n            'session_start': session_start,\n            'session_end': session_end,\n            'event_count': event_count\n        })\n    \n    user_sessions = pd.DataFrame(sessions_data)\n    \n    # Ensure correct column order and types\n    if not user_sessions.empty:\n        user_sessions = user_sessions[['user_id', 'session_num', 'session_date', \n                                       'session_start', 'session_end', 'event_count']]\n        user_sessions['user_id'] = user_sessions['user_id'].astype('int64')\n        user_sessions['session_num'] = user_sessions['session_num'].astype('int64')\n        user_sessions['event_count'] = user_sessions['event_count'].astype('int64')\n    else:\n        user_sessions = pd.DataFrame(columns=[\n            'user_id', 'session_num', 'session_date', \n            'session_start', 'session_end', 'event_count'\n        ])\n    \n    return {'user_sessions': user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 1091,
+   "usd": 0.005835,
+   "wall_s": 8.985513687133789,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1940,
+  "tokens_out": 1532,
+  "usd": 0.0096,
+  "wall_s": 10.599946737289429
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

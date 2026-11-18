@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t3_dataflow_orders",
+ "category": "T3",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    # Step 1: Source - orders\n    orders = inputs[\"orders\"].copy()\n    \n    # Step 2: Filter - status == 'SHIPPED'\n    filtered = orders[orders[\"status\"] == \"SHIPPED\"].copy()\n    \n    # Step 3: Lookup - join with customers on customer_id, select region\n    # On miss, region should be \"UNKNOWN\"\n    customers = inputs[\"customers\"].copy()\n    \n    # Perform left join to preserve all rows from filtered\n    looked_up = filtered.merge(\n        customers[[\"customer_id\", \"region\"]],\n        on=\"customer_id\",\n        how=\"left\"\n    )\n    \n    # Fill missing regions with \"UNKNOWN\"\n    looked_up[\"region\"] = looked_up[\"region\"].fillna(\"UNKNOWN\")\n    \n    # Step 4: Reformat - compute net_amount = qty * unit_price * (1 - discount)\n    # NULL discount is treated as 0\n    looked_up[\"discount\"] = looked_up[\"discount\"].fillna(0)\n    looked_up[\"net_amount\"] = looked_up[\"qty\"] * looked_up[\"unit_price\"] * (1 - looked_up[\"discount\"])\n    \n    # Step 5: Output - select only specified columns\n    output_columns = [\"order_id\", \"customer_id\", \"region\", \"qty\", \"unit_price\", \"net_amount\"]\n    result = looked_up[output_columns].copy()\n    \n    return {\"shipped_orders_enriched\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 525,
+   "tokens_out": 402,
+   "usd": 0.002535,
+   "wall_s": 2.9230477809906006,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

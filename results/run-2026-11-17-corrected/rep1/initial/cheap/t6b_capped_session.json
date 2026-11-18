@@ -1,0 +1,17 @@
+{
+ "task": "t6b_capped_session",
+ "group": "cheap",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(by=[\"user_id\", \"event_ts\", \"event_id\"]).reset_index(drop=True)\n    \n    # Initialize session tracking columns\n    events[\"session_num\"] = 0\n    events[\"session_start\"] = pd.NaT\n    \n    session_num = 0\n    current_user = None\n    current_session_start = None\n    \n    for idx in range(len(events)):\n        user_id = events.loc[idx, \"user_id\"]\n        event_ts = events.loc[idx, \"event_ts\"]\n        \n        # Check if this is a new user\n        if user_id != current_user:\n            current_user = user_id\n            session_num = 1\n            current_session_start = event_ts\n        else:\n            # Same user - check if we need to start a new session\n            prev_event_ts = events.loc[idx - 1, \"event_ts\"]\n            time_gap = (event_ts - prev_event_ts).total_seconds() / 60  # gap in minutes\n            \n            # Check condition (a): gap > 20 minutes\n            if time_gap > 20:\n                session_num += 1\n                current_session_start = event_ts\n            else:\n                # Check condition (b): session duration would exceed 4 hours\n                session_duration = (event_ts - current_session_start).total_seconds() / 3600  # in hours\n                if session_duration > 4:\n                    session_num += 1\n                    current_session_start = event_ts\n        \n        events.loc[idx, \"session_num\"] = session_num\n        events.loc[idx, \"session_start\"] = current_session_start\n    \n    # Create user_sessions output\n    user_sessions = events.groupby([\"user_id\", \"session_num\"]).agg(\n        session_start=(\"session_start\", \"first\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    ).reset_index()\n    \n    # Ensure correct column order and types\n    user_sessions = user_sessions[[\"user_id\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]]\n    user_sessions[\"user_id\"] = user_sessions[\"user_id\"].astype(\"int64\")\n    user_sessions[\"session_num\"] = user_sessions[\"session_num\"].astype(\"int64\")\n    user_sessions[\"event_count\"] = user_sessions[\"event_count\"].astype(\"int64\")\n    \n    return {\"user_sessions\": user_sessions}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 421,
+   "tokens_out": 718,
+   "usd": 0.004011,
+   "wall_s": 4.498392581939697,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

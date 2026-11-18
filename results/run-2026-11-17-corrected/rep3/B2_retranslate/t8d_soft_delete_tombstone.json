@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t8d_soft_delete_tombstone",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"]\n    cdc = inputs[\"cdc_events\"]\n    watermark = inputs[\"watermark\"]\n\n    if len(watermark) > 0:\n        high_ts = watermark[\"high_ts\"].iloc[0]\n    else:\n        high_ts = pd.NaT\n\n    # Build initial state from target_snapshot\n    state = {}\n    for _, row in target.iterrows():\n        state[row[\"user_id\"]] = {\n            \"email\": row[\"email\"],\n            \"status\": row[\"status\"],\n            \"status_ts\": row[\"status_ts\"],\n        }\n\n    # Filter events strictly after the watermark\n    if pd.isna(high_ts):\n        events = cdc.copy()\n    else:\n        events = cdc[cdc[\"event_ts\"] > high_ts].copy()\n\n    # Deterministic sequential processing order: (event_ts, event_seq)\n    events = events.sort_values([\"event_ts\", \"event_seq\"], kind=\"mergesort\")\n\n    seven_days = pd.Timedelta(days=7)\n\n    for _, ev in events.iterrows():\n        uid = ev[\"user_id\"]\n        ts = ev[\"event_ts\"]\n        op = ev[\"op\"]\n        email = ev[\"email\"]\n\n        cur = state.get(uid)\n\n        if op == \"D\":\n            # Soft delete: status -> DELETED, status_ts -> ts, email preserved\n            # from existing state if present, else use event's email.\n            if cur is not None:\n                new_email = cur[\"email\"]\n            else:\n                new_email = email\n            state[uid] = {\n                \"email\": new_email,\n                \"status\": \"DELETED\",\n                \"status_ts\": ts,\n            }\n        elif op == \"U\":\n            if cur is None or cur[\"status\"] == \"ACTIVE\":\n                # Upsert on new or active user\n                state[uid] = {\n                    \"email\": email,\n                    \"status\": \"ACTIVE\",\n                    \"status_ts\": ts,\n                }\n            else:\n                # Current status is DELETED: resurrection only if strictly\n                # more than 7 days after the deletion's status_ts.\n                if ts > cur[\"status_ts\"] + seven_days:\n                    state[uid] = {\n                        \"email\": email,\n                        \"status\": \"ACTIVE\",\n                        \"status_ts\": ts,\n                    }\n                # else: discard the update, deletion remains sticky\n        # Unknown ops are ignored (not specified in legacy semantics)\n\n    rows = []\n    for uid, s in state.items():\n        rows.append(\n            {\n                \"user_id\": uid,\n                \"email\": s[\"email\"],\n                \"status\": s[\"status\"],\n                \"status_ts\": s[\"status_ts\"],\n            }\n        )\n\n    result = pd.DataFrame(rows, columns=[\"user_id\", \"email\", \"status\", \"status_ts\"])\n\n    if len(result) > 0:\n        result[\"user_id\"] = result[\"user_id\"].astype(\"int64\")\n        result[\"email\"] = result[\"email\"].astype(object)\n        result[\"status\"] = result[\"status\"].astype(object)\n        result[\"status_ts\"] = pd.to_datetime(result[\"status_ts\"]).astype(\"datetime64[us]\")\n    else:\n        result = pd.DataFrame(\n            {\n                \"user_id\": pd.Series(dtype=\"int64\"),\n                \"email\": pd.Series(dtype=object),\n                \"status\": pd.Series(dtype=object),\n                \"status_ts\": pd.Series(dtype=\"datetime64[us]\"),\n            }\n        )\n\n    return {\"new_snapshot\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 875,
+   "tokens_out": 2866,
+   "usd": 0.045615,
+   "wall_s": 25.41523504257202,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

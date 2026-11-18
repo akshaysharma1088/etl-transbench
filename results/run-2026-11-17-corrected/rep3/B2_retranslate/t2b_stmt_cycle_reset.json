@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 3,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    ledger = inputs[\"ledger\"].copy()\n\n    # Sort according to cursor ORDER BY account_id, entry_date, row_seq\n    ledger = ledger.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        kind=\"mergesort\"  # stable sort to preserve deterministic tie-breaking\n    ).reset_index(drop=True)\n\n    is_stmt = ledger[\"entry_type\"] == \"STMT\"\n\n    # cycle number: starts at 1, increments on (and including) each STMT row,\n    # reset per account_id\n    cyc = 1 + is_stmt.groupby(ledger[\"account_id\"]).cumsum()\n\n    amount_filled = ledger[\"amount\"].fillna(0)\n\n    # balance resets to 0 at the start of a new cycle, then adds current row's amount\n    bal = amount_filled.groupby([ledger[\"account_id\"], cyc]).cumsum()\n\n    result = ledger.copy()\n    result[\"cycle_no\"] = cyc.astype(\"int64\")\n    result[\"cycle_balance\"] = bal.astype(\"float64\")\n\n    result = result[\n        [\"account_id\", \"row_seq\", \"entry_date\", \"entry_type\", \"amount\",\n         \"cycle_no\", \"cycle_balance\"]\n    ]\n\n    return {\"cycle_balances\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 830,
+   "tokens_out": 1098,
+   "usd": 0.01896,
+   "wall_s": 11.358554363250732,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_null(v):\n    return v is None or (isinstance(v, float) and pd.isna(v)) or pd.isna(v)\n\n\ndef _equal_or_both_null(a, b):\n    a_null = _is_null(a)\n    b_null = _is_null(b)\n    if a_null and b_null:\n        return True\n    if a_null != b_null:\n        return False\n    return a == b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_product\"].copy()\n    stg = inputs[\"stg_product\"].copy()\n\n    # sort staging by product_id, update_date ascending (no dedup)\n    stg = stg.sort_values([\"product_id\", \"update_date\"], kind=\"mergesort\")\n\n    # split dim into current and historical rows\n    current_df = dim[dim[\"is_current\"] == 1]\n    historical_df = dim[dim[\"is_current\"] == 0]\n\n    # build current lookup dict: product_id -> row dict\n    current_dict = {}\n    for _, row in current_df.iterrows():\n        current_dict[row[\"product_id\"]] = {\n            \"product_id\": row[\"product_id\"],\n            \"category\": row[\"category\"],\n            \"price_band\": row[\"price_band\"],\n            \"eff_start_date\": row[\"eff_start_date\"],\n            \"eff_end_date\": row[\"eff_end_date\"],\n            \"is_current\": row[\"is_current\"],\n        }\n\n    output_rows = []\n\n    # unchanged historical rows carry over as-is\n    for _, row in historical_df.iterrows():\n        output_rows.append({\n            \"product_id\": row[\"product_id\"],\n            \"category\": row[\"category\"],\n            \"price_band\": row[\"price_band\"],\n            \"eff_start_date\": row[\"eff_start_date\"],\n            \"eff_end_date\": row[\"eff_end_date\"],\n            \"is_current\": row[\"is_current\"],\n        })\n\n    touched_pids = set(stg[\"product_id\"].unique())\n\n    # products with a current row but no staged activity: keep unchanged\n    for pid, row in current_dict.items():\n        if pid not in touched_pids:\n            output_rows.append(row)\n\n    # group staged rows by product_id, preserving sorted order\n    for pid, group in stg.groupby(\"product_id\", sort=False):\n        cur = current_dict.get(pid, None)\n        for _, s in group.iterrows():\n            if cur is None:\n                cur = {\n                    \"product_id\": pid,\n                    \"category\": s[\"category\"],\n                    \"price_band\": s[\"price_band\"],\n                    \"eff_start_date\": s[\"update_date\"],\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            else:\n                same_cat = _equal_or_both_null(cur[\"category\"], s[\"category\"])\n                same_band = _equal_or_both_null(cur[\"price_band\"], s[\"price_band\"])\n                if not (same_cat and same_band):\n                    expired = dict(cur)\n                    expired[\"eff_end_date\"] = s[\"update_date\"]\n                    expired[\"is_current\"] = 0\n                    output_rows.append(expired)\n\n                    cur = {\n                        \"product_id\": pid,\n                        \"category\": s[\"category\"],\n                        \"price_band\": s[\"price_band\"],\n                        \"eff_start_date\": s[\"update_date\"],\n                        \"eff_end_date\": pd.NaT,\n                        \"is_current\": 1,\n                    }\n                # else: no-op, cur stays the same\n        # after processing all staged rows for this product, cur is final current version\n        output_rows.append(cur)\n\n    out = pd.DataFrame(\n        output_rows,\n        columns=[\n            \"product_id\",\n            \"category\",\n            \"price_band\",\n            \"eff_start_date\",\n            \"eff_end_date\",\n            \"is_current\",\n        ],\n    )\n\n    out[\"product_id\"] = out[\"product_id\"].astype(\"int64\")\n    out[\"category\"] = out[\"category\"].astype(object)\n    out[\"price_band\"] = out[\"price_band\"].astype(object)\n    out[\"eff_start_date\"] = pd.to_datetime(out[\"eff_start_date\"]).astype(\"datetime64[us]\")\n    out[\"eff_end_date\"] = pd.to_datetime(out[\"eff_end_date\"]).astype(\"datetime64[s]\")\n    out[\"is_current\"] = out[\"is_current\"].astype(\"int64\")\n\n    return {\"dim_product_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 913,
+   "tokens_out": 3051,
+   "usd": 0.048504,
+   "wall_s": 26.42191243171692,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

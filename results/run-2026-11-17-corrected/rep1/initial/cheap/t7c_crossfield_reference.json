@@ -1,0 +1,17 @@
+{
+ "task": "t7c_crossfield_reference",
+ "group": "cheap",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    orders = inputs[\"orders\"].copy()\n    ref_customers = inputs[\"ref_customers\"].copy()\n    ref_skus = inputs[\"ref_skus\"].copy()\n    \n    # Initialize result columns\n    orders[\"_reason_code\"] = None\n    orders[\"_failed\"] = False\n    \n    # R1: customer_id not present in ref_customers\n    valid_customers = set(ref_customers[\"customer_id\"].dropna().unique())\n    r1_fail = ~orders[\"customer_id\"].isin(valid_customers)\n    orders.loc[r1_fail & ~orders[\"_failed\"], \"_reason_code\"] = \"CUST_UNKNOWN\"\n    orders.loc[r1_fail & ~orders[\"_failed\"], \"_failed\"] = True\n    \n    # R2: customer status <> 'ACTIVE'\n    # Merge to get customer status\n    cust_status = ref_customers[[\"customer_id\", \"status\"]].copy()\n    orders = orders.merge(cust_status, on=\"customer_id\", how=\"left\")\n    r2_fail = (orders[\"status\"] != \"ACTIVE\") & ~orders[\"_failed\"]\n    orders.loc[r2_fail, \"_reason_code\"] = \"CUST_INACTIVE\"\n    orders.loc[r2_fail, \"_failed\"] = True\n    orders = orders.drop(columns=[\"status\"])\n    \n    # R3: sku not present in ref_skus\n    valid_skus = set(ref_skus[\"sku\"].dropna().unique())\n    r3_fail = ~orders[\"sku\"].isin(valid_skus) & ~orders[\"_failed\"]\n    orders.loc[r3_fail, \"_reason_code\"] = \"SKU_UNKNOWN\"\n    orders.loc[r3_fail, \"_failed\"] = True\n    \n    # R4: sku discontinued = 1\n    sku_info = ref_skus[[\"sku\", \"discontinued\", \"allowed_countries\"]].copy()\n    orders = orders.merge(sku_info, on=\"sku\", how=\"left\")\n    r4_fail = (orders[\"discontinued\"] == 1) & ~orders[\"_failed\"]\n    orders.loc[r4_fail, \"_reason_code\"] = \"SKU_DISC\"\n    orders.loc[r4_fail, \"_failed\"] = True\n    \n    # R5: allowed_countries non-empty AND ship_country not in delimited list\n    def check_country_allowed(row):\n        if row[\"_failed\"]:\n            return False\n        \n        allowed_str = row[\"allowed_countries\"]\n        # Empty or NULL means all countries allowed\n        if pd.isna(allowed_str) or allowed_str == \"\":\n            return False\n        \n        # Parse comma-delimited list with trimmed members\n        allowed_list = [c.strip() for c in str(allowed_str).split(\",\")]\n        ship_country = row[\"ship_country\"]\n        \n        if pd.isna(ship_country):\n            return True  # NULL ship_country fails the check\n        \n        return ship_country not in allowed_list\n    \n    r5_fail = orders.apply(check_country_allowed, axis=1)\n    orders.loc[r5_fail, \"_reason_code\"] = \"CTRY_BLOCKED\"\n    orders.loc[r5_fail, \"_failed\"] = True\n    \n    # Split into clean and rejects\n    orders_clean = orders[~orders[\"_failed\"]].drop(\n        columns=[\"_reason_code\", \"_failed\", \"discontinued\", \"allowed_countries\"]\n    )\n    orders_rejects = orders[orders[\"_failed\"]][\n        [\"order_id\", \"customer_id\", \"sku\", \"qty\", \"ship_country\", \"_reason_code\"]\n    ].copy()\n    orders_rejects = orders_rejects.rename(columns={\"_reason_code\": \"reason_code\"})\n    \n    return {\n        \"orders_clean\": orders_clean,\n        \"orders_rejects\": orders_rejects\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 574,
+   "tokens_out": 1012,
+   "usd": 0.005634,
+   "wall_s": 8.009006261825562,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

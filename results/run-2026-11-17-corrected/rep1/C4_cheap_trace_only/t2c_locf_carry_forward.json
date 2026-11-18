@@ -1,0 +1,48 @@
+{
+ "config": "C4_cheap_trace_only",
+ "rep": 1,
+ "task": "t2c_locf_carry_forward",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Implements legacy SP_RATE_CARRY_FWD cursor logic as set-oriented pandas operations.\n    \n    Cursor semantics:\n    - Process rows ordered by account_id, obs_date, obs_seq\n    - Within each account, carry forward the last non-NULL rate to subsequent NULL rates\n    - Reset carried forward value when account_id changes (never cross account boundaries)\n    - Leading NULLs in an account remain NULL with was_carried=0\n    \"\"\"\n    \n    rate_feed = inputs[\"rate_feed\"].copy()\n    \n    # Sort by account_id, obs_date, obs_seq to match cursor order\n    rate_feed = rate_feed.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        ascending=[True, True, True],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Initialize output columns\n    rate_feed[\"rate_filled\"] = rate_feed[\"rate\"].copy()\n    rate_feed[\"was_carried\"] = 0\n    \n    # Group by account_id to process each account separately\n    for account_id, group_indices in rate_feed.groupby(\"account_id\", sort=False).groups.items():\n        group_indices = group_indices.tolist()\n        \n        last_rate = None\n        \n        # Process each row in the group in order\n        for idx in group_indices:\n            current_rate = rate_feed.loc[idx, \"rate\"]\n            \n            # If current rate is not NULL, update last_rate and mark as not carried\n            if pd.notna(current_rate):\n                last_rate = current_rate\n                rate_feed.loc[idx, \"rate_filled\"] = current_rate\n                rate_feed.loc[idx, \"was_carried\"] = 0\n            else:\n                # Current rate is NULL\n                # Check if we have a last_rate to carry forward\n                if last_rate is not None:\n                    # Carry forward the last rate and mark as carried\n                    rate_feed.loc[idx, \"rate_filled\"] = last_rate\n                    rate_feed.loc[idx, \"was_carried\"] = 1\n                else:\n                    # No last_rate available, leave as NULL and mark as not carried\n                    rate_feed.loc[idx, \"rate_filled\"] = np.nan\n                    rate_feed.loc[idx, \"was_carried\"] = 0\n    \n    # Select output columns in order\n    rate_filled = rate_feed[[\"account_id\", \"obs_seq\", \"obs_date\", \"rate_filled\", \"was_carried\"]].copy()\n    \n    return {\"rate_filled\": rate_filled}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 574,
+   "tokens_out": 691,
+   "usd": 0.004029,
+   "wall_s": 6.22384238243103,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

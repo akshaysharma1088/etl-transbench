@@ -1,0 +1,48 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 1,
+ "task": "t6e_session_heartbeat_logout",
+ "category": "T6",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    app_events = inputs[\"app_events\"].copy()\n    \n    # Sort by user_id, event_ts, event_id\n    app_events = app_events.sort_values(by=['user_id', 'event_ts', 'event_id']).reset_index(drop=True)\n    \n    # Identify activity vs heartbeat events\n    app_events['is_activity'] = app_events['event_type'].isin(['view', 'click', 'logout'])\n    app_events['is_heartbeat'] = app_events['event_type'] == 'heartbeat'\n    app_events['is_logout'] = app_events['event_type'] == 'logout'\n    \n    sessions = []\n    \n    # Process each user separately\n    for user_id, user_events in app_events.groupby('user_id'):\n        user_events = user_events.reset_index(drop=True)\n        \n        session_num = 0\n        open_session = None  # Will store: {'session_num': int, 'start_ts': ts, 'last_activity_ts': ts, 'events': [...]}\n        \n        for idx, row in user_events.iterrows():\n            event_id = row['event_id']\n            event_ts = row['event_ts']\n            event_type = row['event_type']\n            is_activity = row['is_activity']\n            is_heartbeat = row['is_heartbeat']\n            is_logout = row['is_logout']\n            \n            if is_activity:\n                # Check if we need to start a new session\n                start_new = False\n                if open_session is None:\n                    start_new = True\n                else:\n                    # Check if time since last activity exceeds 30 minutes\n                    time_since_last = (event_ts - open_session['last_activity_ts']).total_seconds() / 60\n                    if time_since_last > 30:\n                        start_new = True\n                \n                if start_new:\n                    # Close previous session if exists\n                    if open_session is not None:\n                        sessions.append(open_session)\n                    # Start new session\n                    session_num += 1\n                    open_session = {\n                        'user_id': user_id,\n                        'session_num': session_num,\n                        'session_start': event_ts,\n                        'last_activity_ts': event_ts,\n                        'events': [row.to_dict()],\n                        'heartbeat_count': 0\n                    }\n                else:\n                    # Add to existing session\n                    open_session['last_activity_ts'] = event_ts\n                    open_session['events'].append(row.to_dict())\n                \n                # If logout, close the session\n                if is_logout:\n                    sessions.append(open_session)\n                    open_session = None\n            \n            elif is_heartbeat:\n                # Only add heartbeat if session is open and within 30 minutes of last activity\n                if open_session is not None:\n                    time_since_last = (event_ts - open_session['last_activity_ts']).total_seconds() / 60\n                    if time_since_last <= 30:\n                        open_session['events'].append(row.to_dict())\n                        open_session['heartbeat_count'] += 1\n                # else: drop the heartbeat\n        \n        # Close any remaining open session\n        if open_session is not None:\n            sessions.append(open_session)\n    \n    # Build output dataframe\n    if sessions:\n        output_rows = []\n        for sess in sessions:\n            output_rows.append({\n                'user_id': sess['user_id'],\n                'session_num': sess['session_num'],\n                'session_start': sess['session_start'],\n                'session_end': sess['last_activity_ts'],\n                'event_count': len(sess['events']),\n                'heartbeat_count': sess['heartbeat_count']\n            })\n        user_sessions = pd.DataFrame(output_rows)\n    else:\n        user_sessions = pd.DataFrame(columns=[\n            'user_id', 'session_num', 'session_start', 'session_end', 'event_count', 'heartbeat_count'\n        ])\n    \n    # Ensure correct dtypes\n    if len(user_sessions) > 0:\n        user_sessions['user_id'] = user_sessions['user_id'].astype('int64')\n        user_sessions['session_num'] = user_sessions['session_num'].astype('int64')\n        user_sessions['session_start'] = pd.to_datetime(user_sessions['session_start'])\n        user_sessions['session_end'] = pd.to_datetime(user_sessions['session_end'])\n        user_sessions['event_count'] = user_sessions['event_count'].astype('int64')\n        user_sessions['heartbeat_count'] = user_sessions['heartbeat_count'].astype('int64')\n    \n    return {'user_sessions': user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 723,
+   "tokens_out": 1288,
+   "usd": 0.007163,
+   "wall_s": 7.184762716293335,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

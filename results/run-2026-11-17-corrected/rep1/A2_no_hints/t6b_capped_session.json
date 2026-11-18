@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t6b_capped_session",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    events = inputs[\"events\"].copy()\n\n    # Ensure proper dtypes\n    events[\"event_ts\"] = pd.to_datetime(events[\"event_ts\"])\n\n    # Sort by user_id, event_ts, event_id for deterministic processing\n    events = events.sort_values(\n        by=[\"user_id\", \"event_ts\", \"event_id\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    gap_threshold = pd.Timedelta(minutes=20)\n    cap_threshold = pd.Timedelta(hours=4)\n\n    session_nums = []\n    session_starts = []\n\n    current_user = None\n    session_num = 0\n    session_start = None\n    last_ts = None\n\n    for row in events.itertuples(index=False):\n        user_id = row.user_id\n        event_ts = row.event_ts\n\n        if user_id != current_user:\n            # New user: start a new session\n            current_user = user_id\n            session_num = 1\n            session_start = event_ts\n            last_ts = event_ts\n        else:\n            gap = event_ts - last_ts\n            if gap > gap_threshold:\n                # inactivity gap triggers new session\n                session_num += 1\n                session_start = event_ts\n            else:\n                # check hard cap from session start\n                span = event_ts - session_start\n                if span > cap_threshold:\n                    session_num += 1\n                    session_start = event_ts\n                # else: stays in same session, session_start unchanged\n            last_ts = event_ts\n\n        session_nums.append(session_num)\n        session_starts.append(session_start)\n\n    events[\"session_num\"] = session_nums\n\n    # Aggregate per user_id, session_num\n    grouped = events.groupby([\"user_id\", \"session_num\"], as_index=False).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\"),\n    )\n\n    grouped = grouped.sort_values(\n        by=[\"user_id\", \"session_num\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    result = grouped[\n        [\"user_id\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]\n    ]\n\n    return {\"user_sessions\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 591,
+   "tokens_out": 953,
+   "usd": 0.016068,
+   "wall_s": 7.844384431838989,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

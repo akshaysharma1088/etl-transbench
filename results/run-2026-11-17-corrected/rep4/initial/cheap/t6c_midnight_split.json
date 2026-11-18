@@ -1,0 +1,17 @@
+{
+ "task": "t6c_midnight_split",
+ "group": "cheap",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(by=[\"user_id\", \"event_ts\", \"event_id\"]).reset_index(drop=True)\n    \n    # Extract local date from event_ts (assume it's already in local time)\n    events[\"event_date\"] = events[\"event_ts\"].dt.date\n    \n    # Initialize session tracking columns\n    events[\"session_num\"] = 0\n    session_num = 0\n    current_user = None\n    current_session_start = None\n    current_session_date = None\n    \n    session_numbers = []\n    \n    for idx, row in events.iterrows():\n        user_id = row[\"user_id\"]\n        event_ts = row[\"event_ts\"]\n        event_date = row[\"event_date\"]\n        \n        # Check if this is a new user\n        if user_id != current_user:\n            current_user = user_id\n            session_num += 1\n            current_session_start = event_ts\n            current_session_date = event_date\n            session_numbers.append(session_num)\n        else:\n            # Same user - check if we need a new session\n            prev_row = events.iloc[idx - 1]\n            prev_ts = prev_row[\"event_ts\"]\n            prev_date = prev_row[\"event_date\"]\n            \n            # Condition (b): different calendar date\n            if event_date != prev_date:\n                session_num += 1\n                current_session_start = event_ts\n                current_session_date = event_date\n                session_numbers.append(session_num)\n            # Condition (a): gap > 45 minutes\n            elif (event_ts - prev_ts).total_seconds() > 45 * 60:\n                session_num += 1\n                current_session_start = event_ts\n                current_session_date = event_date\n                session_numbers.append(session_num)\n            else:\n                # Continue current session\n                session_numbers.append(session_num)\n    \n    events[\"session_num\"] = session_numbers\n    \n    # Group by user_id and session_num to compute aggregates\n    grouped = events.groupby([\"user_id\", \"session_num\"], as_index=False).agg(\n        session_date=(\"event_date\", \"first\"),\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    )\n    \n    # Ensure correct column order and types\n    user_sessions = grouped[[\"user_id\", \"session_num\", \"session_date\", \"session_start\", \"session_end\", \"event_count\"]]\n    \n    return {\"user_sessions\": user_sessions}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 743,
+   "usd": 0.004095,
+   "wall_s": 6.380185842514038,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

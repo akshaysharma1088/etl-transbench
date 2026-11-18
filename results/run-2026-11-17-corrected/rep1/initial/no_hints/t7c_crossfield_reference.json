@@ -1,0 +1,17 @@
+{
+ "task": "t7c_crossfield_reference",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    ref_customers = inputs[\"ref_customers\"].copy()\n    ref_skus = inputs[\"ref_skus\"].copy()\n\n    # Resolve duplicate keys in reference tables by keeping first occurrence\n    cust_lookup = (\n        ref_customers.drop_duplicates(subset=\"customer_id\", keep=\"first\")\n        .set_index(\"customer_id\")[\"status\"]\n        .to_dict()\n    )\n\n    sku_lookup = (\n        ref_skus.drop_duplicates(subset=\"sku\", keep=\"first\")\n        .set_index(\"sku\")[[\"discontinued\", \"allowed_countries\"]]\n        .to_dict(orient=\"index\")\n    )\n\n    def validate(row):\n        cust_id = row[\"customer_id\"]\n        sku = row[\"sku\"]\n        ship_country = row[\"ship_country\"]\n\n        # R1: customer unknown\n        if cust_id not in cust_lookup:\n            return \"CUST_UNKNOWN\"\n\n        status = cust_lookup[cust_id]\n        # R2: customer status not ACTIVE\n        if status != \"ACTIVE\":\n            return \"CUST_INACTIVE\"\n\n        # R3: sku unknown\n        if sku not in sku_lookup:\n            return \"SKU_UNKNOWN\"\n\n        sku_info = sku_lookup[sku]\n        discontinued = sku_info[\"discontinued\"]\n        allowed_countries = sku_info[\"allowed_countries\"]\n\n        # R4: sku discontinued\n        if discontinued == 1:\n            return \"SKU_DISC\"\n\n        # R5: allowed_countries non-empty and ship_country not in whitelist\n        if allowed_countries is not None and not (\n            isinstance(allowed_countries, float) and pd.isna(allowed_countries)\n        ):\n            raw = str(allowed_countries)\n            if raw.strip() != \"\":\n                members = [m.strip() for m in raw.split(\",\")]\n                if ship_country not in members:\n                    return \"CTRY_BLOCKED\"\n\n        return None\n\n    reason_codes = orders.apply(validate, axis=1)\n\n    orders_clean = orders[reason_codes.isna()].copy()\n    orders_rejects = orders[~reason_codes.isna()].copy()\n    orders_rejects[\"reason_code\"] = reason_codes[~reason_codes.isna()]\n\n    orders_clean = orders_clean.reset_index(drop=True)\n    orders_rejects = orders_rejects.reset_index(drop=True)\n\n    return {\n        \"orders_clean\": orders_clean,\n        \"orders_rejects\": orders_rejects,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 837,
+   "tokens_out": 1734,
+   "usd": 0.028521,
+   "wall_s": 15.411926984786987,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

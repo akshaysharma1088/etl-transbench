@@ -1,0 +1,17 @@
+{
+ "task": "t4b_delete_reinsert",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Multi-step partition refresh: DELETE whole arriving partitions then INSERT.\n    \n    Step 1: Create STG_NEW by aggregating inbound data (qty > 0).\n    Step 2: DELETE from TARGET_SNAPSHOT rows where batch_date matches any in STG_NEW.\n    Step 3: INSERT STG_NEW into TARGET_SNAPSHOT.\n    \"\"\"\n    \n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    inbound = inputs[\"inbound\"].copy()\n    \n    # Step 1: CREATE STG_NEW\n    # Filter inbound where qty > 0\n    filtered_inbound = inbound[inbound[\"qty\"] > 0].copy()\n    \n    # GROUP BY product_id, batch_date and aggregate\n    stg_new = filtered_inbound.groupby(\n        [\"product_id\", \"batch_date\"],\n        as_index=False,\n        sort=False\n    ).agg({\n        \"qty\": \"sum\",\n        \"unit_cost\": \"max\"\n    })\n    \n    # Rename columns to match target schema\n    stg_new = stg_new.rename(columns={\n        \"qty\": \"total_qty\",\n        \"unit_cost\": \"max_unit_cost\"\n    })\n    \n    # Step 2: DELETE from TARGET_SNAPSHOT\n    # Find all distinct batch_dates in STG_NEW\n    arriving_dates = stg_new[\"batch_date\"].unique()\n    \n    # Remove rows from target_snapshot where batch_date is in arriving_dates\n    target_snapshot = target_snapshot[\n        ~target_snapshot[\"batch_date\"].isin(arriving_dates)\n    ].copy()\n    \n    # Step 3: INSERT STG_NEW into TARGET_SNAPSHOT\n    # Concatenate the two dataframes\n    target_snapshot = pd.concat(\n        [target_snapshot, stg_new],\n        ignore_index=True,\n        sort=False\n    )\n    \n    # Ensure column order and types match schema\n    target_snapshot = target_snapshot[[\n        \"product_id\",\n        \"batch_date\",\n        \"total_qty\",\n        \"max_unit_cost\"\n    ]]\n    \n    return {\"target_snapshot\": target_snapshot}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 493,
+   "tokens_out": 574,
+   "usd": 0.003363,
+   "wall_s": 3.6623075008392334,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

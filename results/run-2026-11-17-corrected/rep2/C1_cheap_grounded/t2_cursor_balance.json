@@ -1,0 +1,68 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 2,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "syntactic"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    transactions = inputs[\"transactions\"].copy()\n    \n    # Sort by account_id, txn_date, txn_seq to match cursor order\n    transactions = transactions.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        ignore_index=False\n    )\n    \n    # Handle NULL amounts by replacing with 0\n    transactions[\"amount\"] = transactions[\"amount\"].fillna(0.0)\n    \n    # Compute running balance per account\n    # Group by account_id, then cumulative sum within each group\n    transactions[\"running_balance\"] = transactions.groupby(\"account_id\")[\"amount\"].cumsum()\n    \n    # Compute overdraft flag: 1 if running_balance < 0, else 0\n    transactions[\"overdraft_flag\"] = (transactions[\"running_balance\"] < 0).astype(\"int16\")\n    \n    # Select and order output columns\n    result = transactions[\n        [\"account_id\", \"txn_seq\", \"txn_date\", \"amount\", \"running_balance\", \"overdraft_flag\"]\n    ].reset_index(drop=True)\n    \n    return {\"acct_balance_flags\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 520,
+   "tokens_out": 444,
+   "usd": 0.00274,
+   "wall_s": 4.183244705200195,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4679,
+  "tokens_out": 2757,
+  "usd": 0.018464,
+  "wall_s": 24.046329498291016
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

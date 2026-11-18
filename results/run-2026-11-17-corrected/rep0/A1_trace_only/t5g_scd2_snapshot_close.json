@@ -1,0 +1,48 @@
+{
+ "config": "A1_trace_only",
+ "rep": 0,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim_store = inputs[\"dim_store\"].copy()\n    stg = inputs[\"stg_store_full\"].copy()\n    batch_control = inputs[\"batch_control\"].copy()\n\n    batch_date = batch_control[\"batch_date\"].iloc[0]\n\n    # SELECT DISTINCT store_id, region, format FROM STG_STORE_FULL\n    S = stg.drop_duplicates(subset=[\"store_id\", \"region\", \"format\"]).copy()\n\n    # Build staging lookup map\n    stg_map = S.set_index(\"store_id\")[[\"region\", \"format\"]].to_dict(\"index\")\n    staging_ids = set(S[\"store_id\"])\n\n    # Current rows in dim_store\n    current = dim_store[dim_store[\"is_current\"] == 1].copy()\n    current_ids = set(current[\"store_id\"])\n\n    def eqnull(a, b):\n        a_is_na = pd.isna(a)\n        b_is_na = pd.isna(b)\n        if a_is_na and b_is_na:\n            return True\n        if a_is_na != b_is_na:\n            return False\n        return a == b\n\n    closed_ids = set()\n    new_rows = []\n\n    for _, row in current.iterrows():\n        sid = row[\"store_id\"]\n        if sid in stg_map:\n            s_region = stg_map[sid][\"region\"]\n            s_format = stg_map[sid][\"format\"]\n            region_same = eqnull(row[\"region\"], s_region)\n            format_same = eqnull(row[\"format\"], s_format)\n            if not (region_same and format_same):\n                # attributes differ: close old current row, insert new version\n                closed_ids.add(sid)\n                new_rows.append({\n                    \"store_id\": sid,\n                    \"region\": s_region,\n                    \"format\": s_format,\n                    \"eff_start_date\": batch_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            # else: no-op, unchanged\n        else:\n            # store closed (no longer in full snapshot)\n            closed_ids.add(sid)\n\n    # New or reactivated stores: in staging but no current row existed\n    new_or_reactivated_ids = staging_ids - current_ids\n    for sid in new_or_reactivated_ids:\n        s_region = stg_map[sid][\"region\"]\n        s_format = stg_map[sid][\"format\"]\n        new_rows.append({\n            \"store_id\": sid,\n            \"region\": s_region,\n            \"format\": s_format,\n            \"eff_start_date\": batch_date,\n            \"eff_end_date\": pd.NaT,\n            \"is_current\": 1,\n        })\n\n    dim_out = dim_store.copy()\n\n    mask_close = dim_out[\"store_id\"].isin(closed_ids) & (dim_out[\"is_current\"] == 1)\n    dim_out.loc[mask_close, \"eff_end_date\"] = batch_date\n    dim_out.loc[mask_close, \"is_current\"] = 0\n\n    new_df = pd.DataFrame(\n        new_rows,\n        columns=[\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"],\n    )\n\n    result = pd.concat([dim_out, new_df], ignore_index=True)\n\n    # Dtype normalization\n    result[\"store_id\"] = result[\"store_id\"].astype(\"int64\")\n    result[\"region\"] = result[\"region\"].astype(object)\n    result[\"format\"] = result[\"format\"].astype(object)\n    result[\"eff_start_date\"] = pd.to_datetime(result[\"eff_start_date\"])\n    result[\"eff_end_date\"] = pd.to_datetime(result[\"eff_end_date\"])\n    result[\"is_current\"] = result[\"is_current\"].astype(\"int64\")\n\n    return {\"dim_store_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1241,
+   "tokens_out": 3225,
+   "usd": 0.052098,
+   "wall_s": 27.925066232681274,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

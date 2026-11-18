@@ -1,0 +1,48 @@
+{
+ "config": "C0_cheap_single",
+ "rep": 1,
+ "task": "t7e_shortcircuit_parse_dedupe",
+ "category": "T7",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport re\nfrom datetime import datetime\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    raw_payments = inputs[\"raw_payments\"].copy()\n    \n    # Initialize reject tracking\n    rejects = []\n    valid_rows = []\n    \n    for idx, row in raw_payments.iterrows():\n        row_num = row[\"row_num\"]\n        payment_id = row[\"payment_id\"]\n        account_id = row[\"account_id\"]\n        amount_txt = row[\"amount_txt\"]\n        currency = row[\"currency\"]\n        pay_date_txt = row[\"pay_date_txt\"]\n        \n        reject_reason = None\n        \n        # R1: MISSING_ID\n        if reject_reason is None:\n            if pd.isna(payment_id) or (isinstance(payment_id, str) and payment_id.strip() == \"\"):\n                reject_reason = \"MISSING_ID\"\n        \n        # R2: BAD_AMOUNT\n        if reject_reason is None:\n            if pd.isna(amount_txt):\n                reject_reason = \"BAD_AMOUNT\"\n            else:\n                amount_trimmed = amount_txt.strip() if isinstance(amount_txt, str) else str(amount_txt)\n                # Legacy number pattern: optional +/-, one or more digits, optional .DD\n                if not re.match(r'^[+-]?\\d+(\\.\\d{1,2})?$', amount_trimmed):\n                    reject_reason = \"BAD_AMOUNT\"\n        \n        # R3: NON_POSITIVE\n        if reject_reason is None:\n            try:\n                amount_trimmed = amount_txt.strip() if isinstance(amount_txt, str) else str(amount_txt)\n                parsed_amount = float(amount_trimmed)\n                if parsed_amount <= 0:\n                    reject_reason = \"NON_POSITIVE\"\n            except (ValueError, AttributeError):\n                reject_reason = \"BAD_AMOUNT\"\n        \n        # R4: BAD_CURRENCY\n        if reject_reason is None:\n            if pd.isna(currency):\n                reject_reason = \"BAD_CURRENCY\"\n            else:\n                currency_upper = currency.strip().upper() if isinstance(currency, str) else str(currency).upper()\n                if currency_upper not in [\"USD\", \"EUR\", \"GBP\"]:\n                    reject_reason = \"BAD_CURRENCY\"\n        \n        # R5: BAD_DATE\n        if reject_reason is None:\n            if pd.isna(pay_date_txt):\n                reject_reason = \"BAD_DATE\"\n            else:\n                pay_date_trimmed = pay_date_txt.strip() if isinstance(pay_date_txt, str) else str(pay_date_txt)\n                # Check exact format YYYY-MM-DD\n                if not re.match(r'^\\d{4}-\\d{2}-\\d{2}$', pay_date_trimmed):\n                    reject_reason = \"BAD_DATE\"\n                else:\n                    try:\n                        parsed_date = datetime.strptime(pay_date_trimmed, \"%Y-%m-%d\")\n                    except ValueError:\n                        reject_reason = \"BAD_DATE\"\n        \n        if reject_reason is not None:\n            rejects.append({\"row_num\": row_num, \"reject_reason\": reject_reason})\n        else:\n            # Row passed R1-R5, store for duplicate check\n            amount_trimmed = amount_txt.strip() if isinstance(amount_txt, str) else str(amount_txt)\n            parsed_amount = float(amount_trimmed)\n            currency_upper = currency.strip().upper() if isinstance(currency, str) else str(currency).upper()\n            pay_date_trimmed = pay_date_txt.strip() if isinstance(pay_date_txt, str) else str(pay_date_txt)\n            parsed_date = datetime.strptime(pay_date_trimmed, \"%Y-%m-%d\").date()\n            payment_id_trimmed = payment_id.strip() if isinstance(payment_id, str) else str(payment_id)\n            \n            valid_rows.append({\n                \"row_num\": row_num,\n                \"payment_id\": payment_id_trimmed,\n                \"account_id\": account_id,\n                \"amount\": parsed_amount,\n                \"currency\": currency_upper,\n                \"pay_date\": parsed_date\n            })\n    \n    # R6: DUPLICATE - among valid rows, keep only first occurrence by payment_id\n    valid_df = pd.DataFrame(valid_rows)\n    \n    if len(valid_df) > 0:\n        # Group by payment_id and keep only the row with minimum row_num\n        duplicates_mask = valid_df.duplicated(subset=[\"payment_id\"], keep=\"first\")\n        duplicate_row_nums = valid_df[duplicates_mask][\"row_num\"].tolist()\n        \n        # Add duplicates to rejects\n        for row_num in duplicate_row_nums:\n            rejects.append({\"row_num\": row_num, \"reject_reason\": \"DUPLICATE\"})\n        \n        # Filter valid_df to keep only first occurrences\n        valid_df = valid_df[~duplicates_mask]\n        \n        # Reorder columns\n        valid_df = valid_df[[\"payment_id\", \"account_id\", \"amount\", \"currency\", \"pay_date\"]]\n    else:\n        valid_df = pd.DataFrame(columns=[\"payment_id\", \"account_id\", \"amount\", \"currency\", \"pay_date\"])\n    \n    # Create rejects dataframe\n    if rejects:\n        rejects_df = pd.DataFrame(rejects)\n        rejects_df = rejects_df.sort_values(\"row_num\").reset_index(drop=True)\n    else:\n        rejects_df = pd.DataFrame(columns=[\"row_num\", \"reject_reason\"])\n    \n    return {\n        \"valid_payments\": valid_df.reset_index(drop=True),\n        \"payment_rejects\": rejects_df\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 818,
+   "tokens_out": 1512,
+   "usd": 0.008378,
+   "wall_s": 8.577354669570923,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "C0_cheap_single",
+ "rep": 1,
+ "task": "t5d_asof_reconstruction",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom pandas import DataFrame\n\ndef run(inputs: dict[str, DataFrame]) -> dict[str, DataFrame]:\n    \"\"\"\n    Point-in-time reconstruction using SCD Type 2 logic.\n    For each query, find the employee version that was active as_of_date.\n    Half-open interval: [eff_start_date, eff_end_date) where eff_end_date NULL means current.\n    \"\"\"\n    dim_emp_hist = inputs[\"dim_emp_hist\"].copy()\n    asof_queries = inputs[\"asof_queries\"].copy()\n    \n    # Join: match emp_id and check if as_of_date falls within version interval\n    # Half-open interval semantics:\n    # - as_of_date >= eff_start_date (start INCLUSIVE)\n    # - eff_end_date IS NULL OR as_of_date < eff_end_date (end EXCLUSIVE)\n    \n    result = asof_queries.merge(\n        dim_emp_hist,\n        on=\"emp_id\",\n        how=\"inner\"\n    )\n    \n    # Apply the half-open interval filter\n    # Start: as_of_date >= eff_start_date\n    start_filter = result[\"as_of_date\"] >= result[\"eff_start_date\"]\n    \n    # End: eff_end_date IS NULL OR as_of_date < eff_end_date\n    end_filter = result[\"eff_end_date\"].isna() | (result[\"as_of_date\"] < result[\"eff_end_date\"])\n    \n    result = result[start_filter & end_filter]\n    \n    # Select and order output columns\n    asof_result = result[[\"query_id\", \"emp_id\", \"dept\", \"grade\"]].copy()\n    \n    return {\"asof_result\": asof_result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 613,
+   "tokens_out": 456,
+   "usd": 0.002893,
+   "wall_s": 4.011845350265503,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

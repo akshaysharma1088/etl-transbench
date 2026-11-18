@@ -1,0 +1,17 @@
+{
+ "task": "t7b_multi_reason_collect",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"invoices\"].copy()\n\n    amount = df[\"amount\"]\n    tax = df[\"tax\"]\n    due_date = df[\"due_date\"]\n    customer_ref = df[\"customer_ref\"]\n\n    r1 = amount.isna() | (amount < 0)\n    r2 = tax.isna() | (tax < 0)\n\n    amt_and_tax_notnull = amount.notna() & tax.notna()\n    r3 = amt_and_tax_notnull & (tax > amount * 0.5)\n\n    r4 = due_date.isna()\n\n    ref_is_null = customer_ref.isna()\n    ref_trim_empty = customer_ref.apply(\n        lambda x: isinstance(x, str) and x.strip() == \"\"\n    )\n    r5 = ref_is_null | ref_trim_empty\n\n    reason_lists = []\n    for i in range(len(df)):\n        codes = []\n        if r1.iloc[i]:\n            codes.append(\"AMT_BAD\")\n        if r2.iloc[i]:\n            codes.append(\"TAX_BAD\")\n        if r3.iloc[i]:\n            codes.append(\"TAX_EXCESS\")\n        if r4.iloc[i]:\n            codes.append(\"DUE_NULL\")\n        if r5.iloc[i]:\n            codes.append(\"REF_EMPTY\")\n        reason_lists.append(codes)\n\n    has_fail = pd.Series([len(c) > 0 for c in reason_lists], index=df.index)\n    reason_codes = pd.Series(\n        [\"|\".join(c) for c in reason_lists], index=df.index\n    )\n\n    clean = df.loc[~has_fail].copy()\n\n    rejects = df.loc[has_fail].copy()\n    rejects[\"reason_codes\"] = reason_codes.loc[has_fail]\n\n    return {\n        \"invoices_clean\": clean.reset_index(drop=True),\n        \"invoices_rejects\": rejects.reset_index(drop=True),\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 747,
+   "tokens_out": 950,
+   "usd": 0.016491,
+   "wall_s": 8.07328748703003,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

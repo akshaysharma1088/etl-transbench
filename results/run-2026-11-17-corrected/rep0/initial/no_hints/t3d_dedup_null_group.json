@@ -1,0 +1,17 @@
+{
+ "task": "t3d_dedup_null_group",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    # Load source\n    df = inputs[\"meter_reads\"].copy()\n    \n    # Sort by meter_id ASC, read_ts ASC, read_seq ASC\n    df = df.sort_values(by=[\"meter_id\", \"read_ts\", \"read_seq\"], ascending=[True, True, True])\n    \n    # Dedup: keep LAST row per meter_id\n    # groupby().tail(1) keeps the last row in each group after sorting\n    df = df.groupby(\"meter_id\", as_index=False).tail(1)\n    \n    # Aggregate: group by zone, sum(kwh), count(*)\n    # NULL zone is treated as a real group\n    agg_result = df.groupby(\"zone\", as_index=False, dropna=False).agg(\n        total_kwh=(\"kwh\", \"sum\"),\n        meter_count=(\"meter_id\", \"count\")\n    )\n    \n    # Reorder columns to match output schema\n    zone_totals = agg_result[[\"zone\", \"total_kwh\", \"meter_count\"]]\n    \n    return {\"zone_totals\": zone_totals}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 537,
+   "tokens_out": 316,
+   "usd": 0.002117,
+   "wall_s": 3.1110596656799316,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

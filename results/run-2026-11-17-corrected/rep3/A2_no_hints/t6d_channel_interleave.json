@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 3,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by (user_id, channel, event_ts, event_id) to establish order within each (user, channel) stream\n    events = events.sort_values(\n        by=[\"user_id\", \"channel\", \"event_ts\", \"event_id\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Create a session_num column\n    events[\"session_num\"] = 0\n    \n    # Group by (user_id, channel) and apply sessionization within each group\n    session_num = 1\n    current_session = {}\n    \n    for idx, row in events.iterrows():\n        user_id = row[\"user_id\"]\n        channel = row[\"channel\"]\n        event_ts = row[\"event_ts\"]\n        \n        key = (user_id, channel)\n        \n        if key not in current_session:\n            # New (user_id, channel) pair - start session 1\n            current_session[key] = {\n                \"session_num\": 1,\n                \"session_start\": event_ts,\n                \"last_event_ts\": event_ts\n            }\n            events.at[idx, \"session_num\"] = 1\n        else:\n            # Check if we need to start a new session\n            last_ts = current_session[key][\"last_event_ts\"]\n            gap_minutes = (event_ts - last_ts).total_seconds() / 60.0\n            \n            if gap_minutes > 25:\n                # Start a new session\n                current_session[key][\"session_num\"] += 1\n                current_session[key][\"session_start\"] = event_ts\n            \n            events.at[idx, \"session_num\"] = current_session[key][\"session_num\"]\n        \n        # Update last event timestamp\n        current_session[key][\"last_event_ts\"] = event_ts\n    \n    # Aggregate to create channel_sessions\n    channel_sessions = events.groupby(\n        [\"user_id\", \"channel\", \"session_num\"],\n        as_index=False\n    ).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    )\n    \n    # Ensure session_num is int64\n    channel_sessions[\"session_num\"] = channel_sessions[\"session_num\"].astype(\"int64\")\n    \n    return {\"channel_sessions\": channel_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 351,
+   "tokens_out": 651,
+   "usd": 0.003606,
+   "wall_s": 4.333885908126831,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

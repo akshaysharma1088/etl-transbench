@@ -1,0 +1,53 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target_state = inputs[\"target_state\"]\n    cdc_events = inputs[\"cdc_events\"]\n\n    # 1. Distinct by seq (at-least-once delivery -> apply once)\n    events = cdc_events.drop_duplicates(subset=[\"seq\"], keep=\"first\").copy()\n\n    # Build initial per-order state from target_state (assumed unique order_id)\n    state = {}\n    original_state = {}\n    for row in target_state.itertuples(index=False):\n        rec = {\"status\": row.status, \"amount\": row.amount, \"last_seq\": row.last_seq}\n        state[row.order_id] = dict(rec)\n        original_state[row.order_id] = dict(rec)\n\n    tombstones = {}\n\n    # Process events grouped per order, in seq order\n    for order_id, grp in events.groupby(\"order_id\", sort=False):\n        existing = original_state.get(order_id)  # fixed reference for replay guard\n        current = state.get(order_id)\n        if current is not None:\n            current = dict(current)\n\n        ever_had_row = existing is not None\n        # Track only events that actually change state (not no-op D's on a\n        # missing order), since a D on a missing order \"does nothing\" and so\n        # does not count as the \"last applied event\" for tombstone purposes.\n        last_change_op = None\n        last_change_seq = None\n\n        for ev in grp.sort_values(\"seq\").itertuples(index=False):\n            # Replay guard: only applies if order already had a row in target_state\n            if existing is not None and ev.seq <= existing[\"last_seq\"]:\n                continue\n\n            if ev.op in (\"I\", \"U\"):\n                if current is None:\n                    current = {\n                        \"status\": ev.status,\n                        \"amount\": ev.amount,\n                        \"last_seq\": ev.seq,\n                    }\n                else:\n                    if ev.op == \"U\" and pd.isna(ev.amount):\n                        new_amount = current[\"amount\"]\n                    else:\n                        new_amount = ev.amount\n                    current = {\n                        \"status\": ev.status,\n                        \"amount\": new_amount,\n                        \"last_seq\": ev.seq,\n                    }\n                ever_had_row = True\n                last_change_op = ev.op\n                last_change_seq = ev.seq\n            elif ev.op == \"D\":\n                if current is not None:\n                    current = None\n                    last_change_op = \"D\"\n                    last_change_seq = ev.seq\n                # D on a missing order: truly does nothing, does not count\n                # as the last applied (state-changing) event.\n\n        if current is not None:\n            state[order_id] = current\n        else:\n            if order_id in state:\n                del state[order_id]\n\n        if ever_had_row and last_change_op == \"D\":\n            tombstones[order_id] = last_change_seq\n\n    # Build new_state output\n    new_state_rows = [\n        {\n            \"order_id\": oid,\n            \"status\": v[\"status\"],\n            \"amount\": v[\"amount\"],\n            \"last_seq\": v[\"last_seq\"],\n        }\n        for oid, v in state.items()\n    ]\n    new_state = pd.DataFrame(\n        new_state_rows, columns=[\"order_id\", \"status\", \"amount\", \"last_seq\"]\n    )\n    if not new_state.empty:\n        new_state[\"order_id\"] = new_state[\"order_id\"].astype(\"int64\")\n        new_state[\"last_seq\"] = new_state[\"last_seq\"].astype(\"int64\")\n        new_state[\"amount\"] = new_state[\"amount\"].astype(\"float64\")\n    else:\n        new_state = pd.DataFrame(\n            {\n                \"order_id\": pd.Series(dtype=\"int64\"),\n                \"status\": pd.Series(dtype=\"object\"),\n                \"amount\": pd.Series(dtype=\"float64\"),\n                \"last_seq\": pd.Series(dtype=\"int64\"),\n            }\n        )\n\n    # Build tombstones output\n    tomb_rows = [\n        {\"order_id\": oid, \"deleted_seq\": seq} for oid, seq in tombstones.items()\n    ]\n    tombstones_df = pd.DataFrame(tomb_rows, columns=[\"order_id\", \"deleted_seq\"])\n    if not tombstones_df.empty:\n        tombstones_df[\"order_id\"] = tombstones_df[\"order_id\"].astype(\"int64\")\n        tombstones_df[\"deleted_seq\"] = tombstones_df[\"deleted_seq\"].astype(\"int64\")\n    else:\n        tombstones_df = pd.DataFrame(\n            {\n                \"order_id\": pd.Series(dtype=\"int64\"),\n                \"deleted_seq\": pd.Series(dtype=\"int64\"),\n            }\n        )\n\n    return {\"new_state\": new_state, \"tombstones\": tombstones_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1215,
+   "tokens_out": 6435,
+   "usd": 0.10017,
+   "wall_s": 60.05464220046997,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 5568,
+  "tokens_out": 27704,
+  "usd": 0.432264,
+  "wall_s": 323.6158649921417
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

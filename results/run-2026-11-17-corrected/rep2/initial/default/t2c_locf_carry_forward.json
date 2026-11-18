@@ -1,0 +1,17 @@
+{
+ "task": "t2c_locf_carry_forward",
+ "group": "default",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"rate_feed\"].copy()\n\n    # Reproduce cursor order: ORDER BY account_id, obs_date, obs_seq\n    df = df.sort_values(\n        [\"account_id\", \"obs_date\", \"obs_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # Forward-fill rate within each account (carry never crosses accounts)\n    df[\"rate_filled\"] = df.groupby(\"account_id\")[\"rate\"].ffill()\n\n    # was_carried = 1 only when original rate was NULL but a prior rate\n    # existed within the same account (ffill produced a non-null value)\n    df[\"was_carried\"] = (\n        df[\"rate\"].isna() & df[\"rate_filled\"].notna()\n    ).astype(\"int64\")\n\n    result = df[[\"account_id\", \"obs_seq\", \"obs_date\", \"rate_filled\", \"was_carried\"]]\n\n    return {\"rate_filled\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 850,
+   "tokens_out": 956,
+   "usd": 0.01689,
+   "wall_s": 10.167851686477661,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

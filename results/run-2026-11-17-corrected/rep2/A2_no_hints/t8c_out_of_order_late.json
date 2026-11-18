@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t8c_out_of_order_late",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n\n    # Map of device_id -> current applied_event_ts (watermark)\n    watermark_map = target.set_index(\"device_id\")[\"applied_event_ts\"]\n\n    # Attach current watermark to each cdc event\n    cdc = cdc.merge(\n        target[[\"device_id\", \"applied_event_ts\"]],\n        on=\"device_id\",\n        how=\"left\",\n        suffixes=(\"\", \"_watermark\"),\n    )\n\n    # Determine which events survive:\n    # - if device has no watermark (new device, NaT), event survives\n    # - else event survives only if event_ts > applied_event_ts (strict)\n    has_watermark = cdc[\"applied_event_ts\"].notna()\n    survives = (~has_watermark) | (cdc[\"event_ts\"] > cdc[\"applied_event_ts\"])\n\n    surviving = cdc.loc[survives].copy()\n\n    if not surviving.empty:\n        # Pick winner per device: latest by (event_ts, event_seq)\n        surviving = surviving.sort_values(\n            by=[\"device_id\", \"event_ts\", \"event_seq\"],\n            ascending=[True, False, False],\n        )\n        winners = surviving.groupby(\"device_id\", as_index=False).first()\n        winners = winners[[\"device_id\", \"reading\", \"event_ts\"]].rename(\n            columns={\"event_ts\": \"applied_event_ts\"}\n        )\n    else:\n        winners = pd.DataFrame(columns=[\"device_id\", \"reading\", \"applied_event_ts\"])\n\n    updated_device_ids = set(winners[\"device_id\"].tolist())\n\n    # Carry forward devices from target_snapshot that did NOT get updated\n    carried_forward = target[~target[\"device_id\"].isin(updated_device_ids)].copy()\n    carried_forward = carried_forward[[\"device_id\", \"reading\", \"applied_event_ts\"]]\n\n    # Combine carried forward + updated (winners may include new devices too)\n    new_snapshot = pd.concat([carried_forward, winners], ignore_index=True)\n\n    # Ensure proper dtypes\n    new_snapshot[\"device_id\"] = new_snapshot[\"device_id\"].astype(\"int64\")\n    new_snapshot[\"reading\"] = new_snapshot[\"reading\"].astype(\"float64\")\n    new_snapshot[\"applied_event_ts\"] = pd.to_datetime(new_snapshot[\"applied_event_ts\"]).astype(\"datetime64[us]\")\n\n    new_snapshot = new_snapshot.sort_values(\"device_id\").reset_index(drop=True)\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 816,
+   "tokens_out": 1408,
+   "usd": 0.023568,
+   "wall_s": 12.121609687805176,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

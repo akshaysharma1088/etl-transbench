@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 2,
+ "task": "t7c_crossfield_reference",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    ref_customers = inputs[\"ref_customers\"].copy()\n    ref_skus = inputs[\"ref_skus\"].copy()\n\n    # Build lookup dicts, first occurrence wins for duplicate keys\n    cust_status = {}\n    for _, row in ref_customers.iterrows():\n        cid = row[\"customer_id\"]\n        if cid not in cust_status:\n            cust_status[cid] = row[\"status\"]\n\n    sku_info = {}\n    for _, row in ref_skus.iterrows():\n        s = row[\"sku\"]\n        if s not in sku_info:\n            sku_info[s] = (row[\"discontinued\"], row[\"allowed_countries\"])\n\n    reason_codes = []\n\n    for _, row in orders.iterrows():\n        cid = row[\"customer_id\"]\n        sku = row[\"sku\"]\n        ship_country = row[\"ship_country\"]\n\n        reason = None\n\n        if cid not in cust_status:\n            reason = \"CUST_UNKNOWN\"\n        elif cust_status[cid] != \"ACTIVE\":\n            reason = \"CUST_INACTIVE\"\n        elif sku not in sku_info:\n            reason = \"SKU_UNKNOWN\"\n        else:\n            discontinued, allowed_countries = sku_info[sku]\n            if discontinued == 1:\n                reason = \"SKU_DISC\"\n            else:\n                if allowed_countries is not None and pd.notna(allowed_countries):\n                    allowed_str = str(allowed_countries).strip()\n                else:\n                    allowed_str = \"\"\n\n                if allowed_str != \"\":\n                    members = [m.strip() for m in allowed_str.split(\",\")]\n                    sc = str(ship_country).strip() if pd.notna(ship_country) else ship_country\n                    if sc not in members:\n                        reason = \"CTRY_BLOCKED\"\n\n        reason_codes.append(reason)\n\n    orders[\"_reason_code\"] = reason_codes\n\n    clean_mask = orders[\"_reason_code\"].isna()\n    orders_clean = orders.loc[clean_mask, [\"order_id\", \"customer_id\", \"sku\", \"qty\", \"ship_country\"]].reset_index(drop=True)\n\n    rejects = orders.loc[~clean_mask, [\"order_id\", \"customer_id\", \"sku\", \"qty\", \"ship_country\", \"_reason_code\"]].reset_index(drop=True)\n    rejects = rejects.rename(columns={\"_reason_code\": \"reason_code\"})\n\n    return {\n        \"orders_clean\": orders_clean,\n        \"orders_rejects\": rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 837,
+   "tokens_out": 1616,
+   "usd": 0.026751,
+   "wall_s": 13.668710708618164,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

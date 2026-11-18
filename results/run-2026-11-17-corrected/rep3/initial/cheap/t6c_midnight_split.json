@@ -1,0 +1,17 @@
+{
+ "task": "t6c_midnight_split",
+ "group": "cheap",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(by=['user_id', 'event_ts', 'event_id']).reset_index(drop=True)\n    \n    # Extract date (local calendar date) from event_ts\n    events['event_date'] = events['event_ts'].dt.date\n    \n    # Initialize session tracking columns\n    events['session_id'] = 0\n    \n    session_num = 0\n    current_user = None\n    current_session_start_ts = None\n    current_session_date = None\n    \n    for idx in range(len(events)):\n        user_id = events.loc[idx, 'user_id']\n        event_ts = events.loc[idx, 'event_ts']\n        event_date = events.loc[idx, 'event_date']\n        \n        # Check if this is a new user or first event\n        if user_id != current_user:\n            session_num += 1\n            current_user = user_id\n            current_session_start_ts = event_ts\n            current_session_date = event_date\n            events.loc[idx, 'session_id'] = session_num\n        else:\n            # Same user - check if new session needed\n            prev_event_ts = events.loc[idx - 1, 'event_ts']\n            prev_event_date = events.loc[idx - 1, 'event_date']\n            \n            # Condition (b): different calendar date\n            if event_date != prev_event_date:\n                session_num += 1\n                current_session_start_ts = event_ts\n                current_session_date = event_date\n            # Condition (a): gap > 45 minutes\n            elif (event_ts - prev_event_ts).total_seconds() > 45 * 60:\n                session_num += 1\n                current_session_start_ts = event_ts\n                current_session_date = event_date\n            # Same session\n            \n            events.loc[idx, 'session_id'] = session_num\n    \n    # Aggregate to user_sessions\n    user_sessions = events.groupby(['user_id', 'session_id']).agg({\n        'event_ts': ['min', 'max'],\n        'event_date': 'first',\n        'event_id': 'count'\n    }).reset_index()\n    \n    # Flatten column names\n    user_sessions.columns = ['user_id', 'session_id', 'session_start', 'session_end', 'session_date', 'event_count']\n    \n    # Reorder columns to match expected output\n    user_sessions = user_sessions[['user_id', 'session_id', 'session_date', 'session_start', 'session_end', 'event_count']]\n    \n    # Rename session_id to session_num\n    user_sessions = user_sessions.rename(columns={'session_id': 'session_num'})\n    \n    # Ensure dtypes\n    user_sessions['user_id'] = user_sessions['user_id'].astype('int64')\n    user_sessions['session_num'] = user_sessions['session_num'].astype('int64')\n    user_sessions['session_date'] = pd.to_datetime(user_sessions['session_date']).dt.date\n    user_sessions['session_start'] = pd.to_datetime(user_sessions['session_start'])\n    user_sessions['session_end'] = pd.to_datetime(user_sessions['session_end'])\n    user_sessions['event_count'] = user_sessions['event_count'].astype('int64')\n    \n    return {'user_sessions': user_sessions}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 972,
+   "usd": 0.00524,
+   "wall_s": 7.766439914703369,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

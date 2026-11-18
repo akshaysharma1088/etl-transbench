@@ -1,0 +1,48 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 1,
+ "task": "t7d_quarantine_threshold",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    readings = inputs[\"readings\"].copy()\n    \n    # Step 1: Mark rows as bad based on row rules\n    # Row is BAD if: value IS NULL OR value < 0 OR value > 1000\n    readings['is_bad'] = readings['value'].isna() | (readings['value'] < 0) | (readings['value'] > 1000)\n    \n    # Step 2: Evaluate batch rules per batch_id\n    batch_stats = readings.groupby('batch_id').agg(\n        total_rows=('is_bad', 'size'),\n        bad_rows=('is_bad', 'sum')\n    ).reset_index()\n    \n    # Calculate bad percentage\n    batch_stats['bad_pct'] = batch_stats['bad_rows'] * 100.0 / batch_stats['total_rows']\n    \n    # Determine if batch should be quarantined\n    # STRICTLY over 20% means bad_pct > 20.0 (not >= 20.0)\n    batch_stats['is_quarantined'] = batch_stats['bad_pct'] > 20.0\n    \n    # Step 3: Merge batch decisions back to readings\n    readings = readings.merge(batch_stats[['batch_id', 'is_quarantined', 'bad_pct']], on='batch_id')\n    \n    # Step 4: Route rows based on batch quarantine decision\n    quarantined_batches = readings[readings['is_quarantined']]\n    not_quarantined_batches = readings[~readings['is_quarantined']]\n    \n    # Quarantine: ALL rows (good and bad) from quarantined batches\n    readings_quarantine = quarantined_batches[[\n        'batch_id', 'reading_id', 'sensor', 'value'\n    ]].copy()\n    readings_quarantine['batch_reject_pct'] = quarantined_batches['bad_pct'].round(2)\n    \n    # For non-quarantined batches: split good and bad\n    readings_clean = not_quarantined_batches[~not_quarantined_batches['is_bad']][[\n        'batch_id', 'reading_id', 'sensor', 'value'\n    ]].copy()\n    \n    readings_rejects = not_quarantined_batches[not_quarantined_batches['is_bad']][[\n        'batch_id', 'reading_id', 'sensor', 'value'\n    ]].copy()\n    \n    # Reset index for clean output\n    readings_clean = readings_clean.reset_index(drop=True)\n    readings_rejects = readings_rejects.reset_index(drop=True)\n    readings_quarantine = readings_quarantine.reset_index(drop=True)\n    \n    return {\n        'readings_clean': readings_clean,\n        'readings_rejects': readings_rejects,\n        'readings_quarantine': readings_quarantine\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 423,
+   "tokens_out": 765,
+   "usd": 0.004248,
+   "wall_s": 5.2039477825164795,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 1,
+ "task": "t7b_multi_reason_collect",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    invoices = inputs[\"invoices\"].copy()\n    \n    # Initialize reason_codes column as empty strings\n    invoices[\"reason_codes\"] = \"\"\n    \n    # R1: amount IS NULL OR amount < 0 -> 'AMT_BAD'\n    r1_fail = invoices[\"amount\"].isna() | (invoices[\"amount\"] < 0)\n    invoices.loc[r1_fail, \"reason_codes\"] = invoices.loc[r1_fail, \"reason_codes\"] + \"AMT_BAD\"\n    \n    # R2: tax IS NULL OR tax < 0 -> 'TAX_BAD'\n    r2_fail = invoices[\"tax\"].isna() | (invoices[\"tax\"] < 0)\n    # Append TAX_BAD, handling pipe delimiter\n    mask = r2_fail\n    invoices.loc[mask, \"reason_codes\"] = invoices.loc[mask, \"reason_codes\"].apply(\n        lambda x: x + (\"|\" if x else \"\") + \"TAX_BAD\"\n    )\n    \n    # R3: tax > amount * 0.5 -> 'TAX_EXCESS'\n    # NULL-safe: skipped if amount or tax is NULL\n    r3_fail = (\n        ~invoices[\"amount\"].isna() & \n        ~invoices[\"tax\"].isna() & \n        (invoices[\"tax\"] > invoices[\"amount\"] * 0.5)\n    )\n    mask = r3_fail\n    invoices.loc[mask, \"reason_codes\"] = invoices.loc[mask, \"reason_codes\"].apply(\n        lambda x: x + (\"|\" if x else \"\") + \"TAX_EXCESS\"\n    )\n    \n    # R4: due_date IS NULL -> 'DUE_NULL'\n    r4_fail = invoices[\"due_date\"].isna()\n    mask = r4_fail\n    invoices.loc[mask, \"reason_codes\"] = invoices.loc[mask, \"reason_codes\"].apply(\n        lambda x: x + (\"|\" if x else \"\") + \"DUE_NULL\"\n    )\n    \n    # R5: customer_ref IS NULL OR TRIM(customer_ref) = '' -> 'REF_EMPTY'\n    r5_fail = invoices[\"customer_ref\"].isna() | (invoices[\"customer_ref\"].str.strip() == \"\")\n    mask = r5_fail\n    invoices.loc[mask, \"reason_codes\"] = invoices.loc[mask, \"reason_codes\"].apply(\n        lambda x: x + (\"|\" if x else \"\") + \"REF_EMPTY\"\n    )\n    \n    # Split into clean and rejects\n    has_errors = invoices[\"reason_codes\"] != \"\"\n    \n    invoices_clean = invoices[~has_errors].drop(columns=[\"reason_codes\"])\n    invoices_rejects = invoices[has_errors][[\"invoice_id\", \"amount\", \"tax\", \"due_date\", \"customer_ref\", \"reason_codes\"]]\n    \n    return {\n        \"invoices_clean\": invoices_clean,\n        \"invoices_rejects\": invoices_rejects\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 507,
+   "tokens_out": 815,
+   "usd": 0.004582,
+   "wall_s": 4.842276096343994,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

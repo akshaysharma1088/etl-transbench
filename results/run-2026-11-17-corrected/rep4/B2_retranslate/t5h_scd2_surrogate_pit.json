@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 4,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _segments_differ(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_customer\"].copy()\n    stg = inputs[\"stg_customer\"].copy()\n    fact = inputs[\"fact_txn\"].copy()\n\n    # Determine max surrogate key before the load\n    if dim.empty:\n        max_sk_before = 0\n    else:\n        max_sk_before = dim[\"customer_sk\"].max()\n        if pd.isna(max_sk_before):\n            max_sk_before = 0\n\n    # Current rows (assume at most one current row per customer_id)\n    cur_df = dim.loc[dim[\"is_current\"] == 1, [\"customer_id\", \"segment\"]].rename(\n        columns={\"segment\": \"cur_segment\"}\n    )\n\n    merged = stg.merge(cur_df, on=\"customer_id\", how=\"left\", indicator=True)\n    merged[\"no_current\"] = merged[\"_merge\"] == \"left_only\"\n\n    create_flags = []\n    for _, row in merged.iterrows():\n        if row[\"no_current\"]:\n            create_flags.append(True)\n        else:\n            create_flags.append(_segments_differ(row[\"segment\"], row[\"cur_segment\"]))\n    merged[\"create_version\"] = create_flags\n\n    new_versions = merged.loc[merged[\"create_version\"]].sort_values(\n        \"customer_id\", kind=\"stable\"\n    ).reset_index(drop=True)\n\n    if not new_versions.empty:\n        new_versions[\"customer_sk\"] = max_sk_before + (new_versions.index + 1)\n    else:\n        new_versions[\"customer_sk\"] = pd.Series(dtype=\"int64\")\n\n    # Expire prior current rows for customers that got a new version (only those that had a current row)\n    expiring = new_versions.loc[~new_versions[\"no_current\"]]\n    expire_map = expiring.set_index(\"customer_id\")[\"update_date\"]\n\n    dim_updated = dim.copy()\n    mask_expire = dim_updated[\"customer_id\"].isin(expire_map.index) & (\n        dim_updated[\"is_current\"] == 1\n    )\n    dim_updated.loc[mask_expire, \"eff_end_date\"] = dim_updated.loc[\n        mask_expire, \"customer_id\"\n    ].map(expire_map)\n    dim_updated.loc[mask_expire, \"is_current\"] = 0\n\n    # Build new rows\n    new_rows = pd.DataFrame(\n        {\n            \"customer_sk\": new_versions[\"customer_sk\"],\n            \"customer_id\": new_versions[\"customer_id\"],\n            \"segment\": new_versions[\"segment\"],\n            \"eff_start_date\": new_versions[\"update_date\"],\n            \"eff_end_date\": pd.NaT,\n            \"is_current\": 1,\n        }\n    )\n\n    dim_customer_out = pd.concat([dim_updated, new_rows], ignore_index=True)\n\n    # Ensure proper dtypes\n    dim_customer_out[\"customer_sk\"] = dim_customer_out[\"customer_sk\"].astype(\"int64\")\n    dim_customer_out[\"customer_id\"] = dim_customer_out[\"customer_id\"].astype(\"int64\")\n    dim_customer_out[\"is_current\"] = dim_customer_out[\"is_current\"].astype(\"int64\")\n    dim_customer_out[\"eff_start_date\"] = pd.to_datetime(\n        dim_customer_out[\"eff_start_date\"]\n    )\n    dim_customer_out[\"eff_end_date\"] = pd.to_datetime(dim_customer_out[\"eff_end_date\"])\n\n    # Step 2: key facts against the updated dimension\n    merged_fact = fact.merge(\n        dim_customer_out[\n            [\"customer_sk\", \"customer_id\", \"eff_start_date\", \"eff_end_date\"]\n        ],\n        on=\"customer_id\",\n        how=\"left\",\n        suffixes=(\"\", \"_dim\"),\n    )\n\n    cond = (merged_fact[\"eff_start_date\"] <= merged_fact[\"txn_date\"]) & (\n        merged_fact[\"eff_end_date\"].isna()\n        | (merged_fact[\"txn_date\"] < merged_fact[\"eff_end_date\"])\n    )\n\n    matched = merged_fact.loc[cond, [\"txn_id\", \"customer_sk\"]].drop_duplicates(\n        subset=[\"txn_id\"]\n    )\n\n    result = fact.merge(matched, on=\"txn_id\", how=\"left\")\n    result[\"customer_sk\"] = result[\"customer_sk\"].fillna(-1).astype(\"int64\")\n\n    fact_txn_keyed = result[[\"txn_id\", \"customer_sk\", \"amount\"]]\n\n    return {\n        \"dim_customer_out\": dim_customer_out[\n            [\n                \"customer_sk\",\n                \"customer_id\",\n                \"segment\",\n                \"eff_start_date\",\n                \"eff_end_date\",\n                \"is_current\",\n            ]\n        ],\n        \"fact_txn_keyed\": fact_txn_keyed,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1349,
+   "tokens_out": 4312,
+   "usd": 0.068727,
+   "wall_s": 35.62845802307129,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

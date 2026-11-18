@@ -1,0 +1,48 @@
+{
+ "config": "A1_trace_only",
+ "rep": 2,
+ "task": "t1c_teradata_intdiv",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicate Teradata SQL semantics for integer division with ZEROIFNULL.\n    - ZEROIFNULL: NULL becomes 0\n    - INTEGER / INTEGER: truncates toward zero (not floor)\n    - CAST(...AS INTEGER): truncates toward zero\n    \"\"\"\n    \n    df = inputs[\"acct_balance\"].copy()\n    \n    # Filter: WHERE acct_type <> 'CLOSED'\n    df = df[df[\"acct_type\"] != \"CLOSED\"].copy()\n    \n    # Helper function: Teradata-style truncation toward zero\n    def truncate_toward_zero(x):\n        \"\"\"Truncates toward zero, matching Teradata INTEGER behavior.\"\"\"\n        return np.trunc(x)\n    \n    # ZEROIFNULL(balance_cents) / 100 AS balance_bucket\n    # ZEROIFNULL: NULL -> 0\n    balance_cents_filled = df[\"balance_cents\"].fillna(0.0)\n    df[\"balance_bucket\"] = truncate_toward_zero(balance_cents_filled / 100.0).astype(\"Int64\")\n    \n    # CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER) AS fx_units\n    # ZEROIFNULL: NULL -> 0\n    df[\"fx_units\"] = truncate_toward_zero(\n        balance_cents_filled * df[\"fx_rate\"] / 100.0\n    ).astype(\"Int64\")\n    \n    # SELECT account_id, balance_bucket, fx_units\n    result = df[[\"account_id\", \"balance_bucket\", \"fx_units\"]].copy()\n    \n    return {\"balance_buckets\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 429,
+   "tokens_out": 457,
+   "usd": 0.002714,
+   "wall_s": 3.1161978244781494,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

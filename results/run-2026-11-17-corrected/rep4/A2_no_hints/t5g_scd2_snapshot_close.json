@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 4,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _differs(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim_store = inputs[\"dim_store\"].copy()\n    stg = inputs[\"stg_store_full\"].copy()\n    batch = inputs[\"batch_control\"].copy()\n\n    b = batch[\"batch_date\"].iloc[0]\n\n    # S := SELECT DISTINCT store_id, region, format FROM STG_STORE_FULL\n    S = stg.drop_duplicates(subset=[\"store_id\", \"region\", \"format\"]).copy()\n    S_store_ids = set(S[\"store_id\"].tolist())\n\n    # Build map of current rows: store_id -> (original_index, region, format)\n    current_mask = dim_store[\"is_current\"] == 1\n    current_df = dim_store[current_mask]\n\n    current_map = {}\n    for idx, row in current_df.iterrows():\n        current_map[row[\"store_id\"]] = (idx, row[\"region\"], row[\"format\"])\n\n    closed_indices = set()\n    new_rows = []\n\n    # Step 1: process each store in the snapshot\n    for _, s in S.iterrows():\n        store_id = s[\"store_id\"]\n        region = s[\"region\"]\n        fmt = s[\"format\"]\n\n        if store_id in current_map:\n            orig_idx, c_region, c_format = current_map[store_id]\n            if _differs(c_region, region) or _differs(c_format, fmt):\n                closed_indices.add(orig_idx)\n                new_rows.append({\n                    \"store_id\": store_id,\n                    \"region\": region,\n                    \"format\": fmt,\n                    \"eff_start_date\": b,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            # else: no-op\n        else:\n            # brand-new store OR reactivated store\n            new_rows.append({\n                \"store_id\": store_id,\n                \"region\": region,\n                \"format\": fmt,\n                \"eff_start_date\": b,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n\n    # Step 2: close current rows whose store_id is not in S\n    for store_id, (orig_idx, _, _) in current_map.items():\n        if store_id not in S_store_ids:\n            closed_indices.add(orig_idx)\n\n    dim_store_out = dim_store.copy()\n\n    for idx in closed_indices:\n        dim_store_out.at[idx, \"eff_end_date\"] = b\n        dim_store_out.at[idx, \"is_current\"] = 0\n\n    if new_rows:\n        new_df = pd.DataFrame(\n            new_rows,\n            columns=[\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"],\n        )\n        dim_store_out = pd.concat([dim_store_out, new_df], ignore_index=True)\n    else:\n        dim_store_out = dim_store_out.reset_index(drop=True)\n\n    dim_store_out = dim_store_out[\n        [\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n    ]\n\n    return {\"dim_store_out\": dim_store_out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1186,
+   "tokens_out": 3071,
+   "usd": 0.049623,
+   "wall_s": 26.026824951171875,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

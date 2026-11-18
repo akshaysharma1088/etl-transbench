@@ -1,0 +1,68 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 4,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_state = inputs[\"target_state\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    \n    # Ensure proper types\n    target_state[\"order_id\"] = target_state[\"order_id\"].astype(\"int64\")\n    target_state[\"last_seq\"] = target_state[\"last_seq\"].astype(\"int64\")\n    cdc_events[\"seq\"] = cdc_events[\"seq\"].astype(\"int64\")\n    cdc_events[\"order_id\"] = cdc_events[\"order_id\"].astype(\"int64\")\n    \n    # Step 1: Remove duplicate events (same seq) - keep first occurrence\n    cdc_events = cdc_events.drop_duplicates(subset=[\"seq\"], keep=\"first\")\n    \n    # Step 2: Apply replay guard - filter out events where seq <= last_seq for existing orders\n    # Create a dict of order_id -> last_seq from target_state for fast lookup\n    last_seq_map = dict(zip(target_state[\"order_id\"], target_state[\"last_seq\"]))\n    \n    def passes_replay_guard(row):\n        order_id = row[\"order_id\"]\n        seq = row[\"seq\"]\n        if order_id in last_seq_map:\n            return seq > last_seq_map[order_id]\n        return True\n    \n    cdc_events = cdc_events[cdc_events.apply(passes_replay_guard, axis=1)].copy()\n    \n    # Step 3: Sort events by seq (ascending) for each order to process in order\n    cdc_events = cdc_events.sort_values(\"seq\").reset_index(drop=True)\n    \n    # Initialize new_state with a copy of target_state\n    new_state = target_state.copy()\n    \n    # Track which orders have been touched and what their last operation was\n    order_states = {}  # order_id -> {\"status\": str, \"amount\": float, \"last_seq\": int, \"last_op\": str}\n    \n    # Populate order_states from target_state\n    for _, row in target_state.iterrows():\n        order_id = row[\"order_id\"]\n        order_states[order_id] = {\n            \"status\": row[\"status\"],\n            \"amount\": row[\"amount\"],\n            \"last_seq\": row[\"last_seq\"],\n            \"last_op\": None,  # We don't know the original op\n            \"exists\": True\n        }\n    \n    # Process each event in sequence\n    for _, event in cdc_events.iterrows():\n        order_id = event[\"order_id\"]\n        seq = event[\"seq\"]\n        op = event[\"op\"]\n        status = event[\"status\"]\n        amount = event[\"amount\"]\n        \n        if order_id not in order_states:\n            order_states[order_id] = {\n                \"status\": None,\n                \"amount\": None,\n                \"last_seq\": None,\n                \"last_op\": None,\n                \"exists\": False\n            }\n        \n        state = order_states[order_id]\n        \n        if op in (\"I\", \"U\"):\n            # Update or insert\n            if op == \"U\" and pd.notna(amount) is False:\n                # 'U' with NULL amount: leave existing amount unchanged\n                new_amount = state[\"amount\"] if state[\"exists\"] else None\n            else:\n                new_amount = amount\n            \n            state[\"status\"] = status\n            state[\"amount\"] = new_amount\n            state[\"last_seq\"] = seq\n            state[\"last_op\"] = op\n            state[\"exists\"] = True\n            \n        elif op == \"D\":\n            # Delete\n            state[\"last_seq\"] = seq\n            state[\"last_op\"] = op\n            state[\"exists\"] = False\n    \n    # Step 4: Build new_state from order_states\n    new_state_rows = []\n    for order_id, state in order_states.items():\n        if state[\"exists\"]:\n            new_state_rows.append({\n                \"order_id\": order_id,\n                \"status\": state[\"status\"],\n                \"amount\": state[\"amount\"],\n                \"last_seq\": state[\"last_seq\"]\n            })\n    \n    if new_state_rows:\n        new_state = pd.DataFrame(new_state_rows)\n        new_state[\"order_id\"] = new_state[\"order_id\"].astype(\"int64\")\n        new_state[\"last_seq\"] = new_state[\"last_seq\"].astype(\"int64\")\n    else:\n        new_state = pd.DataFrame(columns=[\"order_id\", \"status\", \"amount\", \"last_seq\"])\n        new_state = new_state.astype({\"order_id\": \"int64\", \"last_seq\": \"int64\"})\n    \n    # Step 5: Build tombstones - orders whose last applied event was 'D'\n    tombstone_rows = []\n    for order_id, state in order_states.items():\n        if state[\"last_op\"] == \"D\":\n            tombstone_rows.append({\n                \"order_id\": order_id,\n                \"deleted_seq\": state[\"last_seq\"]\n            })\n    \n    if tombstone_rows:\n        tombstones = pd.DataFrame(tombstone_rows)\n        tombstones[\"order_id\"] = tombstones[\"order_id\"].astype(\"int64\")\n        tombstones[\"deleted_seq\"] = tombstones[\"deleted_seq\"].astype(\"int64\")\n    else:\n        tombstones = pd.DataFrame(columns=[\"order_id\", \"deleted_seq\"])\n        tombstones = tombstones.astype({\"order_id\": \"int64\", \"deleted_seq\": \"int64\"})\n    \n    return {\n        \"new_state\": new_state,\n        \"tombstones\": tombstones\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 948,
+   "tokens_out": 1408,
+   "usd": 0.007988,
+   "wall_s": 7.86941933631897,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 6947,
+  "tokens_out": 6916,
+  "usd": 0.041527,
+  "wall_s": 50.32919120788574
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t7c_crossfield_reference",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    ref_customers = inputs[\"ref_customers\"].copy()\n    ref_skus = inputs[\"ref_skus\"].copy()\n\n    # Build lookup maps; for duplicate keys in reference data, keep the\n    # first occurrence (stable, deterministic behaviour).\n    cust_status_map = (\n        ref_customers.drop_duplicates(subset=\"customer_id\", keep=\"first\")\n        .set_index(\"customer_id\")[\"status\"]\n        .to_dict()\n    )\n\n    sku_lookup = ref_skus.drop_duplicates(subset=\"sku\", keep=\"first\").set_index(\"sku\")\n    sku_disc_map = sku_lookup[\"discontinued\"].to_dict()\n    sku_allowed_map = sku_lookup[\"allowed_countries\"].to_dict()\n\n    def classify(row):\n        cid = row[\"customer_id\"]\n        sku = row[\"sku\"]\n        country = row[\"ship_country\"]\n\n        # R1: unknown customer\n        if cid not in cust_status_map:\n            return \"CUST_UNKNOWN\"\n\n        # R2: customer not active\n        status = cust_status_map[cid]\n        if status != \"ACTIVE\":\n            return \"CUST_INACTIVE\"\n\n        # R3: unknown sku\n        if sku not in sku_disc_map:\n            return \"SKU_UNKNOWN\"\n\n        # R4: discontinued sku\n        disc = sku_disc_map[sku]\n        if pd.notna(disc) and int(disc) == 1:\n            return \"SKU_DISC\"\n\n        # R5: country whitelist check (trimmed, comma-delimited)\n        allowed_raw = sku_allowed_map.get(sku, None)\n        if isinstance(allowed_raw, str):\n            allowed_stripped = allowed_raw.strip()\n            if allowed_stripped != \"\":\n                members = [m.strip() for m in allowed_raw.split(\",\")]\n                if country not in members:\n                    return \"CTRY_BLOCKED\"\n        # if allowed_raw is NaN/None/empty -> allow all countries\n\n        return None\n\n    reason_codes = orders.apply(classify, axis=1)\n\n    clean_mask = reason_codes.isna()\n\n    orders_clean = orders.loc[clean_mask].copy().reset_index(drop=True)\n\n    orders_rejects = orders.loc[~clean_mask].copy()\n    orders_rejects[\"reason_code\"] = reason_codes.loc[~clean_mask]\n    orders_rejects = orders_rejects.reset_index(drop=True)\n\n    return {\n        \"orders_clean\": orders_clean,\n        \"orders_rejects\": orders_rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 837,
+   "tokens_out": 1932,
+   "usd": 0.031491,
+   "wall_s": 16.36297583580017,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

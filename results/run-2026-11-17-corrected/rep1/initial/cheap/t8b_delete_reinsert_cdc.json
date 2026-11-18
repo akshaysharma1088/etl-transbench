@@ -1,0 +1,17 @@
+{
+ "task": "t8b_delete_reinsert_cdc",
+ "group": "cheap",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n    \n    high_ts = watermark[\"high_ts\"].iloc[0]\n    \n    # Filter events up to and including the watermark\n    cdc_events = cdc_events[cdc_events[\"event_ts\"] <= high_ts].copy()\n    \n    # Sort events by item_id, then event_ts, then event_seq for deterministic processing\n    cdc_events = cdc_events.sort_values(\n        by=[\"item_id\", \"event_ts\", \"event_seq\"],\n        ascending=[True, True, True]\n    ).reset_index(drop=True)\n    \n    # Initialize result snapshot\n    # Start with existing snapshot data\n    result = target_snapshot.copy()\n    result = result.set_index(\"item_id\")\n    \n    # Process each event sequentially\n    for _, event in cdc_events.iterrows():\n        item_id = event[\"item_id\"]\n        op = event[\"op\"]\n        qty = event[\"qty\"]\n        event_ts = event[\"event_ts\"]\n        \n        if op == \"R\":  # Receipt: add to quantity\n            if item_id not in result.index:\n                # Item doesn't exist, start from 0\n                result.loc[item_id, \"qty_on_hand\"] = qty\n                result.loc[item_id, \"last_event_ts\"] = event_ts\n            else:\n                result.loc[item_id, \"qty_on_hand\"] += qty\n                result.loc[item_id, \"last_event_ts\"] = event_ts\n                \n        elif op == \"A\":  # Adjustment: set absolute quantity\n            if item_id not in result.index:\n                result.loc[item_id, \"qty_on_hand\"] = qty\n                result.loc[item_id, \"last_event_ts\"] = event_ts\n            else:\n                result.loc[item_id, \"qty_on_hand\"] = qty\n                result.loc[item_id, \"last_event_ts\"] = event_ts\n                \n        elif op == \"D\":  # Delete: remove item from snapshot\n            if item_id in result.index:\n                result = result.drop(item_id)\n    \n    # Reset index to convert back to column format\n    result = result.reset_index()\n    \n    # Ensure columns are in the correct order and have correct types\n    result = result[[\"item_id\", \"qty_on_hand\", \"last_event_ts\"]]\n    result[\"item_id\"] = result[\"item_id\"].astype(\"int64\")\n    result[\"qty_on_hand\"] = result[\"qty_on_hand\"].astype(\"float64\")\n    result[\"last_event_ts\"] = result[\"last_event_ts\"].astype(\"datetime64[us]\")\n    \n    return {\"new_snapshot\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 635,
+   "tokens_out": 760,
+   "usd": 0.004435,
+   "wall_s": 6.117048025131226,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

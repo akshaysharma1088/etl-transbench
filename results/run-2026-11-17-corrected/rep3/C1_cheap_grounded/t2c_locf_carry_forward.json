@@ -1,0 +1,48 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 3,
+ "task": "t2c_locf_carry_forward",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicates legacy SP_RATE_CARRY_FWD behavior using set-oriented pandas operations.\n    \n    Key semantics:\n    - Carry-forward (LOCF) must NOT cross account boundaries\n    - Sorts by account_id, obs_date, obs_seq (cursor order)\n    - For each row:\n      - If account_id changes, reset last_rate to NULL\n      - If rate IS NOT NULL, use it and set carried=0\n      - If rate IS NULL:\n        - If last_rate IS NULL, use NULL and set carried=0\n        - If last_rate IS NOT NULL, use it and set carried=1\n    \"\"\"\n    \n    rate_feed = inputs[\"rate_feed\"].copy()\n    \n    # Sort by account_id, obs_date, obs_seq to match cursor order\n    rate_feed = rate_feed.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        ignore_index=True\n    )\n    \n    # Initialize output columns\n    rate_filled = []\n    was_carried = []\n    \n    last_rate = None\n    prev_acct = None\n    \n    # Iterate through rows in cursor order\n    for idx, row in rate_feed.iterrows():\n        account_id = row[\"account_id\"]\n        rate = row[\"rate\"]\n        \n        # Reset last_rate when account_id changes\n        if account_id != prev_acct:\n            last_rate = None\n            prev_acct = account_id\n        \n        # Determine filled rate and carried flag\n        if pd.notna(rate):\n            # Row has a non-null rate\n            filled_rate = rate\n            last_rate = rate\n            carried = 0\n        else:\n            # Row has null rate\n            if last_rate is None:\n                # No previous rate available in this account\n                filled_rate = None\n                carried = 0\n            else:\n                # Carry forward the last rate\n                filled_rate = last_rate\n                carried = 1\n        \n        rate_filled.append(filled_rate)\n        was_carried.append(carried)\n    \n    # Build result DataFrame\n    result_df = pd.DataFrame({\n        \"account_id\": rate_feed[\"account_id\"],\n        \"obs_seq\": rate_feed[\"obs_seq\"],\n        \"obs_date\": rate_feed[\"obs_date\"],\n        \"rate_filled\": rate_filled,\n        \"was_carried\": was_carried\n    })\n    \n    return {\"rate_filled\": result_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 574,
+   "tokens_out": 656,
+   "usd": 0.003854,
+   "wall_s": 5.677584171295166,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

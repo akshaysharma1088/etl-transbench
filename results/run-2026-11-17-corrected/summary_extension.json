@@ -1,0 +1,1291 @@
+{
+  "configs": {
+    "A1_trace_only": {
+      "reps": 5,
+      "n_tasks": 8,
+      "ser0_dev": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser1_dev": {
+        "mean": 0.95,
+        "sd": 0.0685,
+        "per_rep": [
+          1,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_dev": {
+        "mean": 0.95,
+        "sd": 0.0685,
+        "per_rep": [
+          1,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_dev": {
+        "mean": 0.95,
+        "sd": 0.0685,
+        "per_rep": [
+          1,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser0_heldout": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser1_heldout": {
+        "mean": 0.95,
+        "sd": 0.0685,
+        "per_rep": [
+          1,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_heldout": {
+        "mean": 0.95,
+        "sd": 0.0685,
+        "per_rep": [
+          1,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_heldout": {
+        "mean": 0.95,
+        "sd": 0.0685,
+        "per_rep": [
+          1,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "usd_per_rep": {
+        "mean": 0.757,
+        "sd": 0.3872
+      },
+      "tokens_per_rep": 61385,
+      "heldout_solve_rate_by_category": {
+        "T3": 1,
+        "T5": 1,
+        "T6": 1,
+        "T7": 1,
+        "T8": 0.6
+      },
+      "dev_pass_heldout_fail": 0
+    },
+    "A2_no_hints": {
+      "reps": 5,
+      "n_tasks": 8,
+      "ser0_dev": {
+        "mean": 0.825,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          0.875,
+          0.75,
+          0.75,
+          0.875
+        ]
+      },
+      "ser1_dev": {
+        "mean": 0.9,
+        "sd": 0.0559,
+        "per_rep": [
+          0.875,
+          0.875,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_dev": {
+        "mean": 0.9,
+        "sd": 0.0559,
+        "per_rep": [
+          0.875,
+          0.875,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_dev": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          0.875,
+          1,
+          1,
+          0.875
+        ]
+      },
+      "ser0_heldout": {
+        "mean": 0.825,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          0.875,
+          0.75,
+          0.75,
+          0.875
+        ]
+      },
+      "ser1_heldout": {
+        "mean": 0.9,
+        "sd": 0.0559,
+        "per_rep": [
+          0.875,
+          0.875,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_heldout": {
+        "mean": 0.9,
+        "sd": 0.0559,
+        "per_rep": [
+          0.875,
+          0.875,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_heldout": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          0.875,
+          1,
+          1,
+          0.875
+        ]
+      },
+      "usd_per_rep": {
+        "mean": 0.9955,
+        "sd": 0.0805
+      },
+      "tokens_per_rep": 80601,
+      "heldout_solve_rate_by_category": {
+        "T3": 1,
+        "T5": 1,
+        "T6": 1,
+        "T7": 1,
+        "T8": 0.4
+      },
+      "dev_pass_heldout_fail": 0
+    },
+    "B1_single_pass": {
+      "reps": 5,
+      "n_tasks": 8,
+      "ser0_dev": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser1_dev": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_dev": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_dev": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser0_heldout": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser1_heldout": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_heldout": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_heldout": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "usd_per_rep": {
+        "mean": 0.3859,
+        "sd": 0.0391
+      },
+      "tokens_per_rep": 33799,
+      "heldout_solve_rate_by_category": {
+        "T3": 1,
+        "T5": 1,
+        "T6": 1,
+        "T7": 1,
+        "T8": 0.4
+      },
+      "dev_pass_heldout_fail": 0
+    },
+    "B2_retranslate": {
+      "reps": 5,
+      "n_tasks": 8,
+      "ser0_dev": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser1_dev": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_dev": {
+        "mean": 1,
+        "sd": 0.0,
+        "per_rep": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "ser5_dev": {
+        "mean": 1,
+        "sd": 0.0,
+        "per_rep": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "ser0_heldout": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser1_heldout": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_heldout": {
+        "mean": 1,
+        "sd": 0.0,
+        "per_rep": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "ser5_heldout": {
+        "mean": 1,
+        "sd": 0.0,
+        "per_rep": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "usd_per_rep": {
+        "mean": 0.5365,
+        "sd": 0.1771
+      },
+      "tokens_per_rep": 45254,
+      "heldout_solve_rate_by_category": {
+        "T3": 1,
+        "T5": 1,
+        "T6": 1,
+        "T7": 1,
+        "T8": 1
+      },
+      "dev_pass_heldout_fail": 0
+    },
+    "B3_self_repair": {
+      "reps": 5,
+      "n_tasks": 8,
+      "ser0_dev": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser1_dev": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_dev": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_dev": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser0_heldout": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser1_heldout": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_heldout": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_heldout": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "usd_per_rep": {
+        "mean": 0.7812,
+        "sd": 0.3981
+      },
+      "tokens_per_rep": 62982,
+      "heldout_solve_rate_by_category": {
+        "T3": 1,
+        "T5": 1,
+        "T6": 1,
+        "T7": 1,
+        "T8": 0.4
+      },
+      "dev_pass_heldout_fail": 0
+    },
+    "C0_cheap_single": {
+      "reps": 5,
+      "n_tasks": 8,
+      "ser0_dev": {
+        "mean": 0.75,
+        "sd": 0.0884,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "ser1_dev": {
+        "mean": 0.75,
+        "sd": 0.0884,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "ser3_dev": {
+        "mean": 0.75,
+        "sd": 0.0884,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "ser5_dev": {
+        "mean": 0.75,
+        "sd": 0.0884,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "ser0_heldout": {
+        "mean": 0.75,
+        "sd": 0.0884,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "ser1_heldout": {
+        "mean": 0.75,
+        "sd": 0.0884,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "ser3_heldout": {
+        "mean": 0.75,
+        "sd": 0.0884,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "ser5_heldout": {
+        "mean": 0.75,
+        "sd": 0.0884,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "usd_per_rep": {
+        "mean": 0.0614,
+        "sd": 0.0025
+      },
+      "tokens_per_rep": 18240,
+      "heldout_solve_rate_by_category": {
+        "T3": 1,
+        "T5": 0.85,
+        "T6": 0.8,
+        "T7": 0.8,
+        "T8": 0
+      },
+      "dev_pass_heldout_fail": 0
+    },
+    "C1_cheap_grounded": {
+      "reps": 5,
+      "n_tasks": 8,
+      "ser0_dev": {
+        "mean": 0.75,
+        "sd": 0.0884,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "ser1_dev": {
+        "mean": 0.825,
+        "sd": 0.1118,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_dev": {
+        "mean": 0.875,
+        "sd": 0.0,
+        "per_rep": [
+          0.875,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_dev": {
+        "mean": 0.875,
+        "sd": 0.0,
+        "per_rep": [
+          0.875,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser0_heldout": {
+        "mean": 0.75,
+        "sd": 0.0884,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "ser1_heldout": {
+        "mean": 0.825,
+        "sd": 0.1118,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_heldout": {
+        "mean": 0.875,
+        "sd": 0.0,
+        "per_rep": [
+          0.875,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_heldout": {
+        "mean": 0.875,
+        "sd": 0.0,
+        "per_rep": [
+          0.875,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "usd_per_rep": {
+        "mean": 0.1219,
+        "sd": 0.023
+      },
+      "tokens_per_rep": 39137,
+      "heldout_solve_rate_by_category": {
+        "T3": 1,
+        "T5": 1,
+        "T6": 1,
+        "T7": 1,
+        "T8": 0
+      },
+      "dev_pass_heldout_fail": 0
+    },
+    "C2_cheap_retranslate": {
+      "reps": 5,
+      "n_tasks": 8,
+      "ser0_dev": {
+        "mean": 0.75,
+        "sd": 0.0884,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "ser1_dev": {
+        "mean": 0.875,
+        "sd": 0.0,
+        "per_rep": [
+          0.875,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_dev": {
+        "mean": 0.9,
+        "sd": 0.0559,
+        "per_rep": [
+          1,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_dev": {
+        "mean": 0.9,
+        "sd": 0.0559,
+        "per_rep": [
+          1,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser0_heldout": {
+        "mean": 0.75,
+        "sd": 0.0884,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "ser1_heldout": {
+        "mean": 0.875,
+        "sd": 0.0,
+        "per_rep": [
+          0.875,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_heldout": {
+        "mean": 0.9,
+        "sd": 0.0559,
+        "per_rep": [
+          1,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_heldout": {
+        "mean": 0.9,
+        "sd": 0.0559,
+        "per_rep": [
+          1,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "usd_per_rep": {
+        "mean": 0.1013,
+        "sd": 0.0138
+      },
+      "tokens_per_rep": 29642,
+      "heldout_solve_rate_by_category": {
+        "T3": 1,
+        "T5": 1,
+        "T6": 1,
+        "T7": 1,
+        "T8": 0.2
+      },
+      "dev_pass_heldout_fail": 0
+    },
+    "C3_cheap_self_repair": {
+      "reps": 5,
+      "n_tasks": 8,
+      "ser0_dev": {
+        "mean": 0.75,
+        "sd": 0.0884,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "ser1_dev": {
+        "mean": 0.825,
+        "sd": 0.1118,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_dev": {
+        "mean": 0.875,
+        "sd": 0.0,
+        "per_rep": [
+          0.875,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_dev": {
+        "mean": 0.875,
+        "sd": 0.0,
+        "per_rep": [
+          0.875,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser0_heldout": {
+        "mean": 0.75,
+        "sd": 0.0884,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "ser1_heldout": {
+        "mean": 0.825,
+        "sd": 0.1118,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_heldout": {
+        "mean": 0.875,
+        "sd": 0.0,
+        "per_rep": [
+          0.875,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_heldout": {
+        "mean": 0.875,
+        "sd": 0.0,
+        "per_rep": [
+          0.875,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "usd_per_rep": {
+        "mean": 0.1229,
+        "sd": 0.0258
+      },
+      "tokens_per_rep": 39010,
+      "heldout_solve_rate_by_category": {
+        "T3": 1,
+        "T5": 1,
+        "T6": 1,
+        "T7": 1,
+        "T8": 0
+      },
+      "dev_pass_heldout_fail": 0
+    },
+    "C4_cheap_trace_only": {
+      "reps": 5,
+      "n_tasks": 8,
+      "ser0_dev": {
+        "mean": 0.75,
+        "sd": 0.0884,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "ser1_dev": {
+        "mean": 0.85,
+        "sd": 0.0559,
+        "per_rep": [
+          0.875,
+          0.75,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_dev": {
+        "mean": 0.875,
+        "sd": 0.0,
+        "per_rep": [
+          0.875,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_dev": {
+        "mean": 0.875,
+        "sd": 0.0,
+        "per_rep": [
+          0.875,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser0_heldout": {
+        "mean": 0.75,
+        "sd": 0.0884,
+        "per_rep": [
+          0.875,
+          0.625,
+          0.75,
+          0.75,
+          0.75
+        ]
+      },
+      "ser1_heldout": {
+        "mean": 0.85,
+        "sd": 0.0559,
+        "per_rep": [
+          0.875,
+          0.75,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_heldout": {
+        "mean": 0.875,
+        "sd": 0.0,
+        "per_rep": [
+          0.875,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_heldout": {
+        "mean": 0.875,
+        "sd": 0.0,
+        "per_rep": [
+          0.875,
+          0.875,
+          0.875,
+          0.875,
+          0.875
+        ]
+      },
+      "usd_per_rep": {
+        "mean": 0.1186,
+        "sd": 0.0152
+      },
+      "tokens_per_rep": 37761,
+      "heldout_solve_rate_by_category": {
+        "T3": 1,
+        "T5": 1,
+        "T6": 1,
+        "T7": 1,
+        "T8": 0
+      },
+      "dev_pass_heldout_fail": 0
+    },
+    "LEGATO": {
+      "reps": 5,
+      "n_tasks": 8,
+      "ser0_dev": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser1_dev": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_dev": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_dev": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser0_heldout": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser1_heldout": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser3_heldout": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "ser5_heldout": {
+        "mean": 0.925,
+        "sd": 0.0685,
+        "per_rep": [
+          0.875,
+          1,
+          1,
+          0.875,
+          0.875
+        ]
+      },
+      "usd_per_rep": {
+        "mean": 0.7998,
+        "sd": 0.4643
+      },
+      "tokens_per_rep": 65275,
+      "heldout_solve_rate_by_category": {
+        "T3": 1,
+        "T5": 1,
+        "T6": 1,
+        "T7": 1,
+        "T8": 0.4
+      },
+      "dev_pass_heldout_fail": 0
+    }
+  },
+  "paired_vs_LEGATO": {
+    "A1_trace_only": {
+      "reps": 5,
+      "tasks": 8,
+      "mean_ser_difference": -0.025,
+      "tasks_baseline_better": 0,
+      "tasks_other_better": 1,
+      "signflip_p": 1.0,
+      "pooled_discordant": [
+        0,
+        1
+      ],
+      "mcnemar_exact_p": 1.0
+    },
+    "A2_no_hints": {
+      "reps": 5,
+      "tasks": 8,
+      "mean_ser_difference": 0.0,
+      "tasks_baseline_better": 0,
+      "tasks_other_better": 0,
+      "signflip_p": 1.0,
+      "pooled_discordant": [
+        1,
+        1
+      ],
+      "mcnemar_exact_p": 1.0
+    },
+    "B1_single_pass": {
+      "reps": 5,
+      "tasks": 8,
+      "mean_ser_difference": 0.0,
+      "tasks_baseline_better": 0,
+      "tasks_other_better": 0,
+      "signflip_p": 1.0,
+      "pooled_discordant": [
+        0,
+        0
+      ],
+      "mcnemar_exact_p": 1.0
+    },
+    "B2_retranslate": {
+      "reps": 5,
+      "tasks": 8,
+      "mean_ser_difference": -0.075,
+      "tasks_baseline_better": 0,
+      "tasks_other_better": 1,
+      "signflip_p": 1.0,
+      "pooled_discordant": [
+        0,
+        3
+      ],
+      "mcnemar_exact_p": 0.25
+    },
+    "B3_self_repair": {
+      "reps": 5,
+      "tasks": 8,
+      "mean_ser_difference": 0.0,
+      "tasks_baseline_better": 0,
+      "tasks_other_better": 0,
+      "signflip_p": 1.0,
+      "pooled_discordant": [
+        0,
+        0
+      ],
+      "mcnemar_exact_p": 1.0
+    },
+    "C0_cheap_single": {
+      "reps": 5,
+      "tasks": 8,
+      "mean_ser_difference": 0.175,
+      "tasks_baseline_better": 6,
+      "tasks_other_better": 0,
+      "signflip_p": 0.0312,
+      "pooled_discordant": [
+        7,
+        0
+      ],
+      "mcnemar_exact_p": 0.0156
+    },
+    "C1_cheap_grounded": {
+      "reps": 5,
+      "tasks": 8,
+      "mean_ser_difference": 0.05,
+      "tasks_baseline_better": 1,
+      "tasks_other_better": 0,
+      "signflip_p": 1.0,
+      "pooled_discordant": [
+        2,
+        0
+      ],
+      "mcnemar_exact_p": 0.5
+    },
+    "C2_cheap_retranslate": {
+      "reps": 5,
+      "tasks": 8,
+      "mean_ser_difference": 0.025,
+      "tasks_baseline_better": 1,
+      "tasks_other_better": 0,
+      "signflip_p": 1.0,
+      "pooled_discordant": [
+        2,
+        1
+      ],
+      "mcnemar_exact_p": 1.0
+    },
+    "C3_cheap_self_repair": {
+      "reps": 5,
+      "tasks": 8,
+      "mean_ser_difference": 0.05,
+      "tasks_baseline_better": 1,
+      "tasks_other_better": 0,
+      "signflip_p": 1.0,
+      "pooled_discordant": [
+        2,
+        0
+      ],
+      "mcnemar_exact_p": 0.5
+    },
+    "C4_cheap_trace_only": {
+      "reps": 5,
+      "tasks": 8,
+      "mean_ser_difference": 0.05,
+      "tasks_baseline_better": 1,
+      "tasks_other_better": 0,
+      "signflip_p": 1.0,
+      "pooled_discordant": [
+        2,
+        0
+      ],
+      "mcnemar_exact_p": 0.5
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 2,
+ "task": "t1d_tsql_top_ties",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicate T-SQL TOP (5) WITH TIES semantics:\n    - Filter WHERE active = 1\n    - Sort by score DESC\n    - Apply TOP (5) WITH TIES: return all rows that tie at the 5th rank cutoff\n    - ISNULL(manager, 'UNASSIGNED') coalesces nulls\n    - branch_code + '-' + region_code uses NULL-propagating concatenation\n    \"\"\"\n    \n    df = inputs[\"branch_scores\"].copy()\n    \n    # WHERE active = 1\n    df = df[df[\"active\"] == 1].copy()\n    \n    # ORDER BY score DESC\n    df = df.sort_values(\"score\", ascending=False, na_position=\"last\").reset_index(drop=True)\n    \n    # Assign rank (accounting for ties in score)\n    # Using rank method with 'first' to match SQL Server default behavior\n    df[\"rank\"] = df[\"score\"].rank(method=\"first\", ascending=False).astype(\"Int64\")\n    \n    # Find the 5th rank cutoff value\n    # We need to get the score value at rank 5 (or less if there are fewer rows)\n    if len(df) >= 5:\n        rank_5_score = df[df[\"rank\"] == 5][\"score\"].iloc[0]\n        cutoff_rows = df[df[\"score\"] >= rank_5_score].copy()\n    else:\n        # If fewer than 5 rows total, include all\n        cutoff_rows = df.copy()\n    \n    # Apply ISNULL(manager, 'UNASSIGNED')\n    cutoff_rows[\"manager_norm\"] = cutoff_rows[\"manager\"].fillna(\"UNASSIGNED\")\n    \n    # Apply NULL-propagating string concatenation: branch_code + '-' + region_code\n    # In T-SQL, NULL + anything = NULL\n    def null_propagating_concat(row):\n        if pd.isna(row[\"branch_code\"]) or pd.isna(row[\"region_code\"]):\n            return None\n        return str(row[\"branch_code\"]) + \"-\" + str(row[\"region_code\"])\n    \n    cutoff_rows[\"branch_label\"] = cutoff_rows.apply(null_propagating_concat, axis=1)\n    \n    # Select output columns\n    result = cutoff_rows[[\"branch_id\", \"manager_norm\", \"branch_label\", \"score\"]].copy()\n    \n    # Reset index for clean output\n    result = result.reset_index(drop=True)\n    \n    return {\"top_branches\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 424,
+   "tokens_out": 667,
+   "usd": 0.003759,
+   "wall_s": 4.890721797943115,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

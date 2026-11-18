@@ -1,0 +1,48 @@
+{
+ "config": "B1_single_pass",
+ "rep": 3,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(\n        by=[\"user_id\", \"event_ts\", \"event_id\"],\n        ignore_index=True\n    )\n    \n    # Extract date (local calendar date) from event_ts\n    events[\"event_date\"] = events[\"event_ts\"].dt.date\n    \n    # Initialize session tracking columns\n    events[\"new_session\"] = False\n    events[\"session_num\"] = 0\n    \n    # Mark the first event of each user as starting a new session\n    events.loc[events.groupby(\"user_id\").cumcount() == 0, \"new_session\"] = True\n    \n    # For each user, check gap and date changes\n    for user_id in events[\"user_id\"].unique():\n        user_mask = events[\"user_id\"] == user_id\n        user_indices = events[user_mask].index\n        \n        if len(user_indices) > 1:\n            for i in range(1, len(user_indices)):\n                curr_idx = user_indices[i]\n                prev_idx = user_indices[i - 1]\n                \n                curr_ts = events.loc[curr_idx, \"event_ts\"]\n                prev_ts = events.loc[prev_idx, \"event_ts\"]\n                curr_date = events.loc[curr_idx, \"event_date\"]\n                prev_date = events.loc[prev_idx, \"event_date\"]\n                \n                # Check if dates are different (calendar split)\n                if curr_date != prev_date:\n                    events.loc[curr_idx, \"new_session\"] = True\n                else:\n                    # Check if gap > 45 minutes\n                    gap_minutes = (curr_ts - prev_ts).total_seconds() / 60.0\n                    if gap_minutes > 45:\n                        events.loc[curr_idx, \"new_session\"] = True\n    \n    # Assign session numbers based on new_session flags\n    events[\"session_num\"] = (\n        events.groupby(\"user_id\")[\"new_session\"].cumsum()\n    )\n    \n    # Group by user_id and session_num to aggregate\n    grouped = events.groupby([\"user_id\", \"session_num\"], as_index=False).agg(\n        session_date=(\"event_date\", \"first\"),\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    )\n    \n    # Rename session_num to match expected output\n    user_sessions = grouped[[\"user_id\", \"session_num\", \"session_date\", \"session_start\", \"session_end\", \"event_count\"]]\n    \n    return {\"user_sessions\": user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 742,
+   "usd": 0.00409,
+   "wall_s": 6.276772737503052,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

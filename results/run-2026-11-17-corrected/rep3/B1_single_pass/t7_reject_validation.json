@@ -1,0 +1,48 @@
+{
+ "config": "B1_single_pass",
+ "rep": 3,
+ "task": "t7_reject_validation",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"payments\"].copy()\n\n    allowed_currencies = {\"USD\", \"EUR\", \"GBP\"}\n\n    def classify(row):\n        amount = row[\"amount\"]\n        currency = row[\"currency\"]\n        country = row[\"country\"]\n\n        if pd.isna(amount):\n            return \"AMT_NULL\"\n        if amount <= 0:\n            return \"AMT_NONPOS\"\n        if pd.isna(currency) or currency not in allowed_currencies:\n            return \"CCY_INVALID\"\n        if pd.isna(country):\n            return \"CTRY_NULL\"\n        return None\n\n    reason_codes = df.apply(classify, axis=1)\n\n    is_rejected = reason_codes.notna()\n\n    clean_df = df.loc[~is_rejected, [\"payment_id\", \"amount\", \"currency\", \"country\"]].copy()\n    clean_df[\"amount\"] = clean_df[\"amount\"].round(2)\n\n    rejects_df = df.loc[is_rejected, [\"payment_id\", \"amount\", \"currency\", \"country\"]].copy()\n    rejects_df[\"reason_code\"] = reason_codes.loc[is_rejected]\n\n    clean_df = clean_df.reset_index(drop=True)\n    rejects_df = rejects_df.reset_index(drop=True)\n\n    return {\n        \"payments_clean\": clean_df,\n        \"payments_rejects\": rejects_df,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 615,
+   "tokens_out": 968,
+   "usd": 0.016365,
+   "wall_s": 9.3965904712677,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

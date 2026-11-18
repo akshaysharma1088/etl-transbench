@@ -1,0 +1,17 @@
+{
+ "task": "t2c_locf_carry_forward",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"rate_feed\"].copy()\n\n    df = df.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    account_ids = df[\"account_id\"].tolist()\n    obs_seqs = df[\"obs_seq\"].tolist()\n    obs_dates = df[\"obs_date\"].tolist()\n    rates = df[\"rate\"].tolist()\n\n    out_rate = []\n    out_carried = []\n\n    prev_acct = None\n    last_rate = None\n\n    for i in range(len(df)):\n        acct = account_ids[i]\n        rate = rates[i]\n\n        if acct != prev_acct:\n            last_rate = None\n            prev_acct = acct\n\n        if pd.notna(rate):\n            last_rate = rate\n            carried = 0\n        else:\n            carried = 0 if last_rate is None else 1\n\n        filled = rate if pd.notna(rate) else last_rate\n        out_rate.append(filled)\n        out_carried.append(carried)\n\n    result = pd.DataFrame({\n        \"account_id\": account_ids,\n        \"obs_seq\": obs_seqs,\n        \"obs_date\": obs_dates,\n        \"rate_filled\": out_rate,\n        \"was_carried\": out_carried,\n    })\n\n    result[\"account_id\"] = result[\"account_id\"].astype(\"int64\")\n    result[\"obs_seq\"] = result[\"obs_seq\"].astype(\"int64\")\n    result[\"rate_filled\"] = result[\"rate_filled\"].astype(\"float64\")\n    result[\"was_carried\"] = result[\"was_carried\"].astype(\"int64\")\n\n    return {\"rate_filled\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 810,
+   "tokens_out": 676,
+   "usd": 0.01257,
+   "wall_s": 6.305442810058594,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

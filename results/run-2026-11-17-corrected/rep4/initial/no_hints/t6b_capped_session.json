@@ -1,0 +1,17 @@
+{
+ "task": "t6b_capped_session",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    events = inputs[\"events\"].copy()\n\n    # Ensure proper types\n    events[\"user_id\"] = events[\"user_id\"].astype(\"int64\")\n    events[\"event_id\"] = events[\"event_id\"].astype(\"int64\")\n    events[\"event_ts\"] = pd.to_datetime(events[\"event_ts\"])\n\n    # Sort by user_id, event_ts, event_id for deterministic ordering\n    events = events.sort_values(\n        by=[\"user_id\", \"event_ts\", \"event_id\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    gap_limit = pd.Timedelta(minutes=20)\n    cap_limit = pd.Timedelta(hours=4)\n\n    session_nums = [0] * len(events)\n\n    current_user = None\n    prev_ts = None\n    session_start = None\n    session_num = 0\n\n    user_ids = events[\"user_id\"].values\n    ts_vals = events[\"event_ts\"].values\n\n    for i in range(len(events)):\n        uid = user_ids[i]\n        ts = pd.Timestamp(ts_vals[i])\n\n        if uid != current_user:\n            # New user, start fresh session\n            current_user = uid\n            session_num = 1\n            session_start = ts\n            prev_ts = ts\n        else:\n            gap = ts - prev_ts\n            cap_exceeded = (ts - session_start) > cap_limit\n            if gap > gap_limit or cap_exceeded:\n                session_num += 1\n                session_start = ts\n            prev_ts = ts\n\n        session_nums[i] = session_num\n\n    events[\"session_num\"] = session_nums\n\n    grouped = events.groupby([\"user_id\", \"session_num\"], as_index=False).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\"),\n    )\n\n    grouped = grouped.sort_values(\n        by=[\"user_id\", \"session_num\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    grouped[\"user_id\"] = grouped[\"user_id\"].astype(\"int64\")\n    grouped[\"session_num\"] = grouped[\"session_num\"].astype(\"int64\")\n    grouped[\"event_count\"] = grouped[\"event_count\"].astype(\"int64\")\n\n    return {\"user_sessions\": grouped}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 591,
+   "tokens_out": 1158,
+   "usd": 0.019143,
+   "wall_s": 9.928364276885986,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

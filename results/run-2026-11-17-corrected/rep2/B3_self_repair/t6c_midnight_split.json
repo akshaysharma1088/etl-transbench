@@ -1,0 +1,53 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n\n    # Defensive type coercion\n    events[\"event_ts\"] = pd.to_datetime(events[\"event_ts\"])\n\n    # Sort by user_id, then event_ts, then event_id (stable sort for determinism)\n    events = events.sort_values(\n        by=[\"user_id\", \"event_ts\", \"event_id\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # Extract calendar date (server local) of each event\n    events[\"event_date\"] = events[\"event_ts\"].dt.date\n\n    # Previous event's timestamp and date, within same user\n    events[\"prev_event_ts\"] = events.groupby(\"user_id\")[\"event_ts\"].shift(1)\n    events[\"prev_event_date\"] = events.groupby(\"user_id\")[\"event_date\"].shift(1)\n\n    # Gap in minutes from previous event (same user)\n    events[\"time_gap_minutes\"] = (\n        events[\"event_ts\"] - events[\"prev_event_ts\"]\n    ).dt.total_seconds() / 60.0\n\n    # Determine new-session boundaries:\n    # (a) first event for user (no previous event)\n    # (b) gap strictly greater than 45 minutes\n    # (c) event's calendar date differs from previous event's calendar date\n    events[\"new_session\"] = False\n    events.loc[events[\"prev_event_ts\"].isna(), \"new_session\"] = True\n    events.loc[events[\"time_gap_minutes\"] > 45, \"new_session\"] = True\n    events.loc[events[\"event_date\"] != events[\"prev_event_date\"], \"new_session\"] = True\n\n    # Session number: cumulative count of session-starts within each user.\n    # The first event of each user always has new_session == True, so the\n    # cumulative sum already starts at 1 for session 1 -- no extra offset needed.\n    events[\"session_num\"] = events.groupby(\"user_id\")[\"new_session\"].cumsum()\n\n    # Aggregate into sessions\n    user_sessions = events.groupby([\"user_id\", \"session_num\"], sort=False).agg(\n        session_date=(\"event_date\", \"first\"),\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\"),\n    ).reset_index()\n\n    # Convert session_date to a proper datetime (DATE) column\n    user_sessions[\"session_date\"] = pd.to_datetime(user_sessions[\"session_date\"])\n\n    # Ensure correct column order and types\n    user_sessions[\"session_num\"] = user_sessions[\"session_num\"].astype(\"int64\")\n    user_sessions = user_sessions[\n        [\"user_id\", \"session_num\", \"session_date\", \"session_start\", \"session_end\", \"event_count\"]\n    ]\n\n    # Final sort by user_id, session_num\n    user_sessions = user_sessions.sort_values(\n        by=[\"user_id\", \"session_num\"], kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    return {\"user_sessions\": user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 725,
+   "usd": 0.004005,
+   "wall_s": 6.113664865493774,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1623,
+  "tokens_out": 10874,
+  "usd": 0.167979,
+  "wall_s": 122.0587375164032
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "B3_self_repair",
+ "rep": 4,
+ "task": "t2d_reject_skip_accum",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    postings = inputs[\"postings\"].copy()\n\n    # Sort according to cursor order: account_id, post_date, post_seq\n    postings = postings.sort_values(\n        by=[\"account_id\", \"post_date\", \"post_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # Determine validity of each row\n    valid_mask = (\n        postings[\"qty\"].notna()\n        & (postings[\"qty\"] > 0)\n        & postings[\"unit_price\"].notna()\n        & (postings[\"unit_price\"] >= 0)\n    )\n\n    valid_rows = postings[valid_mask].copy()\n    invalid_rows = postings[~valid_mask].copy()\n\n    # Compute post_value and running_total for valid rows, per account, in sorted order\n    valid_rows[\"post_value\"] = valid_rows[\"qty\"] * valid_rows[\"unit_price\"]\n    valid_rows[\"running_total\"] = valid_rows.groupby(\"account_id\")[\"post_value\"].cumsum()\n\n    posted_totals = valid_rows[\n        [\"account_id\", \"post_seq\", \"post_date\", \"post_value\", \"running_total\"]\n    ].reset_index(drop=True)\n\n    # Reject counts: count invalid rows per account, including zero for accounts with none\n    all_accounts = postings[\"account_id\"].drop_duplicates()\n    reject_count_series = invalid_rows.groupby(\"account_id\").size()\n\n    reject_counts = pd.DataFrame({\"account_id\": all_accounts})\n    reject_counts[\"reject_count\"] = reject_counts[\"account_id\"].map(reject_count_series).fillna(0).astype(\"int64\")\n    reject_counts = reject_counts.sort_values(\"account_id\", kind=\"mergesort\").reset_index(drop=True)\n\n    return {\n        \"posted_totals\": posted_totals,\n        \"reject_counts\": reject_counts,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1054,
+   "tokens_out": 991,
+   "usd": 0.018027,
+   "wall_s": 9.472383737564087,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

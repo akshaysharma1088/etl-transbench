@@ -1,0 +1,17 @@
+{
+ "task": "t2c_locf_carry_forward",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"rate_feed\"].copy()\n\n    df = df.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    rate_filled = []\n    was_carried = []\n\n    prev_acct = None\n    last_rate = None\n\n    for row in df.itertuples(index=False):\n        acct = row.account_id\n        rate = row.rate\n\n        if acct != prev_acct:\n            last_rate = None\n            prev_acct = acct\n\n        if pd.notna(rate):\n            last_rate = rate\n            carried = 0\n        else:\n            carried = 0 if last_rate is None else 1\n\n        if pd.notna(rate):\n            filled = rate\n        else:\n            filled = last_rate\n\n        rate_filled.append(filled)\n        was_carried.append(carried)\n\n    df[\"rate_filled\"] = rate_filled\n    df[\"was_carried\"] = pd.Series(was_carried, dtype=\"int64\")\n\n    result = df[[\"account_id\", \"obs_seq\", \"obs_date\", \"rate_filled\", \"was_carried\"]]\n\n    return {\"rate_filled\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 810,
+   "tokens_out": 508,
+   "usd": 0.01005,
+   "wall_s": 4.924623727798462,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

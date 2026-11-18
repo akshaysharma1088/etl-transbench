@@ -1,0 +1,17 @@
+{
+ "task": "t1d_tsql_top_ties",
+ "group": "no_hints",
+ "tier": "cheap",
+ "code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    branch_scores = inputs[\"branch_scores\"].copy()\n    \n    # Filter where active = 1\n    branch_scores = branch_scores[branch_scores[\"active\"] == 1].copy()\n    \n    # Sort by score descending\n    branch_scores = branch_scores.sort_values(\"score\", ascending=False, na_position=\"last\")\n    \n    # Find the 5th highest score (rank 5)\n    if len(branch_scores) < 5:\n        # If fewer than 5 rows, include all of them\n        cutoff_score = branch_scores[\"score\"].min() if len(branch_scores) > 0 else None\n    else:\n        cutoff_score = branch_scores.iloc[4][\"score\"]\n    \n    # Include all rows where score >= cutoff_score (implements TOP 5 WITH TIES)\n    if len(branch_scores) > 0:\n        result = branch_scores[branch_scores[\"score\"] >= cutoff_score].copy()\n    else:\n        result = branch_scores.copy()\n    \n    # Apply transformations\n    # ISNULL(manager, 'UNASSIGNED') - coalesce NULL manager to 'UNASSIGNED'\n    result[\"manager_norm\"] = result[\"manager\"].fillna(\"UNASSIGNED\")\n    \n    # branch_code + '-' + region_code with NULL propagation\n    # In T-SQL, NULL + anything = NULL\n    result[\"branch_label\"] = result.apply(\n        lambda row: (\n            None\n            if pd.isna(row[\"branch_code\"]) or pd.isna(row[\"region_code\"])\n            else str(row[\"branch_code\"]) + \"-\" + str(row[\"region_code\"])\n        ),\n        axis=1\n    )\n    \n    # Select final columns\n    result = result[[\"branch_id\", \"manager_norm\", \"branch_label\", \"score\"]]\n    \n    return {\"top_branches\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 393,
+   "tokens_out": 512,
+   "usd": 0.002953,
+   "wall_s": 4.6016175746917725,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

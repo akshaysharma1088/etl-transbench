@@ -1,0 +1,53 @@
+{
+ "config": "B3_self_repair",
+ "rep": 2,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Per-(user, channel) independent sessionization over interleaved streams.\n\n    Sessions are defined by a strict 25-minute gap rule applied WITHIN each\n    (user_id, channel) stream separately. Events are ordered by\n    (event_ts, event_id) within each (user_id, channel) group.\n\n    Output: channel_sessions with columns:\n      - user_id: int64\n      - channel: str\n      - session_num: int64 (1-based per user+channel)\n      - session_start: datetime64[us]\n      - session_end: datetime64[us]\n      - event_count: int64\n    \"\"\"\n\n    events = inputs[\"events\"].copy()\n\n    # Sort by (user_id, channel, event_ts, event_id) -- stable sort to\n    # preserve tie-breaking by event_id for equal timestamps.\n    events = events.sort_values(\n        by=[\"user_id\", \"channel\", \"event_ts\", \"event_id\"],\n        kind=\"mergesort\",\n        na_position=\"last\",\n    ).reset_index(drop=True)\n\n    grp = events.groupby([\"user_id\", \"channel\"], sort=False)\n\n    # Previous timestamp within the same (user_id, channel) stream.\n    prev_ts = grp[\"event_ts\"].shift(1)\n\n    # Position within group (0 = first row of the group).\n    cum_pos = grp.cumcount()\n    is_first = cum_pos == 0\n\n    gap_threshold = pd.Timedelta(minutes=25)\n\n    gap = events[\"event_ts\"] - prev_ts\n    nan_mask = prev_ts.isna() | events[\"event_ts\"].isna()\n\n    # New session starts:\n    #   - always at the first event of a (user_id, channel) group\n    #   - otherwise, when neither timestamp is null and the strict gap\n    #     (> 25 minutes) is exceeded\n    new_session = is_first | (~nan_mask & (gap > gap_threshold))\n\n    events[\"_new_session\"] = new_session.astype(\"int64\")\n    events[\"session_num\"] = (\n        events.groupby([\"user_id\", \"channel\"], sort=False)[\"_new_session\"].cumsum()\n    )\n\n    events = events.drop(columns=[\"_new_session\"])\n\n    # Aggregate to build channel_sessions.\n    channel_sessions = events.groupby(\n        [\"user_id\", \"channel\", \"session_num\"],\n        as_index=False,\n        sort=True,\n    ).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\"),\n    )\n\n    channel_sessions[\"session_num\"] = channel_sessions[\"session_num\"].astype(\"int64\")\n    channel_sessions[\"event_count\"] = channel_sessions[\"event_count\"].astype(\"int64\")\n    channel_sessions[\"session_start\"] = channel_sessions[\"session_start\"].astype(\n        \"datetime64[us]\"\n    )\n    channel_sessions[\"session_end\"] = channel_sessions[\"session_end\"].astype(\n        \"datetime64[us]\"\n    )\n\n    channel_sessions = channel_sessions.sort_values(\n        by=[\"user_id\", \"channel\", \"session_num\"]\n    ).reset_index(drop=True)\n\n    channel_sessions = channel_sessions[\n        [\"user_id\", \"channel\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]\n    ]\n\n    return {\"channel_sessions\": channel_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 351,
+   "tokens_out": 809,
+   "usd": 0.004396,
+   "wall_s": 5.680577993392944,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1706,
+  "tokens_out": 3843,
+  "usd": 0.062763,
+  "wall_s": 37.903358697891235
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

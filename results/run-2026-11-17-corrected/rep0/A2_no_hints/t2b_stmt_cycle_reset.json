@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    ledger = inputs[\"ledger\"].copy()\n\n    # Sort according to cursor ORDER BY account_id, entry_date, row_seq\n    sorted_ledger = ledger.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        kind=\"mergesort\"  # stable sort to preserve deterministic tie-breaking\n    ).reset_index(drop=True)\n\n    prev_acct = None\n    bal = 0.0\n    cyc = 1\n\n    cycle_nos = []\n    cycle_balances = []\n\n    for row in sorted_ledger.itertuples(index=False):\n        account_id = row.account_id\n        entry_type = row.entry_type\n        amount = row.amount\n\n        if account_id != prev_acct:\n            bal = 0.0\n            cyc = 1\n            prev_acct = account_id\n\n        if entry_type == \"STMT\":\n            bal = 0.0\n            cyc = cyc + 1\n\n        amt = 0.0 if pd.isna(amount) else amount\n        bal = bal + amt\n\n        cycle_nos.append(cyc)\n        cycle_balances.append(bal)\n\n    result = sorted_ledger.copy()\n    result[\"cycle_no\"] = cycle_nos\n    result[\"cycle_balance\"] = cycle_balances\n\n    return {\"cycle_balances\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 790,
+   "tokens_out": 683,
+   "usd": 0.012615,
+   "wall_s": 6.423126220703125,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

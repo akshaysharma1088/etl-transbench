@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 1,
+ "task": "t2d_reject_skip_accum",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    postings = inputs[\"postings\"].copy()\n\n    # Sort per cursor ORDER BY account_id, post_date, post_seq\n    postings = postings.sort_values(\n        by=[\"account_id\", \"post_date\", \"post_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    posted_rows = []\n    reject_rows = []\n\n    prev_acct = None\n    tot = 0.0\n    rej = 0\n\n    for _, r in postings.iterrows():\n        acct = r[\"account_id\"]\n        if acct != prev_acct:\n            if prev_acct is not None:\n                reject_rows.append({\"account_id\": prev_acct, \"reject_count\": rej})\n            tot = 0.0\n            rej = 0\n            prev_acct = acct\n\n        qty = r[\"qty\"]\n        unit_price = r[\"unit_price\"]\n\n        is_bad = (\n            pd.isna(qty) or qty <= 0 or\n            pd.isna(unit_price) or unit_price < 0\n        )\n\n        if is_bad:\n            rej += 1\n        else:\n            v = qty * unit_price\n            tot = tot + v\n            posted_rows.append({\n                \"account_id\": r[\"account_id\"],\n                \"post_seq\": r[\"post_seq\"],\n                \"post_date\": r[\"post_date\"],\n                \"post_value\": v,\n                \"running_total\": tot\n            })\n\n    if prev_acct is not None:\n        reject_rows.append({\"account_id\": prev_acct, \"reject_count\": rej})\n\n    posted_totals = pd.DataFrame(\n        posted_rows,\n        columns=[\"account_id\", \"post_seq\", \"post_date\", \"post_value\", \"running_total\"]\n    )\n    if len(posted_totals) > 0:\n        posted_totals[\"account_id\"] = posted_totals[\"account_id\"].astype(\"int64\")\n        posted_totals[\"post_seq\"] = posted_totals[\"post_seq\"].astype(\"int64\")\n        posted_totals[\"post_date\"] = pd.to_datetime(posted_totals[\"post_date\"])\n        posted_totals[\"post_value\"] = posted_totals[\"post_value\"].astype(\"float64\")\n        posted_totals[\"running_total\"] = posted_totals[\"running_total\"].astype(\"float64\")\n\n    reject_counts = pd.DataFrame(\n        reject_rows,\n        columns=[\"account_id\", \"reject_count\"]\n    )\n    if len(reject_counts) > 0:\n        reject_counts[\"account_id\"] = reject_counts[\"account_id\"].astype(\"int64\")\n        reject_counts[\"reject_count\"] = reject_counts[\"reject_count\"].astype(\"int64\")\n\n    return {\n        \"posted_totals\": posted_totals,\n        \"reject_counts\": reject_counts\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1014,
+   "tokens_out": 1131,
+   "usd": 0.020007,
+   "wall_s": 9.397955894470215,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

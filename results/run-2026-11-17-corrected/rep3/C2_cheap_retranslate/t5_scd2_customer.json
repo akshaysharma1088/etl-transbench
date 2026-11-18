@@ -1,0 +1,48 @@
+{
+ "config": "C2_cheap_retranslate",
+ "rep": 3,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_customer = inputs[\"dim_customer\"].copy()\n    stg_customer = inputs[\"stg_customer\"].copy()\n    \n    # Step 1: Deduplicate STG_CUSTOMER to latest record per customer_id by update_date\n    # On ties, keep record with greater (name, segment) pair lexicographically\n    stg_customer = stg_customer.sort_values(\n        by=[\"customer_id\", \"update_date\", \"name\", \"segment\"],\n        ascending=[True, False, False, False]\n    )\n    stg_dedup = stg_customer.drop_duplicates(subset=[\"customer_id\"], keep=\"first\").reset_index(drop=True)\n    \n    # Step 2: Process each staged record\n    # Collect rows to update (expire), rows to insert, and rows to preserve\n    rows_to_expire = []\n    rows_to_insert = []\n    \n    for _, staged_row in stg_dedup.iterrows():\n        staged_customer_id = staged_row[\"customer_id\"]\n        staged_name = staged_row[\"name\"]\n        staged_segment = staged_row[\"segment\"]\n        staged_update_date = staged_row[\"update_date\"]\n        \n        # Find current row in DIM_CUSTOMER for this customer_id (is_current = 1)\n        current_rows = dim_customer[\n            (dim_customer[\"customer_id\"] == staged_customer_id) &\n            (dim_customer[\"is_current\"] == 1)\n        ]\n        \n        if len(current_rows) == 0:\n            # Case 1: No current row exists - INSERT new row\n            new_row = {\n                \"customer_id\": staged_customer_id,\n                \"name\": staged_name,\n                \"segment\": staged_segment,\n                \"eff_start_date\": staged_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1\n            }\n            rows_to_insert.append(new_row)\n        else:\n            # There should be exactly one current row\n            current_row = current_rows.iloc[0]\n            current_name = current_row[\"name\"]\n            current_segment = current_row[\"segment\"]\n            \n            # Compare tracked attributes (name, segment)\n            # NULL handling: NULL <> 'x' is a change; NULL vs NULL is no change\n            name_changed = (\n                pd.isna(current_name) != pd.isna(staged_name) or\n                (pd.notna(current_name) and pd.notna(staged_name) and current_name != staged_name)\n            )\n            segment_changed = (\n                pd.isna(current_segment) != pd.isna(staged_segment) or\n                (pd.notna(current_segment) and pd.notna(staged_segment) and current_segment != staged_segment)\n            )\n            \n            if name_changed or segment_changed:\n                # Case 2: Tracked attribute change - EXPIRE and version\n                rows_to_expire.append(current_row.name)  # Store index\n                \n                new_row = {\n                    \"customer_id\": staged_customer_id,\n                    \"name\": staged_name,\n                    \"segment\": staged_segment,\n                    \"eff_start_date\": staged_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1\n                }\n                rows_to_insert.append(new_row)\n            else:\n                # Case 3: No change - do nothing (MUST NOT create new version)\n                pass\n    \n    # Apply updates: expire rows\n    for idx in rows_to_expire:\n        dim_customer.loc[idx, \"eff_end_date\"] = dim_customer.loc[idx, \"eff_start_date\"]\n        # Find the matching staged record to get the correct eff_end_date\n        customer_id = dim_customer.loc[idx, \"customer_id\"]\n        staged_match = stg_dedup[stg_dedup[\"customer_id\"] == customer_id]\n        if len(staged_match) > 0:\n            dim_customer.loc[idx, \"eff_end_date\"] = staged_match.iloc[0][\"update_date\"]\n        dim_customer.loc[idx, \"is_current\"] = 0\n    \n    # Insert new rows\n    if rows_to_insert:\n        insert_df = pd.DataFrame(rows_to_insert)\n        dim_customer = pd.concat([dim_customer, insert_df], ignore_index=True)\n    \n    # Step 3: Rows not touched by staging are preserved unchanged (already in dim_customer)\n    \n    dim_customer_out = dim_customer.reset_index(drop=True)\n    \n    return {\n        \"dim_customer_out\": dim_customer_out\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 809,
+   "tokens_out": 1235,
+   "usd": 0.006984,
+   "wall_s": 9.751508951187134,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

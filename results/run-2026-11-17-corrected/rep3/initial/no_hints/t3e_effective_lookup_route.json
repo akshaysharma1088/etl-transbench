@@ -1,0 +1,17 @@
+{
+ "task": "t3e_effective_lookup_route",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\nimport numpy as np\n\n\ndef _norm(s):\n    if pd.isna(s):\n        return None\n    return str(s).strip().upper()\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    price_list = inputs[\"price_list\"].copy()\n\n    # --- expression: sku_norm ---\n    orders[\"sku_norm\"] = orders[\"sku\"].apply(_norm)\n    orders[\"_row_id\"] = range(len(orders))\n\n    price_list = price_list.copy()\n    price_list[\"sku_norm_price\"] = price_list[\"sku\"].apply(_norm)\n\n    # --- lookup ---\n    # only orders with non-null sku_norm can match\n    candidates = orders[orders[\"sku_norm\"].notna()][[\"_row_id\", \"sku_norm\", \"order_date\"]]\n\n    merged = candidates.merge(\n        price_list,\n        left_on=\"sku_norm\",\n        right_on=\"sku_norm_price\",\n        how=\"inner\",\n    )\n\n    # filter valid_from <= order_date\n    merged = merged[merged[\"valid_from\"] <= merged[\"order_date\"]]\n\n    # tie-break: greatest valid_from, then lowest list_id\n    merged = merged.sort_values(\n        by=[\"_row_id\", \"valid_from\", \"list_id\"],\n        ascending=[True, False, True],\n    )\n\n    best = merged.groupby(\"_row_id\", as_index=False).first()\n    best = best[[\"_row_id\", \"unit_price\", \"list_id\"]]\n\n    orders = orders.merge(best, on=\"_row_id\", how=\"left\")\n\n    matched = orders[\"unit_price\"].notna()\n    orders[\"price_flag\"] = np.where(matched, \"OK\", \"NO_PRICE\")\n    orders.loc[~matched, \"unit_price\"] = 0.0\n    orders[\"unit_price\"] = orders[\"unit_price\"].astype(float)\n\n    # --- expression: ext_amount ---\n    orders[\"ext_amount\"] = orders[\"qty\"] * orders[\"unit_price\"]\n\n    # --- router ---\n    qty = orders[\"qty\"]\n    price_flag = orders[\"price_flag\"]\n    ext_amount = orders[\"ext_amount\"]\n\n    review_mask = (price_flag == \"NO_PRICE\") | qty.isna() | (qty >= 100)\n    bulk_mask = ext_amount >= 1000\n    small_mask = ext_amount < 50\n\n    bulk_mask = bulk_mask.fillna(False)\n    small_mask = small_mask.fillna(False)\n    review_mask = review_mask.fillna(False)\n\n    route = np.full(len(orders), \"STANDARD\", dtype=object)\n\n    # apply in reverse priority order so earlier rules overwrite later ones\n    route = np.where(small_mask, \"SMALL\", route)\n    route = np.where(bulk_mask, \"BULK\", route)\n    route = np.where(review_mask, \"REVIEW\", route)\n\n    orders[\"route\"] = route\n\n    # --- output1: order_enriched ---\n    order_enriched = orders[[\"order_id\", \"sku_norm\", \"unit_price\", \"route\"]].copy()\n\n    # --- aggregator ---\n    grouped = orders.groupby([\"route\", \"order_date\"], dropna=False)\n    agg = grouped.agg(\n        order_count=(\"order_id\", \"size\"),\n        total_ext=(\"ext_amount\", \"sum\"),\n    ).reset_index()\n\n    agg[\"total_ext\"] = agg[\"total_ext\"].fillna(0.0)\n\n    route_daily = agg[[\"route\", \"order_date\", \"order_count\", \"total_ext\"]].copy()\n\n    return {\n        \"order_enriched\": order_enriched,\n        \"route_daily\": route_daily,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1518,
+   "tokens_out": 2804,
+   "usd": 0.046614,
+   "wall_s": 24.955886125564575,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

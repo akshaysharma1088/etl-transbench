@@ -1,0 +1,68 @@
+{
+ "config": "C4_cheap_trace_only",
+ "rep": 0,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_state = inputs[\"target_state\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    \n    # Ensure proper types\n    target_state[\"order_id\"] = target_state[\"order_id\"].astype(\"int64\")\n    target_state[\"last_seq\"] = target_state[\"last_seq\"].astype(\"int64\")\n    \n    cdc_events[\"seq\"] = cdc_events[\"seq\"].astype(\"int64\")\n    cdc_events[\"order_id\"] = cdc_events[\"order_id\"].astype(\"int64\")\n    \n    # Step 1: Remove duplicate events (same seq) - keep first occurrence\n    cdc_events = cdc_events.drop_duplicates(subset=[\"seq\"], keep=\"first\")\n    \n    # Step 2: Sort by seq to respect log order\n    cdc_events = cdc_events.sort_values(\"seq\").reset_index(drop=True)\n    \n    # Step 3: Apply replay guard - filter events where seq <= last_seq for existing orders\n    # Create a mapping of order_id to last_seq from target_state\n    order_last_seq = dict(zip(target_state[\"order_id\"], target_state[\"last_seq\"]))\n    \n    def should_apply_event(row):\n        order_id = row[\"order_id\"]\n        seq = row[\"seq\"]\n        # If order exists in target_state and seq <= last_seq, skip\n        if order_id in order_last_seq and seq <= order_last_seq[order_id]:\n            return False\n        return True\n    \n    cdc_events = cdc_events[cdc_events.apply(should_apply_event, axis=1)].reset_index(drop=True)\n    \n    # Step 4: Apply events in seq order\n    # Initialize new_state as a copy of target_state\n    new_state = target_state.copy()\n    new_state_dict = {}\n    for _, row in target_state.iterrows():\n        new_state_dict[row[\"order_id\"]] = {\n            \"status\": row[\"status\"],\n            \"amount\": row[\"amount\"],\n            \"last_seq\": row[\"last_seq\"]\n        }\n    \n    # Track which orders had rows at some point (for tombstone detection)\n    orders_ever_existed = set(target_state[\"order_id\"].values)\n    \n    # Track last operation per order for tombstone logic\n    last_op_per_order = {}\n    last_seq_per_order = {}\n    \n    for _, event in cdc_events.iterrows():\n        order_id = event[\"order_id\"]\n        seq = event[\"seq\"]\n        op = event[\"op\"]\n        status = event[\"status\"]\n        amount = event[\"amount\"]\n        \n        orders_ever_existed.add(order_id)\n        last_op_per_order[order_id] = op\n        last_seq_per_order[order_id] = seq\n        \n        if op in [\"I\", \"U\"]:\n            if order_id not in new_state_dict:\n                # Create new row\n                new_state_dict[order_id] = {\n                    \"status\": status,\n                    \"amount\": amount,\n                    \"last_seq\": seq\n                }\n            else:\n                # Update existing row\n                new_state_dict[order_id][\"status\"] = status\n                # For 'U' with NULL amount, keep existing amount; otherwise use new amount\n                if op == \"U\" and pd.isna(amount):\n                    # Keep existing amount\n                    pass\n                else:\n                    new_state_dict[order_id][\"amount\"] = amount\n                new_state_dict[order_id][\"last_seq\"] = seq\n        elif op == \"D\":\n            # Delete row if it exists\n            if order_id in new_state_dict:\n                del new_state_dict[order_id]\n    \n    # Step 5: Build new_state DataFrame\n    if new_state_dict:\n        new_state_rows = []\n        for order_id, state in new_state_dict.items():\n            new_state_rows.append({\n                \"order_id\": order_id,\n                \"status\": state[\"status\"],\n                \"amount\": state[\"amount\"],\n                \"last_seq\": state[\"last_seq\"]\n            })\n        new_state = pd.DataFrame(new_state_rows)\n    else:\n        new_state = pd.DataFrame(columns=[\"order_id\", \"status\", \"amount\", \"last_seq\"])\n    \n    # Ensure proper types in new_state\n    if len(new_state) > 0:\n        new_state[\"order_id\"] = new_state[\"order_id\"].astype(\"int64\")\n        new_state[\"last_seq\"] = new_state[\"last_seq\"].astype(\"int64\")\n    else:\n        new_state[\"order_id\"] = new_state[\"order_id\"].astype(\"int64\")\n        new_state[\"last_seq\"] = new_state[\"last_seq\"].astype(\"int64\")\n    \n    # Step 6: Build tombstones - orders whose last applied event was 'D'\n    tombstone_rows = []\n    for order_id in orders_ever_existed:\n        if order_id in last_op_per_order and last_op_per_order[order_id] == \"D\":\n            tombstone_rows.append({\n                \"order_id\": order_id,\n                \"deleted_seq\": last_seq_per_order[order_id]\n            })\n    \n    if tombstone_rows:\n        tombstones = pd.DataFrame(tombstone_rows)\n        tombstones[\"order_id\"] = tombstones[\"order_id\"].astype(\"int64\")\n        tombstones[\"deleted_seq\"] = tombstones[\"deleted_seq\"].astype(\"int64\")\n    else:\n        tombstones = pd.DataFrame(columns=[\"order_id\", \"deleted_seq\"])\n        tombstones[\"order_id\"] = tombstones[\"order_id\"].astype(\"int64\")\n        tombstones[\"deleted_seq\"] = tombstones[\"deleted_seq\"].astype(\"int64\")\n    \n    return {\n        \"new_state\": new_state,\n        \"tombstones\": tombstones\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 948,
+   "tokens_out": 1467,
+   "usd": 0.008283,
+   "wall_s": 8.517707347869873,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 7056,
+  "tokens_out": 8283,
+  "usd": 0.048471,
+  "wall_s": 48.3425714969635
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

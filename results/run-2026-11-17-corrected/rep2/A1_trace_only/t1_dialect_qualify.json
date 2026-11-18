@@ -1,0 +1,48 @@
+{
+ "config": "A1_trace_only",
+ "rep": 2,
+ "task": "t1_dialect_qualify",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicates Teradata-style QUALIFY semantics:\n    1. Filter WHERE amount > 100\n    2. Add ROW_NUMBER window function partitioned by account_id,\n       ordered by txn_ts DESC, txn_id DESC\n    3. QUALIFY (filter) where ROW_NUMBER = 1\n    4. Compute size_band CASE expression\n    5. Select final columns\n    \"\"\"\n    df = inputs[\"acct_txn\"].copy()\n    \n    # Step 1: WHERE amount > 100\n    df = df[df[\"amount\"] > 100].copy()\n    \n    # Step 2: Compute ROW_NUMBER window function\n    # Partition by account_id, order by txn_ts DESC, txn_id DESC\n    # In pandas, we sort and then use groupby with cumcount\n    # For DESC order, we negate or use ascending=False\n    df = df.sort_values(\n        by=[\"account_id\", \"txn_ts\", \"txn_id\"],\n        ascending=[True, False, False],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    df[\"row_num\"] = df.groupby(\"account_id\", sort=False).cumcount() + 1\n    \n    # Step 3: QUALIFY ROW_NUMBER() = 1\n    df = df[df[\"row_num\"] == 1].copy()\n    \n    # Step 4: Compute size_band CASE expression\n    def compute_size_band(amount):\n        if pd.isna(amount):\n            return None\n        if amount >= 1000:\n            return \"JUMBO\"\n        elif amount >= 500:\n            return \"LARGE\"\n        else:\n            return \"STANDARD\"\n    \n    df[\"size_band\"] = df[\"amount\"].apply(compute_size_band)\n    \n    # Step 5: Select final columns (drop internal row_num)\n    result = df[[\"account_id\", \"txn_id\", \"txn_ts\", \"amount\", \"channel\", \"size_band\"]].copy()\n    \n    return {\"latest_high_value_txn\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 432,
+   "tokens_out": 559,
+   "usd": 0.003227,
+   "wall_s": 4.982616901397705,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

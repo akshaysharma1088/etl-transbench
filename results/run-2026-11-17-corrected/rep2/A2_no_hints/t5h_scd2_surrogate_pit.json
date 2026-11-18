@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_customer\"].copy()\n    stg = inputs[\"stg_customer\"].copy()\n    fact = inputs[\"fact_txn\"].copy()\n\n    # Normalize dtypes\n    dim['eff_start_date'] = pd.to_datetime(dim['eff_start_date'])\n    dim['eff_end_date'] = pd.to_datetime(dim['eff_end_date'])\n    stg['update_date'] = pd.to_datetime(stg['update_date'])\n    fact['txn_date'] = pd.to_datetime(fact['txn_date'])\n\n    max_sk_before = dim['customer_sk'].max() if len(dim) > 0 else 0\n\n    # Current rows indexed by customer_id (assume at most one current row per customer)\n    current = dim[dim['is_current'] == 1].set_index('customer_id', drop=False)\n\n    def seg_equal(a, b):\n        a_na = pd.isna(a)\n        b_na = pd.isna(b)\n        if a_na and b_na:\n            return True\n        if a_na or b_na:\n            return False\n        return a == b\n\n    creating_rows = []  # (customer_id, segment, update_date, current_sk_or_None)\n\n    for _, srow in stg.iterrows():\n        cid = srow['customer_id']\n        seg = srow['segment']\n        upd = srow['update_date']\n        if cid in current.index:\n            cur_row = current.loc[cid]\n            if not seg_equal(cur_row['segment'], seg):\n                creating_rows.append((cid, seg, upd, cur_row['customer_sk']))\n        else:\n            creating_rows.append((cid, seg, upd, None))\n\n    # ROW_NUMBER() OVER (ORDER BY customer_id) over only creating records\n    creating_rows.sort(key=lambda x: x[0])\n\n    new_rows = []\n    expired_sks = {}  # customer_sk -> update_date (to set eff_end_date & is_current=0)\n\n    for i, (cid, seg, upd, cur_sk) in enumerate(creating_rows, start=1):\n        new_sk = max_sk_before + i\n        new_rows.append({\n            'customer_sk': new_sk,\n            'customer_id': cid,\n            'segment': seg,\n            'eff_start_date': upd,\n            'eff_end_date': pd.NaT,\n            'is_current': 1\n        })\n        if cur_sk is not None:\n            expired_sks[cur_sk] = upd\n\n    # Apply expirations to existing dim rows\n    dim_out = dim.copy()\n    for sk, upd in expired_sks.items():\n        mask = dim_out['customer_sk'] == sk\n        dim_out.loc[mask, 'eff_end_date'] = upd\n        dim_out.loc[mask, 'is_current'] = 0\n\n    new_df = pd.DataFrame(\n        new_rows,\n        columns=['customer_sk', 'customer_id', 'segment',\n                 'eff_start_date', 'eff_end_date', 'is_current']\n    )\n\n    dim_final = pd.concat([dim_out, new_df], ignore_index=True)\n\n    # Ensure proper dtypes after concat\n    dim_final['customer_sk'] = dim_final['customer_sk'].astype('int64')\n    dim_final['customer_id'] = dim_final['customer_id'].astype('int64')\n    dim_final['eff_start_date'] = pd.to_datetime(dim_final['eff_start_date'])\n    dim_final['eff_end_date'] = pd.to_datetime(dim_final['eff_end_date'])\n    dim_final['is_current'] = dim_final['is_current'].astype('int64')\n\n    # Step 2: key facts against the updated dimension\n    def find_sk(cid, txn_date):\n        candidates = dim_final[dim_final['customer_id'] == cid]\n        for _, r in candidates.iterrows():\n            start = r['eff_start_date']\n            end = r['eff_end_date']\n            if pd.isna(start):\n                continue\n            if start <= txn_date and (pd.isna(end) or txn_date < end):\n                return r['customer_sk']\n        return -1\n\n    fact_out = fact.copy()\n    fact_out['customer_sk'] = fact_out.apply(\n        lambda r: find_sk(r['customer_id'], r['txn_date']), axis=1\n    ).astype('int64')\n\n    fact_keyed = fact_out[['txn_id', 'customer_sk', 'amount']].copy()\n\n    return {\n        \"dim_customer_out\": dim_final,\n        \"fact_txn_keyed\": fact_keyed\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1294,
+   "tokens_out": 3992,
+   "usd": 0.063762,
+   "wall_s": 32.5848286151886,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

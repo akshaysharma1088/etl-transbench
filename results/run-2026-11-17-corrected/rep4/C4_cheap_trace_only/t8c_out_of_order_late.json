@@ -1,0 +1,58 @@
+{
+ "config": "C4_cheap_trace_only",
+ "rep": 4,
+ "task": "t8c_out_of_order_late",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    \n    # Ensure proper types\n    target_snapshot[\"device_id\"] = target_snapshot[\"device_id\"].astype(\"int64\")\n    target_snapshot[\"reading\"] = target_snapshot[\"reading\"].astype(\"float64\")\n    target_snapshot[\"applied_event_ts\"] = pd.to_datetime(target_snapshot[\"applied_event_ts\"], utc=False)\n    \n    cdc_events[\"event_seq\"] = cdc_events[\"event_seq\"].astype(\"int64\")\n    cdc_events[\"event_ts\"] = pd.to_datetime(cdc_events[\"event_ts\"], utc=False)\n    cdc_events[\"device_id\"] = cdc_events[\"device_id\"].astype(\"int64\")\n    cdc_events[\"reading\"] = cdc_events[\"reading\"].astype(\"float64\")\n    \n    # Build a dict of per-device watermarks from target_snapshot\n    # For each device, keep the row with the latest applied_event_ts\n    if len(target_snapshot) > 0:\n        target_snapshot_latest = target_snapshot.sort_values(\n            by=[\"device_id\", \"applied_event_ts\"],\n            ascending=[True, False]\n        ).groupby(\"device_id\", as_index=False).first()\n    else:\n        target_snapshot_latest = target_snapshot\n    \n    watermark_dict = {}\n    for _, row in target_snapshot_latest.iterrows():\n        dev_id = row[\"device_id\"]\n        ts = row[\"applied_event_ts\"]\n        watermark_dict[dev_id] = ts\n    \n    # Filter CDC events: keep only those with event_ts STRICTLY > applied_event_ts\n    # (Replays with equal timestamps are skipped)\n    def should_apply(row):\n        dev_id = row[\"device_id\"]\n        event_ts = row[\"event_ts\"]\n        \n        if dev_id not in watermark_dict:\n            # New device: event applies\n            return True\n        \n        applied_event_ts = watermark_dict[dev_id]\n        \n        # Strict comparison: event_ts > applied_event_ts\n        # Equal timestamps are replays and should be skipped\n        return event_ts > applied_event_ts\n    \n    # Apply filter\n    cdc_events[\"_applies\"] = cdc_events.apply(should_apply, axis=1)\n    surviving_events = cdc_events[cdc_events[\"_applies\"]].copy()\n    surviving_events = surviving_events.drop(columns=[\"_applies\"])\n    \n    # Group by device_id, pick the latest by (event_ts, event_seq) with deterministic tie-breaks\n    if len(surviving_events) > 0:\n        surviving_events = surviving_events.reset_index(drop=True)\n        surviving_events[\"_idx\"] = surviving_events.index\n        surviving_events = surviving_events.sort_values(\n            by=[\"device_id\", \"event_ts\", \"event_seq\", \"_idx\"],\n            ascending=[True, False, False, True]\n        )\n        # Keep first (latest) per device\n        latest_per_device = surviving_events.groupby(\"device_id\", as_index=False).first()\n        latest_per_device = latest_per_device.drop(columns=[\"_idx\"])\n    else:\n        latest_per_device = pd.DataFrame(\n            columns=[\"event_seq\", \"event_ts\", \"device_id\", \"reading\"]\n        )\n    \n    # Prepare updates: device_id, reading, applied_event_ts\n    if len(latest_per_device) > 0:\n        updates = latest_per_device[[\"device_id\", \"reading\", \"event_ts\"]].copy()\n        updates = updates.rename(columns={\"event_ts\": \"applied_event_ts\"})\n    else:\n        updates = pd.DataFrame(columns=[\"device_id\", \"reading\", \"applied_event_ts\"])\n    \n    # Merge with target_snapshot\n    # Devices in updates: use updated reading and applied_event_ts\n    # Devices not in updates: carry forward from target_snapshot\n    \n    # Find devices that have updates\n    updated_devices = set(updates[\"device_id\"].unique()) if len(updates) > 0 else set()\n    \n    # Remove old rows for updated devices from target_snapshot\n    snapshot_kept = target_snapshot[~target_snapshot[\"device_id\"].isin(updated_devices)].copy()\n    \n    # Concatenate kept snapshot rows with updates\n    if len(updates) > 0:\n        new_snapshot = pd.concat([snapshot_kept, updates], ignore_index=True)\n    else:\n        new_snapshot = snapshot_kept\n    \n    # Sort by device_id for consistent output\n    new_snapshot = new_snapshot.sort_values(\"device_id\").reset_index(drop=True)\n    \n    # Ensure correct types\n    new_snapshot[\"device_id\"] = new_snapshot[\"device_id\"].astype(\"int64\")\n    new_snapshot[\"reading\"] = new_snapshot[\"reading\"].astype(\"float64\")\n    new_snapshot[\"applied_event_ts\"] = pd.to_datetime(new_snapshot[\"applied_event_ts\"], utc=False)\n    \n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 613,
+   "tokens_out": 1286,
+   "usd": 0.007043,
+   "wall_s": 8.529117107391357,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4178,
+  "tokens_out": 3577,
+  "usd": 0.022063,
+  "wall_s": 22.43317985534668
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

@@ -1,0 +1,17 @@
+{
+ "task": "t8c_out_of_order_late",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n\n    # Build watermark map: device_id -> applied_event_ts\n    watermark = dict(zip(target[\"device_id\"], target[\"applied_event_ts\"]))\n\n    # Determine which events survive (strictly greater than device's watermark)\n    def survives(row):\n        dev = row[\"device_id\"]\n        ts = row[\"event_ts\"]\n        if dev not in watermark:\n            return True\n        wm = watermark[dev]\n        if pd.isna(wm):\n            return True\n        return ts > wm\n\n    if len(cdc) > 0:\n        mask = cdc.apply(survives, axis=1)\n        surviving = cdc[mask].copy()\n    else:\n        surviving = cdc.copy()\n\n    # Among surviving events per device, pick latest by (event_ts, event_seq)\n    if len(surviving) > 0:\n        surviving = surviving.sort_values(\n            by=[\"device_id\", \"event_ts\", \"event_seq\"],\n            ascending=[True, True, True]\n        )\n        winners = surviving.groupby(\"device_id\", as_index=False).tail(1)\n    else:\n        winners = surviving\n\n    # Build result: start with target_snapshot devices\n    result_rows = []\n\n    target_devices = set(target[\"device_id\"].tolist())\n    winner_devices = set(winners[\"device_id\"].tolist()) if len(winners) > 0 else set()\n\n    # Devices in target_snapshot\n    for _, row in target.iterrows():\n        dev = row[\"device_id\"]\n        if dev in winner_devices:\n            win_row = winners[winners[\"device_id\"] == dev].iloc[0]\n            result_rows.append({\n                \"device_id\": dev,\n                \"reading\": win_row[\"reading\"],\n                \"applied_event_ts\": win_row[\"event_ts\"]\n            })\n        else:\n            result_rows.append({\n                \"device_id\": dev,\n                \"reading\": row[\"reading\"],\n                \"applied_event_ts\": row[\"applied_event_ts\"]\n            })\n\n    # New devices (winners not in target_snapshot)\n    new_devices = winner_devices - target_devices\n    for dev in new_devices:\n        win_row = winners[winners[\"device_id\"] == dev].iloc[0]\n        result_rows.append({\n            \"device_id\": dev,\n            \"reading\": win_row[\"reading\"],\n            \"applied_event_ts\": win_row[\"event_ts\"]\n        })\n\n    new_snapshot = pd.DataFrame(result_rows, columns=[\"device_id\", \"reading\", \"applied_event_ts\"])\n\n    new_snapshot[\"device_id\"] = new_snapshot[\"device_id\"].astype(\"int64\")\n    new_snapshot[\"reading\"] = new_snapshot[\"reading\"].astype(\"float64\")\n    new_snapshot[\"applied_event_ts\"] = pd.to_datetime(new_snapshot[\"applied_event_ts\"]).astype(\"datetime64[us]\")\n\n    return {\"new_snapshot\": new_snapshot}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 816,
+   "tokens_out": 1266,
+   "usd": 0.021438,
+   "wall_s": 10.575220346450806,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

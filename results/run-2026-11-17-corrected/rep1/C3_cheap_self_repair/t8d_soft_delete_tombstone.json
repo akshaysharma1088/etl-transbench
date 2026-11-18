@@ -1,0 +1,63 @@
+{
+ "config": "C3_cheap_self_repair",
+ "rep": 1,
+ "task": "t8d_soft_delete_tombstone",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 3,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\nfrom datetime import timedelta\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n    \n    # Extract high_ts from watermark (single row, single column)\n    high_ts = watermark[\"high_ts\"].iloc[0] if len(watermark) > 0 else pd.Timestamp.min\n    \n    # Filter events: keep only those with event_ts > high_ts\n    new_events = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n    \n    # If no new events, return current snapshot\n    if len(new_events) == 0:\n        result = target_snapshot[[\"user_id\", \"email\", \"status\", \"status_ts\"]].copy()\n        return {\"new_snapshot\": result}\n    \n    # Sort events by user_id, then by event_ts, then by event_seq for deterministic processing\n    new_events = new_events.sort_values(by=[\"user_id\", \"event_ts\", \"event_seq\"]).reset_index(drop=True)\n    \n    # Create a working copy of the snapshot indexed by user_id\n    snapshot_dict = {}\n    for _, row in target_snapshot.iterrows():\n        user_id = row[\"user_id\"]\n        snapshot_dict[user_id] = {\n            \"email\": row[\"email\"],\n            \"status\": row[\"status\"],\n            \"status_ts\": row[\"status_ts\"]\n        }\n    \n    # Process each event in order\n    for _, event in new_events.iterrows():\n        user_id = event[\"user_id\"]\n        event_ts = event[\"event_ts\"]\n        op = event[\"op\"]\n        email = event[\"email\"]\n        \n        # Get current state or create new user\n        if user_id not in snapshot_dict:\n            current_state = {\n                \"email\": None,\n                \"status\": None,\n                \"status_ts\": None\n            }\n        else:\n            current_state = snapshot_dict[user_id]\n        \n        if op == \"U\":\n            # Update operation\n            if current_state[\"status\"] is None:\n                # New user: activate\n                snapshot_dict[user_id] = {\n                    \"email\": email,\n                    \"status\": \"ACTIVE\",\n                    \"status_ts\": event_ts\n                }\n            elif current_state[\"status\"] == \"ACTIVE\":\n                # Update active user\n                snapshot_dict[user_id] = {\n                    \"email\": email,\n                    \"status\": \"ACTIVE\",\n                    \"status_ts\": event_ts\n                }\n            elif current_state[\"status\"] == \"DELETED\":\n                # Resurrection check: strictly more than 7 days\n                deletion_ts = current_state[\"status_ts\"]\n                days_since_deletion = (event_ts - deletion_ts).total_seconds() / (86400)\n                \n                # Strictly greater than 7 days (not >=)\n                if days_since_deletion > 7:\n                    snapshot_dict[user_id] = {\n                        \"email\": email,\n                        \"status\": \"ACTIVE\",\n                        \"status_ts\": event_ts\n                    }\n                # else: discard the update, deletion is sticky\n        \n        elif op == \"D\":\n            # Delete operation: soft delete\n            snapshot_dict[user_id] = {\n                \"email\": current_state[\"email\"] if current_state[\"email\"] is not None else email,\n                \"status\": \"DELETED\",\n                \"status_ts\": event_ts\n            }\n    \n    # Convert snapshot_dict back to DataFrame\n    result_rows = []\n    for user_id, state in snapshot_dict.items():\n        result_rows.append({\n            \"user_id\": user_id,\n            \"email\": state[\"email\"],\n            \"status\": state[\"status\"],\n            \"status_ts\": state[\"status_ts\"]\n        })\n    \n    if result_rows:\n        new_snapshot = pd.DataFrame(result_rows)\n        # Ensure correct dtypes\n        new_snapshot[\"user_id\"] = new_snapshot[\"user_id\"].astype(\"int64\")\n        new_snapshot[\"email\"] = new_snapshot[\"email\"].astype(\"object\")\n        new_snapshot[\"status\"] = new_snapshot[\"status\"].astype(\"object\")\n        new_snapshot[\"status_ts\"] = pd.to_datetime(new_snapshot[\"status_ts\"], utc=False)\n        new_snapshot[\"status_ts\"] = new_snapshot[\"status_ts\"].astype(\"datetime64[us]\")\n    else:\n        new_snapshot = pd.DataFrame(\n            columns=[\"user_id\", \"email\", \"status\", \"status_ts\"]\n        )\n        new_snapshot[\"user_id\"] = new_snapshot[\"user_id\"].astype(\"int64\")\n        new_snapshot[\"status_ts\"] = new_snapshot[\"status_ts\"].astype(\"datetime64[us]\")\n    \n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 616,
+   "tokens_out": 1151,
+   "usd": 0.006371,
+   "wall_s": 7.100132703781128,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4332,
+  "tokens_out": 4561,
+  "usd": 0.027137,
+  "wall_s": 33.57001328468323
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

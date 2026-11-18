@@ -1,0 +1,17 @@
+{
+ "task": "t3c_router_first_match",
+ "group": "default",
+ "tier": "cheap",
+ "code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Router component that directs claims to three output ports based on ordered rules.\n    Rules are evaluated in order; a row matches the FIRST applicable rule only.\n    Unmatched rows go to the default port \"standard\" (which is not an output here).\n    \"\"\"\n    claims = inputs[\"claims\"].copy()\n    \n    # Initialize output dictionaries to collect matching rows\n    fast_track_rows = []\n    high_value_rows = []\n    manual_review_rows = []\n    \n    # Process each row and apply rules in order\n    for idx, row in claims.iterrows():\n        amount = row[\"amount\"]\n        photos_attached = row[\"photos_attached\"]\n        \n        # Rule 1: amount <= 500 and photos_attached == 1\n        if amount <= 500 and photos_attached == 1:\n            fast_track_rows.append(row)\n        # Rule 2: amount > 10000\n        elif amount > 10000:\n            high_value_rows.append(row)\n        # Rule 3: photos_attached == 0 or amount > 500\n        elif photos_attached == 0 or amount > 500:\n            manual_review_rows.append(row)\n        # else: goes to default port \"standard\" (not an output)\n    \n    # Create output DataFrames with specified columns\n    columns = [\"claim_id\", \"amount\", \"photos_attached\"]\n    \n    if fast_track_rows:\n        claims_fast_track = pd.DataFrame(fast_track_rows)[columns]\n    else:\n        claims_fast_track = pd.DataFrame(columns=columns)\n    \n    if high_value_rows:\n        claims_high_value = pd.DataFrame(high_value_rows)[columns]\n    else:\n        claims_high_value = pd.DataFrame(columns=columns)\n    \n    if manual_review_rows:\n        claims_manual_review = pd.DataFrame(manual_review_rows)[columns]\n    else:\n        claims_manual_review = pd.DataFrame(columns=columns)\n    \n    # Ensure correct data types\n    for df in [claims_fast_track, claims_high_value, claims_manual_review]:\n        df[\"claim_id\"] = df[\"claim_id\"].astype(\"int64\")\n        df[\"amount\"] = df[\"amount\"].astype(\"float64\")\n        df[\"photos_attached\"] = df[\"photos_attached\"].astype(\"int64\")\n        df.reset_index(drop=True, inplace=True)\n    \n    return {\n        \"claims_fast_track\": claims_fast_track,\n        \"claims_high_value\": claims_high_value,\n        \"claims_manual_review\": claims_manual_review,\n    }\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 593,
+   "tokens_out": 687,
+   "usd": 0.004028,
+   "wall_s": 5.575550079345703,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

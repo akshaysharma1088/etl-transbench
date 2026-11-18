@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 0,
+ "task": "t7c_crossfield_reference",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    ref_customers = inputs[\"ref_customers\"].copy()\n    ref_skus = inputs[\"ref_skus\"].copy()\n\n    # De-duplicate reference tables: first occurrence wins for a given key.\n    ref_customers_dedup = ref_customers.drop_duplicates(subset=\"customer_id\", keep=\"first\")\n    ref_skus_dedup = ref_skus.drop_duplicates(subset=\"sku\", keep=\"first\")\n\n    cust_status_map = ref_customers_dedup.set_index(\"customer_id\")[\"status\"]\n    sku_disc_map = ref_skus_dedup.set_index(\"sku\")[\"discontinued\"]\n    sku_countries_map = ref_skus_dedup.set_index(\"sku\")[\"allowed_countries\"]\n\n    cust_ids = set(cust_status_map.index)\n    sku_ids = set(sku_disc_map.index)\n\n    def check_row(row):\n        cid = row[\"customer_id\"]\n        sku = row[\"sku\"]\n        ship_country = row[\"ship_country\"]\n\n        # R1: customer unknown\n        if cid not in cust_ids:\n            return \"CUST_UNKNOWN\"\n\n        # R2: customer status not ACTIVE\n        status = cust_status_map.loc[cid]\n        if status != \"ACTIVE\":\n            return \"CUST_INACTIVE\"\n\n        # R3: sku unknown\n        if sku not in sku_ids:\n            return \"SKU_UNKNOWN\"\n\n        # R4: sku discontinued\n        disc = sku_disc_map.loc[sku]\n        if pd.notna(disc) and disc == 1:\n            return \"SKU_DISC\"\n\n        # R5: allowed_countries whitelist check (trimmed members)\n        allowed = sku_countries_map.loc[sku]\n        if pd.notna(allowed) and str(allowed).strip() != \"\":\n            members = [m.strip() for m in str(allowed).split(\",\")]\n            if ship_country not in members:\n                return \"CTRY_BLOCKED\"\n\n        return None\n\n    if len(orders) == 0:\n        reasons = pd.Series([], dtype=object, index=orders.index)\n    else:\n        reasons = orders.apply(check_row, axis=1)\n\n    orders_rejects = orders.copy()\n    orders_rejects[\"reason_code\"] = reasons\n    orders_rejects = orders_rejects[orders_rejects[\"reason_code\"].notna()].reset_index(drop=True)\n\n    orders_clean = orders[reasons.isna()].reset_index(drop=True)\n\n    return {\n        \"orders_clean\": orders_clean,\n        \"orders_rejects\": orders_rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 837,
+   "tokens_out": 2333,
+   "usd": 0.037506,
+   "wall_s": 19.65477466583252,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

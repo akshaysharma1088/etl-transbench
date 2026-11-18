@@ -1,0 +1,63 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t7_reject_validation",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 3,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"payments\"].copy()\n\n    valid_currencies = {\"USD\", \"EUR\", \"GBP\"}\n\n    def classify(row):\n        amount = row[\"amount\"]\n        currency = row[\"currency\"]\n        country = row[\"country\"]\n\n        if pd.isna(amount):\n            return \"AMT_NULL\"\n        if amount <= 0:\n            return \"AMT_NONPOS\"\n        if pd.isna(currency) or currency not in valid_currencies:\n            return \"CCY_INVALID\"\n        if pd.isna(country):\n            return \"CTRY_NULL\"\n        return None\n\n    reason_codes = df.apply(classify, axis=1)\n\n    rejected_mask = reason_codes.notna()\n\n    rejects = df[rejected_mask].copy()\n    rejects[\"reason_code\"] = reason_codes[rejected_mask]\n\n    clean = df[~rejected_mask].copy()\n    clean[\"amount\"] = clean[\"amount\"].round(2)\n\n    return {\n        \"payments_clean\": clean,\n        \"payments_rejects\": rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 615,
+   "tokens_out": 947,
+   "usd": 0.01605,
+   "wall_s": 8.699831485748291,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3853,
+  "tokens_out": 3315,
+  "usd": 0.06128399999999999,
+  "wall_s": 30.14701747894287
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

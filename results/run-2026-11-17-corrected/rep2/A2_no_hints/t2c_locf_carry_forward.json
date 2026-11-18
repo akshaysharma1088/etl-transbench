@@ -1,0 +1,48 @@
+{
+ "config": "A2_no_hints",
+ "rep": 2,
+ "task": "t2c_locf_carry_forward",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    df = inputs[\"rate_feed\"].copy()\n\n    # Stable sort replicating cursor ORDER BY account_id, obs_date, obs_seq\n    df_sorted = df.sort_values(\n        by=[\"account_id\", \"obs_date\", \"obs_seq\"],\n        kind=\"mergesort\"\n    ).reset_index(drop=True)\n\n    # Last-observation-carried-forward within each account_id group only\n    filled = df_sorted.groupby(\"account_id\")[\"rate\"].ffill()\n\n    was_carried = (df_sorted[\"rate\"].isna() & filled.notna()).astype(\"int64\")\n\n    result = pd.DataFrame({\n        \"account_id\": df_sorted[\"account_id\"],\n        \"obs_seq\": df_sorted[\"obs_seq\"],\n        \"obs_date\": df_sorted[\"obs_date\"],\n        \"rate_filled\": filled,\n        \"was_carried\": was_carried,\n    })\n\n    return {\"rate_filled\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 810,
+   "tokens_out": 837,
+   "usd": 0.014985,
+   "wall_s": 8.669656753540039,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

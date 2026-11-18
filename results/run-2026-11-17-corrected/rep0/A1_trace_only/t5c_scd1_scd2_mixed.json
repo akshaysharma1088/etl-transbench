@@ -1,0 +1,48 @@
+{
+ "config": "A1_trace_only",
+ "rep": 0,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _eq_null(a, b):\n    \"\"\"Equality with NULL semantics: NaN/None vs NaN/None -> equal (no change);\n    NaN/None vs non-null -> not equal; both non-null -> normal comparison.\"\"\"\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return True\n    if a_null != b_null:\n        return False\n    return a == b\n\n\ndef run(inputs: dict) -> dict:\n    dim_acct = inputs[\"dim_acct\"].copy()\n    stg_acct = inputs[\"stg_acct\"].copy()\n\n    # Ensure proper dtypes\n    dim_acct[\"eff_start_date\"] = pd.to_datetime(dim_acct[\"eff_start_date\"])\n    dim_acct[\"eff_end_date\"] = pd.to_datetime(dim_acct[\"eff_end_date\"])\n    dim_acct[\"is_current\"] = dim_acct[\"is_current\"].astype(\"int64\")\n\n    stg_acct[\"update_date\"] = pd.to_datetime(stg_acct[\"update_date\"])\n\n    # --- Step 1: Dedup STG_ACCT to latest per acct_id by update_date,\n    # ties broken by greater (email, tier) lexicographic pair ---\n    if len(stg_acct) > 0:\n        stg_sorted = stg_acct.sort_values(\n            by=[\"acct_id\", \"update_date\", \"email\", \"tier\"],\n            ascending=[True, False, False, False],\n            kind=\"mergesort\",\n        )\n        stg_dedup = stg_sorted.groupby(\"acct_id\", as_index=False, sort=False).first()\n    else:\n        stg_dedup = stg_acct.copy()\n\n    # Working copy of dim_acct as a list of dict rows for easy mutation + append\n    records = dim_acct.to_dict(\"records\")\n\n    # Build index: acct_id -> list of indices in `records`\n    from collections import defaultdict\n    acct_index = defaultdict(list)\n    for i, r in enumerate(records):\n        acct_index[r[\"acct_id\"]].append(i)\n\n    for _, s in stg_dedup.iterrows():\n        acct_id = s[\"acct_id\"]\n        s_email = s[\"email\"]\n        s_tier = s[\"tier\"]\n        s_update_date = s[\"update_date\"]\n\n        idxs = acct_index.get(acct_id, [])\n        current_idx = None\n        for i in idxs:\n            if records[i][\"is_current\"] == 1:\n                current_idx = i\n                break\n\n        if current_idx is None:\n            # Insert new current version\n            new_rec = {\n                \"acct_id\": acct_id,\n                \"email\": s_email,\n                \"tier\": s_tier,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            }\n            records.append(new_rec)\n            new_idx = len(records) - 1\n            acct_index[acct_id].append(new_idx)\n        else:\n            c = records[current_idx]\n            tier_changed = not _eq_null(c[\"tier\"], s_tier)\n            email_changed = not _eq_null(c[\"email\"], s_email)\n\n            if tier_changed:\n                # Expire current row\n                records[current_idx][\"eff_end_date\"] = s_update_date\n                records[current_idx][\"is_current\"] = 0\n\n                # Insert new current version\n                new_rec = {\n                    \"acct_id\": acct_id,\n                    \"email\": s_email,\n                    \"tier\": s_tier,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n                records.append(new_rec)\n                new_idx = len(records) - 1\n                acct_index[acct_id].append(new_idx)\n\n            if email_changed:\n                # Retro-overwrite email across ALL rows (history + current) for this acct_id\n                for i in acct_index[acct_id]:\n                    records[i][\"email\"] = s_email\n\n    out_df = pd.DataFrame(records, columns=[\n        \"acct_id\", \"email\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"\n    ])\n\n    if len(out_df) > 0:\n        out_df[\"acct_id\"] = out_df[\"acct_id\"].astype(\"int64\")\n        out_df[\"eff_start_date\"] = pd.to_datetime(out_df[\"eff_start_date\"])\n        out_df[\"eff_end_date\"] = pd.to_datetime(out_df[\"eff_end_date\"])\n        out_df[\"is_current\"] = out_df[\"is_current\"].astype(\"int64\")\n\n    return {\"dim_acct_out\": out_df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1120,
+   "tokens_out": 2811,
+   "usd": 0.045525,
+   "wall_s": 23.611026525497437,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

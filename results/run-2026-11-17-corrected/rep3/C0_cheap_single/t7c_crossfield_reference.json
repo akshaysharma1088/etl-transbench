@@ -1,0 +1,48 @@
+{
+ "config": "C0_cheap_single",
+ "rep": 3,
+ "task": "t7c_crossfield_reference",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": false,
+ "iterations": 0,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    orders = inputs[\"orders\"].copy()\n    ref_customers = inputs[\"ref_customers\"].copy()\n    ref_skus = inputs[\"ref_skus\"].copy()\n    \n    # Initialize rejection reason column\n    orders[\"rejection_reason\"] = None\n    \n    # R1: customer_id not present in ref_customers\n    valid_customer_ids = set(ref_customers[\"customer_id\"].dropna().unique())\n    r1_fail = orders[\"rejection_reason\"].isna() & ~orders[\"customer_id\"].isin(valid_customer_ids)\n    orders.loc[r1_fail, \"rejection_reason\"] = \"CUST_UNKNOWN\"\n    \n    # R2: customer status <> 'ACTIVE'\n    # Join with ref_customers to get status\n    cust_status = ref_customers.set_index(\"customer_id\")[\"status\"].to_dict()\n    orders[\"_cust_status\"] = orders[\"customer_id\"].map(cust_status)\n    r2_fail = orders[\"rejection_reason\"].isna() & (orders[\"_cust_status\"] != \"ACTIVE\")\n    orders.loc[r2_fail, \"rejection_reason\"] = \"CUST_INACTIVE\"\n    \n    # R3: sku not present in ref_skus\n    valid_skus = set(ref_skus[\"sku\"].dropna().unique())\n    r3_fail = orders[\"rejection_reason\"].isna() & ~orders[\"sku\"].isin(valid_skus)\n    orders.loc[r3_fail, \"rejection_reason\"] = \"SKU_UNKNOWN\"\n    \n    # R4: sku discontinued = 1\n    sku_disc = ref_skus.set_index(\"sku\")[\"discontinued\"].to_dict()\n    orders[\"_discontinued\"] = orders[\"sku\"].map(sku_disc)\n    r4_fail = orders[\"rejection_reason\"].isna() & (orders[\"_discontinued\"] == 1)\n    orders.loc[r4_fail, \"rejection_reason\"] = \"SKU_DISC\"\n    \n    # R5: allowed_countries non-empty AND ship_country not in list\n    allowed_countries_map = ref_skus.set_index(\"sku\")[\"allowed_countries\"].to_dict()\n    orders[\"_allowed_countries\"] = orders[\"sku\"].map(allowed_countries_map)\n    \n    def check_country_allowed(row):\n        if row[\"rejection_reason\"] is not None:\n            return False\n        allowed_str = row[\"_allowed_countries\"]\n        # Empty or NULL means all countries allowed\n        if pd.isna(allowed_str) or allowed_str == \"\":\n            return True\n        # Parse comma-delimited list with trimming\n        allowed_list = [c.strip() for c in str(allowed_str).split(\",\")]\n        return row[\"ship_country\"] in allowed_list\n    \n    r5_fail = ~orders.apply(check_country_allowed, axis=1)\n    orders.loc[r5_fail, \"rejection_reason\"] = \"CTRY_BLOCKED\"\n    \n    # Split into clean and rejects\n    orders_clean = orders[orders[\"rejection_reason\"].isna()].copy()\n    orders_rejects = orders[orders[\"rejection_reason\"].notna()].copy()\n    \n    # Keep only original columns for clean\n    original_cols = [\"order_id\", \"customer_id\", \"sku\", \"qty\", \"ship_country\"]\n    orders_clean = orders_clean[original_cols]\n    \n    # Keep original columns + reason_code for rejects\n    orders_rejects = orders_rejects[original_cols + [\"rejection_reason\"]].copy()\n    orders_rejects = orders_rejects.rename(columns={\"rejection_reason\": \"reason_code\"})\n    \n    return {\n        \"orders_clean\": orders_clean.reset_index(drop=True),\n        \"orders_rejects\": orders_rejects.reset_index(drop=True)\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 574,
+   "tokens_out": 1002,
+   "usd": 0.005584,
+   "wall_s": 8.032103776931763,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

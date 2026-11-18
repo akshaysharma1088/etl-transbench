@@ -1,0 +1,48 @@
+{
+ "config": "B3_self_repair",
+ "rep": 1,
+ "task": "t5e_scd2_late_arriving",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef _same_plan(a, b):\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return True\n    if a_null != b_null:\n        return False\n    return a == b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_account\"].copy()\n    stg = inputs[\"stg_account\"].copy()\n\n    # build per-account list of version dicts (mutable)\n    versions = {}\n    for acc_id, grp in dim.groupby(\"account_id\"):\n        vlist = []\n        for _, row in grp.iterrows():\n            vlist.append({\n                \"plan\": row[\"plan\"],\n                \"eff_start_date\": row[\"eff_start_date\"],\n                \"eff_end_date\": row[\"eff_end_date\"],\n                \"is_current\": int(row[\"is_current\"]),\n            })\n        versions[int(acc_id)] = vlist\n\n    # sort staged records by account_id, update_date\n    stg_sorted = stg.sort_values([\"account_id\", \"update_date\"], kind=\"mergesort\")\n\n    for _, s in stg_sorted.iterrows():\n        acc_id = int(s[\"account_id\"])\n        s_plan = s[\"plan\"]\n        s_date = s[\"update_date\"]\n\n        if acc_id not in versions:\n            versions[acc_id] = []\n\n        vlist = versions[acc_id]\n\n        if len(vlist) == 0:\n            vlist.append({\n                \"plan\": s_plan,\n                \"eff_start_date\": s_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n            continue\n\n        # find covering version\n        covering = None\n        for v in vlist:\n            start = v[\"eff_start_date\"]\n            end = v[\"eff_end_date\"]\n            if start <= s_date and (pd.isna(end) or s_date < end):\n                covering = v\n                break\n\n        if covering is None:\n            # earlier than earliest version\n            f = min(vlist, key=lambda v: v[\"eff_start_date\"])\n            vlist.append({\n                \"plan\": s_plan,\n                \"eff_start_date\": s_date,\n                \"eff_end_date\": f[\"eff_start_date\"],\n                \"is_current\": 0,\n            })\n        else:\n            v = covering\n            if _same_plan(v[\"plan\"], s_plan):\n                pass  # no-op\n            elif s_date == v[\"eff_start_date\"]:\n                v[\"plan\"] = s_plan\n            else:\n                vlist.append({\n                    \"plan\": s_plan,\n                    \"eff_start_date\": s_date,\n                    \"eff_end_date\": v[\"eff_end_date\"],\n                    \"is_current\": v[\"is_current\"],\n                })\n                v[\"eff_end_date\"] = s_date\n                v[\"is_current\"] = 0\n\n    # flatten\n    rows = []\n    for acc_id, vlist in versions.items():\n        for v in vlist:\n            rows.append({\n                \"account_id\": acc_id,\n                \"plan\": v[\"plan\"],\n                \"eff_start_date\": v[\"eff_start_date\"],\n                \"eff_end_date\": v[\"eff_end_date\"],\n                \"is_current\": v[\"is_current\"],\n            })\n\n    out = pd.DataFrame(rows, columns=[\"account_id\", \"plan\", \"eff_start_date\", \"eff_end_date\", \"is_current\"])\n\n    if len(out) > 0:\n        out[\"account_id\"] = out[\"account_id\"].astype(\"int64\")\n        out[\"eff_start_date\"] = pd.to_datetime(out[\"eff_start_date\"])\n        out[\"eff_end_date\"] = pd.to_datetime(out[\"eff_end_date\"])\n        out[\"is_current\"] = out[\"is_current\"].astype(\"int64\")\n        out = out.sort_values([\"account_id\", \"eff_start_date\"], kind=\"mergesort\").reset_index(drop=True)\n\n    return {\"dim_account_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1290,
+   "tokens_out": 1959,
+   "usd": 0.033255,
+   "wall_s": 15.985759258270264,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "B2_retranslate",
+ "rep": 1,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, \"pd.DataFrame\"]) -> dict[str, \"pd.DataFrame\"]:\n    ledger = inputs[\"ledger\"].copy()\n\n    # Sort exactly as the cursor ORDER BY account_id, entry_date, row_seq\n    ledger = ledger.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        kind=\"mergesort\"  # stable sort to keep deterministic tie-breaking\n    ).reset_index(drop=True)\n\n    # Determine cycle number: starts at 1 for each account, increments by 1\n    # on every STMT row (the increment applies to that same row, since the\n    # reset happens BEFORE the amount is added).\n    is_stmt = (ledger[\"entry_type\"] == \"STMT\").astype(int)\n    cyc = 1 + is_stmt.groupby(ledger[\"account_id\"]).cumsum()\n\n    # Balance: cumulative sum of amount (NULL treated as 0) within each\n    # (account_id, cyc) segment, because the reset-to-zero coincides exactly\n    # with the start of a new cycle number.\n    amount_filled = ledger[\"amount\"].fillna(0)\n\n    cycle_balance = amount_filled.groupby(\n        [ledger[\"account_id\"], cyc]\n    ).cumsum()\n\n    result = ledger.copy()\n    result[\"cycle_no\"] = cyc\n    result[\"cycle_balance\"] = cycle_balance\n\n    out = result[\n        [\"account_id\", \"row_seq\", \"entry_date\", \"entry_type\", \"amount\",\n         \"cycle_no\", \"cycle_balance\"]\n    ].reset_index(drop=True)\n\n    return {\"cycle_balances\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 830,
+   "tokens_out": 1433,
+   "usd": 0.023985,
+   "wall_s": 13.389617204666138,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

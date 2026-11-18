@@ -1,0 +1,17 @@
+{
+ "task": "t8c_out_of_order_late",
+ "group": "no_hints",
+ "tier": "frontier",
+ "code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    target = inputs[\"target_snapshot\"].copy()\n    cdc = inputs[\"cdc_events\"].copy()\n\n    # Per-device watermark from the current snapshot.\n    target_wm = target.set_index(\"device_id\")[\"applied_event_ts\"]\n\n    # Attach each device's watermark to its candidate events.\n    cdc = cdc.merge(\n        target_wm.rename(\"wm\"), left_on=\"device_id\", right_index=True, how=\"left\"\n    )\n\n    # An event survives only if strictly newer than the device's watermark.\n    # New devices (wm is NaN/NaT) accept all their events.\n    survive = cdc[cdc[\"wm\"].isna() | (cdc[\"event_ts\"] > cdc[\"wm\"])]\n\n    # Pick the winning event per device: max by (event_ts, event_seq).\n    survive_sorted = survive.sort_values([\"device_id\", \"event_ts\", \"event_seq\"])\n    winners = survive_sorted.groupby(\"device_id\", as_index=False).tail(1)\n\n    winners = winners[[\"device_id\", \"reading\", \"event_ts\"]].rename(\n        columns={\"event_ts\": \"applied_event_ts\"}\n    )\n\n    result = target.set_index(\"device_id\")\n    winners_idx = winners.set_index(\"device_id\")\n\n    # Update existing devices with their winning event (if any).\n    result.update(winners_idx)\n\n    # Add brand-new devices that had a winning event but no prior snapshot row.\n    new_devices = winners_idx.loc[~winners_idx.index.isin(result.index)]\n    result = pd.concat([result, new_devices])\n\n    result = result.reset_index()[[\"device_id\", \"reading\", \"applied_event_ts\"]]\n\n    result[\"device_id\"] = result[\"device_id\"].astype(\"int64\")\n    result[\"reading\"] = result[\"reading\"].astype(\"float64\")\n    result[\"applied_event_ts\"] = pd.to_datetime(result[\"applied_event_ts\"]).astype(\n        \"datetime64[us]\"\n    )\n\n    return {\"new_snapshot\": result}\n",
+ "calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 816,
+   "tokens_out": 2283,
+   "usd": 0.036693,
+   "wall_s": 21.699273586273193,
+   "stop_reason": "end_turn"
+  }
+ ]
+}

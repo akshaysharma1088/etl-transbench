@@ -1,0 +1,48 @@
+{
+ "config": "C1_cheap_grounded",
+ "rep": 0,
+ "task": "t3e_effective_lookup_route",
+ "category": "T3",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    orders = inputs[\"orders\"].copy()\n    price_list = inputs[\"price_list\"].copy()\n    \n    # src: source data already in orders\n    \n    # exp: expression - normalize sku\n    orders[\"sku_norm\"] = orders[\"sku\"].apply(\n        lambda x: x.upper().strip() if pd.notna(x) else np.nan\n    )\n    \n    # lkp: lookup with effective-dated tie-breaking\n    orders[\"unit_price\"] = np.nan\n    orders[\"price_flag\"] = \"OK\"\n    \n    for idx, row in orders.iterrows():\n        sku_norm = row[\"sku_norm\"]\n        order_date = row[\"order_date\"]\n        \n        # NULL sku_norm never matches\n        if pd.isna(sku_norm):\n            orders.at[idx, \"unit_price\"] = 0\n            orders.at[idx, \"price_flag\"] = \"NO_PRICE\"\n            continue\n        \n        # Find matching price_list rows\n        # Normalize price_list sku for comparison\n        price_list[\"sku_norm_lookup\"] = price_list[\"sku\"].apply(\n            lambda x: x.upper().strip() if pd.notna(x) else np.nan\n        )\n        \n        matches = price_list[\n            (price_list[\"sku_norm_lookup\"] == sku_norm) &\n            (price_list[\"valid_from\"] <= order_date)\n        ]\n        \n        if len(matches) == 0:\n            orders.at[idx, \"unit_price\"] = 0\n            orders.at[idx, \"price_flag\"] = \"NO_PRICE\"\n        else:\n            # Tie-break: GREATEST valid_from, then LOWEST list_id\n            matches = matches.sort_values(\n                by=[\"valid_from\", \"list_id\"],\n                ascending=[False, True]\n            )\n            best_match = matches.iloc[0]\n            orders.at[idx, \"unit_price\"] = best_match[\"unit_price\"]\n            orders.at[idx, \"price_flag\"] = \"OK\"\n    \n    orders.drop(columns=[\"sku_norm_lookup\"], errors=\"ignore\", inplace=True)\n    \n    # ext: expression - calculate extended amount\n    orders[\"ext_amount\"] = orders[\"qty\"] * orders[\"unit_price\"]\n    # qty * unit_price where either is NULL gives NULL\n    orders.loc[orders[\"qty\"].isna() | orders[\"unit_price\"].isna(), \"ext_amount\"] = np.nan\n    \n    # rtr: router - route based on conditions (evaluated IN ORDER)\n    orders[\"route\"] = \"STANDARD\"\n    \n    # Rule 1: price_flag == 'NO_PRICE' or qty is NULL or qty >= 100\n    rule1 = (orders[\"price_flag\"] == \"NO_PRICE\") | (orders[\"qty\"].isna()) | (orders[\"qty\"] >= 100)\n    orders.loc[rule1, \"route\"] = \"REVIEW\"\n    \n    # Rule 2: ext_amount >= 1000 (only if rule1 not matched)\n    rule2_mask = ~rule1 & (orders[\"ext_amount\"] >= 1000)\n    orders.loc[rule2_mask, \"route\"] = \"BULK\"\n    \n    # Rule 3: ext_amount < 50 (only if rule1 and rule2 not matched)\n    rule3_mask = ~rule1 & ~rule2_mask & (orders[\"ext_amount\"] < 50)\n    orders.loc[rule3_mask, \"route\"] = \"SMALL\"\n    \n    # out1: order_enriched\n    order_enriched = orders[[\"order_id\", \"sku_norm\", \"unit_price\", \"route\"]].copy()\n    \n    # out2: aggregation on route and order_date\n    agg_data = orders.groupby([\"route\", \"order_date\"], as_index=False).agg({\n        \"order_id\": \"count\",\n        \"ext_amount\": \"sum\"\n    })\n    agg_data.rename(columns={\"order_id\": \"order_count\"}, inplace=True)\n    agg_data.rename(columns={\"ext_amount\": \"total_ext\"}, inplace=True)\n    \n    # SUM ignores NULLs; if all values are NULL, sum is 0\n    agg_data[\"total_ext\"] = agg_data[\"total_ext\"].fillna(0)\n    \n    route_daily = agg_data[[\"route\", \"order_date\", \"order_count\", \"total_ext\"]].copy()\n    \n    return {\n        \"order_enriched\": order_enriched,\n        \"route_daily\": route_daily\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 1225,
+   "tokens_out": 1205,
+   "usd": 0.00725,
+   "wall_s": 7.228614091873169,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}
