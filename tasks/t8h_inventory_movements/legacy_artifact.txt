@@ -1,0 +1,26 @@
+-- Legacy job APPLY_STOCK_MOVEMENTS (abstracted, vendor-neutral).
+-- Inputs:
+--   stock_balance     (sku VARCHAR, warehouse VARCHAR, on_hand INT)   -- one row per (sku, warehouse)
+--   applied_movements (movement_id VARCHAR)       -- movements applied by earlier runs
+--   movements         (line_no INT, movement_id VARCHAR, sku VARCHAR, warehouse VARCHAR,
+--                      qty INT, movement_ts TIMESTAMP)
+--        -- qty > 0 is inbound, qty < 0 is outbound. line_no is unique. The same
+--        -- movement_id can appear on several lines (redelivery).
+-- Outputs:
+--   new_balance      (sku, warehouse, on_hand)
+--   applied_out      (movement_id)
+--   movement_rejects (line_no, reason)
+--
+-- Process the lines ORDER BY movement_ts, line_no. For each line:
+--   1. If its movement_id is in applied_movements, or was applied by an earlier
+--      line of this run: skip it silently (no reject row).
+--   2. Otherwise, take the current on_hand of (sku, warehouse); a key with no
+--      balance row counts as 0.
+--        - If on_hand + qty < 0: REJECT the line with reason 'INSUFFICIENT_STOCK'.
+--          The balance is unchanged and the movement_id is NOT recorded as applied,
+--          so a later line with the same movement_id is evaluated again.
+--        - Otherwise apply it: on_hand := on_hand + qty, and record the movement_id
+--          as applied.
+-- new_balance has every key of stock_balance, plus every key that had a movement
+-- applied (a key whose only lines were rejected or skipped is not added).
+-- applied_out = applied_movements plus the movement_ids applied in this run.

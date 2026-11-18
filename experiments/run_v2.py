@@ -141,6 +141,8 @@ def main():
     ap.add_argument("--configs", default=DEFAULT_CONFIGS,
                     help=f"comma-separated, from: {', '.join(CONFIGS)}")
     ap.add_argument("--tasks", default="", help="comma-separated task ids (default: all)")
+    ap.add_argument("--set", default="", choices=["", "core", "extension", "confirmation"],
+                    help="run only the tasks of one set (default: all sets)")
     ap.add_argument("--workers", type=int, default=4, help="tasks run in parallel")
     ap.add_argument("--temperature", type=float, default=None,
                     help="sampling temperature (default: the API default, 1.0)")
@@ -156,6 +158,10 @@ def main():
     if args.tasks:
         want = {x.strip() for x in args.tasks.split(",")}
         tasks = [t for t in tasks if t.meta["id"] in want]
+    if args.set:
+        tasks = [t for t in tasks if t.meta.get("set", "core") == args.set]
+    if not tasks:
+        sys.exit("no tasks selected")
     prices = load_json(args.prices) if args.prices else PRICES_USD_PER_MTOK
 
     if args.mock:

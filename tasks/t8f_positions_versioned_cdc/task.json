@@ -1,0 +1,12 @@
+{
+  "id": "t8f_positions_versioned_cdc",
+  "category": "T8",
+  "tier": 3,
+  "description": "CDC apply on a composite key with per-row versions, zero-quantity closes, duplicate delivery and a replay check",
+  "legacy_artifact": "legacy_artifact.txt",
+  "target": "pandas (PySpark in full benchmark)",
+  "set": "confirmation",
+  "replay": {
+    "new_positions": "target_positions"
+  }
+}

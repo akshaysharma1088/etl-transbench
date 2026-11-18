@@ -1,0 +1,52 @@
+{
+  "task_id": "t2g_payment_waterfall",
+  "relations": [
+    {
+      "name": "invoice_status",
+      "key_columns": [
+        "invoice_id"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "open_amount",
+          "kind": "float",
+          "abs_tol": 1e-06
+        },
+        {
+          "name": "status",
+          "kind": "string"
+        }
+      ]
+    },
+    {
+      "name": "allocations",
+      "key_columns": [
+        "payment_id",
+        "invoice_id"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "applied_amount",
+          "kind": "float",
+          "abs_tol": 1e-06
+        }
+      ]
+    },
+    {
+      "name": "customer_credit",
+      "key_columns": [
+        "customer_id"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "unapplied_amount",
+          "kind": "float",
+          "abs_tol": 1e-06
+        }
+      ]
+    }
+  ]
+}

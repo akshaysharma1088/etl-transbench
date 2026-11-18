@@ -1,0 +1,40 @@
+{
+  "task_id": "t8h_inventory_movements",
+  "relations": [
+    {
+      "name": "new_balance",
+      "key_columns": [
+        "sku",
+        "warehouse"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "on_hand",
+          "kind": "int"
+        }
+      ]
+    },
+    {
+      "name": "applied_out",
+      "key_columns": [
+        "movement_id"
+      ],
+      "ordered": false,
+      "columns": []
+    },
+    {
+      "name": "movement_rejects",
+      "key_columns": [
+        "line_no"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "reason",
+          "kind": "string"
+        }
+      ]
+    }
+  ]
+}

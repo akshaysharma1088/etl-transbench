@@ -1,0 +1,23 @@
+{
+  "task_id": "t8i_snapshot_diff_changelog",
+  "relations": [
+    {
+      "name": "change_log",
+      "key_columns": [
+        "region",
+        "sku"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "change_type",
+          "kind": "string"
+        },
+        {
+          "name": "changed_cols",
+          "kind": "string"
+        }
+      ]
+    }
+  ]
+}

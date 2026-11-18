@@ -1,0 +1,9 @@
+{
+  "id": "t7f_running_limit_validation",
+  "category": "T7",
+  "tier": 3,
+  "description": "Validation with running state: a daily limit counted over accepted rows only, and duplicate references judged against accepted rows",
+  "legacy_artifact": "legacy_artifact.txt",
+  "target": "pandas (PySpark in full benchmark)",
+  "set": "confirmation"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "t6f_cross_device_session_merge",
+  "category": "T6",
+  "tier": 3,
+  "description": "Merge overlapping or near-adjacent device sessions per user into one, counting devices and source sessions",
+  "legacy_artifact": "legacy_artifact.sql",
+  "target": "pandas (PySpark in full benchmark)",
+  "set": "confirmation"
+}

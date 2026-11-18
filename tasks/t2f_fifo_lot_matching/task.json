@@ -1,0 +1,9 @@
+{
+  "id": "t2f_fifo_lot_matching",
+  "category": "T2",
+  "tier": 3,
+  "description": "FIFO lot matching: sells consume the oldest buy lots, with realized profit per sell, short quantity and remaining lots",
+  "legacy_artifact": "legacy_artifact.sql",
+  "target": "pandas (PySpark in full benchmark)",
+  "set": "confirmation"
+}

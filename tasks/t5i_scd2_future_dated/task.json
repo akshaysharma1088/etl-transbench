@@ -1,0 +1,9 @@
+{
+  "id": "t5i_scd2_future_dated",
+  "category": "T5",
+  "tier": 3,
+  "description": "SCD Type 2 with several staged changes per key, some dated in the future; the current flag follows the batch date",
+  "legacy_artifact": "legacy_artifact.txt",
+  "target": "pandas (PySpark in full benchmark)",
+  "set": "confirmation"
+}

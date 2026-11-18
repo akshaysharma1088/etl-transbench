@@ -1,0 +1,24 @@
+-- Legacy loader MERGE_PROFILE_CHANGES (abstracted, vendor-neutral).
+-- Inputs:
+--   customer_profile (customer_id INT, email VARCHAR NULL, phone VARCHAR NULL,
+--                     tier VARCHAR NULL, updated_seq INT)
+--   profile_changes  (change_seq INT, customer_id INT, email VARCHAR NULL,
+--                     phone VARCHAR NULL, tier VARCHAR NULL)     -- change_seq is unique
+-- Output: new_profile (customer_id, email, phone, tier, updated_seq)
+--
+-- A change row carries ONLY the fields that changed. For each of email, phone, tier:
+--     NULL        means "leave this field as it is";
+--     '<<NULL>>'  (that literal text) means "set this field to NULL";
+--     any other value means "set the field to this value". An email value is
+--     stored as LOWER(TRIM(email)); phone and tier are stored as given.
+--
+-- Semantics, per customer_id:
+--   1. If the customer has a row, changes with change_seq <= updated_seq are skipped.
+--   2. The remaining changes are applied in change_seq order.
+--   3. Customer exists: apply the three field rules. If the row is IDENTICAL
+--      afterwards (no field changed value, NULL-safe), the change is a no-op and
+--      updated_seq is NOT advanced. Otherwise updated_seq := change_seq.
+--   4. Customer does not exist: create the row from the change. Fields that are
+--      NULL or '<<NULL>>' start as NULL. updated_seq := change_seq. (Creation is
+--      never a no-op, even if every field is NULL.)
+--   5. Customers with no applicable changes are carried forward unchanged.

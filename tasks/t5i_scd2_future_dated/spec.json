@@ -1,0 +1,32 @@
+{
+  "task_id": "t5i_scd2_future_dated",
+  "relations": [
+    {
+      "name": "dim_price_out",
+      "key_columns": [
+        "product_id",
+        "eff_start_date"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "list_price",
+          "kind": "float",
+          "abs_tol": 1e-06
+        },
+        {
+          "name": "eff_start_date",
+          "kind": "timestamp"
+        },
+        {
+          "name": "eff_end_date",
+          "kind": "timestamp"
+        },
+        {
+          "name": "is_current",
+          "kind": "int"
+        }
+      ]
+    }
+  ]
+}

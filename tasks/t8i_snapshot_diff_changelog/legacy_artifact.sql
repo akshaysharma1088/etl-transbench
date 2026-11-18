@@ -1,0 +1,22 @@
+-- Legacy job BUILD_CATALOG_CHANGELOG (abstracted, vendor-neutral).
+-- Inputs (both with one row per (region, sku)):
+--   snap_prev (region VARCHAR, sku VARCHAR, price DECIMAL NULL, stock INT NULL, label VARCHAR NULL)
+--   snap_curr (region VARCHAR, sku VARCHAR, price DECIMAL NULL, stock INT NULL, label VARCHAR NULL)
+-- Output:
+--   change_log (region, sku, change_type, changed_cols)
+--
+--   change_type = 'I' when the key is only in snap_curr
+--               = 'D' when the key is only in snap_prev
+--               = 'U' when the key is in both and at least one column differs
+--   Keys in both snapshots with no difference produce NO row.
+--
+-- Column comparison for 'U' (legacy semantics that must be preserved):
+--   * NULL-safe: NULL vs NULL is equal; NULL vs a value is a difference.
+--   * price and stock compare by value.
+--   * label is CHAR-padded in the legacy system, so trailing spaces are ignored
+--     (RTRIM both sides). Leading spaces and letter case are significant.
+--     A label that is all spaces equals the empty string, and neither equals NULL.
+--
+-- changed_cols: for 'U', the names of the differing columns joined by ','
+--   in the FIXED order price, stock, label (for example 'price,label').
+--   For 'I' and 'D', changed_cols is NULL.

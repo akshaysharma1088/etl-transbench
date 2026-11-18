@@ -1,0 +1,9 @@
+{
+  "id": "t8i_snapshot_diff_changelog",
+  "category": "T8",
+  "tier": 3,
+  "description": "Derive an insert/update/delete change log from two snapshots, with NULL-safe and trailing-space-insensitive comparison",
+  "legacy_artifact": "legacy_artifact.sql",
+  "target": "pandas (PySpark in full benchmark)",
+  "set": "confirmation"
+}

@@ -1,0 +1,22 @@
+-- Legacy stored procedure SP_MATCH_LOTS_FIFO (abstracted, vendor-neutral).
+-- Input:
+--   trades (trade_id INT, account_id INT, symbol VARCHAR, side VARCHAR,
+--           qty INT, price DECIMAL(12,2), trade_ts TIMESTAMP)
+--        -- side is 'BUY' or 'SELL'; qty > 0; trade_id is unique.
+-- Outputs:
+--   sell_results (trade_id, matched_qty, short_qty, realized_pnl)   -- one row per SELL
+--   open_lots    (lot_trade_id, account_id, symbol, remaining_qty, price)
+--
+-- PROCEDURE BODY (pseudocode preserved), per (account_id, symbol):
+--   CURSOR over trades ORDER BY trade_ts, trade_id;
+--   A BUY opens a lot (lot_trade_id = trade_id, remaining = qty, price).
+--   A SELL consumes open lots OLDEST FIRST (the order in which they were opened):
+--       take := LEAST(lot.remaining, still_to_sell);
+--       realized_pnl += take * (sell.price - lot.price);
+--       lot.remaining -= take;
+--     until the sell is filled or no lot has anything left.
+--     matched_qty = quantity taken from lots; short_qty = sell.qty - matched_qty.
+--     A short quantity is NOT carried forward: later buys open fresh lots and are
+--     not used to cover an earlier sell.
+--   A SELL with nothing to match still produces a row (matched_qty 0, realized_pnl 0).
+-- open_lots lists every lot with remaining_qty > 0 after all trades.

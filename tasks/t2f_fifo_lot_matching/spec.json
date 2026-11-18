@@ -1,0 +1,53 @@
+{
+  "task_id": "t2f_fifo_lot_matching",
+  "relations": [
+    {
+      "name": "sell_results",
+      "key_columns": [
+        "trade_id"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "matched_qty",
+          "kind": "int"
+        },
+        {
+          "name": "short_qty",
+          "kind": "int"
+        },
+        {
+          "name": "realized_pnl",
+          "kind": "float",
+          "abs_tol": 1e-06
+        }
+      ]
+    },
+    {
+      "name": "open_lots",
+      "key_columns": [
+        "lot_trade_id"
+      ],
+      "ordered": false,
+      "columns": [
+        {
+          "name": "account_id",
+          "kind": "int"
+        },
+        {
+          "name": "symbol",
+          "kind": "string"
+        },
+        {
+          "name": "remaining_qty",
+          "kind": "int"
+        },
+        {
+          "name": "price",
+          "kind": "float",
+          "abs_tol": 1e-06
+        }
+      ]
+    }
+  ]
+}

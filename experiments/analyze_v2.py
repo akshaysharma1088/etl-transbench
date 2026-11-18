@@ -103,7 +103,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run_dir")
     ap.add_argument("--baseline", default="LEGATO")
-    ap.add_argument("--set", default="all", choices=["all", "core", "extension"],
+    ap.add_argument("--set", default="all", choices=["all", "core", "extension", "confirmation"],
                     help="which task set to summarise (output goes to summary_<set>.*)")
     args = ap.parse_args()
     recs = load(args.run_dir)
