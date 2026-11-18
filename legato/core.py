@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from legato import counterexample
 from etl_transbench.harness import (Task, CostLedger, VerificationResult,
                                     compile_candidate, verify_candidate)
 
@@ -132,6 +133,13 @@ You will receive your previous code plus EXTERNAL verification evidence
 from differential execution against the legacy system. Fix the code. Address
 the evidence specifically; do not weaken or reinterpret the requirements."""
 
+COUNTEREXAMPLE_NOTE = """
+COUNTEREXAMPLES: for a few failing keys, the input rows that involve the key,
+the rows the legacy system produced, and the rows your code produced. They
+come from one test corpus. Your program is scored on OTHER corpora you will
+not see, so find the rule your code gets wrong and fix the rule; do not
+special-case these rows."""
+
 
 def extract_code(text: str) -> str:
     m = re.search(r"```python\n(.*?)```", text, re.DOTALL)
@@ -199,9 +207,17 @@ class EscalationPolicy:
     # model to critique its own output instead (baseline B3, the ungrounded
     # self-repair setting studied by Olausson et al.).
     grounded: bool = True
-    # What a grounded repair prompt carries: "full" (the whole report) or
-    # "trace_only" (see trace_only above). Ignored when grounded is False.
+    # What a grounded repair prompt carries: "full" (the summary report),
+    # "trace_only" (see trace_only above), or "counterexample" (the summary
+    # plus concrete failing rows, see legato/counterexample.py). Ignored when
+    # grounded is False.
     evidence: str = "full"
+    # What happens after a failed attempt:
+    #   "patch"            every attempt edits the previous code (as submitted);
+    #   "patch_then_fresh" the first attempt edits the previous code; if that
+    #                      fails too, later attempts translate from scratch,
+    #                      carrying the evidence from the failed attempts.
+    strategy: str = "patch"
     # Construct-conditioned guidance in the prompts (ablation: False).
     use_hints: bool = True
     # Force every call onto one tier, "cheap" or "frontier" (ablation of the
@@ -290,6 +306,7 @@ def run_legato(task: Task, llm: LLMClient,
     """
     ledger = CostLedger()
     history: List[Dict[str, Any]] = []
+    lessons: List[Dict[str, Any]] = []        # evidence from each failed attempt
     base_user = base_prompt(task, policy.use_hints)
     verify_kw = {"seeds": tuple(dev_seeds)} if dev_seeds else {}
 
@@ -320,18 +337,39 @@ def run_legato(task: Task, llm: LLMClient,
             return LegatoResult(task.meta["id"], False, it, code, history,
                                 ledger.totals(), handoff,
                                 heldout_equivalent=heldout(fn))
-        if action.startswith("retranslate_"):
-            tier = action.split("_", 1)[1]
+        kind, tier = action.split("_", 1)             # repair | retranslate, and the tier to use
+        if kind == "retranslate" and policy.strategy == "patch":
             code = extract_code(llm.complete(tier, TRANSLATOR_SYSTEM, base_user,
                                              ledger, "translator"))
             continue
-        if action == "repair_frontier":
-            tier = "frontier"
+
+        evidence = None
         if policy.grounded:
-            shown = trace_only(report) if policy.evidence == "trace_only" else report
+            evidence = trace_only(report) if policy.evidence == "trace_only" else dict(report)
+            if policy.evidence == "counterexample" and fn and result.executed and result.reports:
+                cx = counterexample.build(task, fn, result.reports[-1]["seed"])
+                if cx:
+                    evidence["counterexamples"] = cx
+            lessons.append(evidence)
+        has_cx = bool(evidence and "counterexamples" in evidence)
+
+        if policy.strategy == "patch_then_fresh" and it + 1 >= 2:
+            # The patch did not hold. Start from the artifact again, with what
+            # the failed attempts taught: the evidence, not the failed code.
+            shown = json.dumps(lessons[-2:], default=str, indent=1)[:12000]
+            user = (base_user + "\n\nEarlier translations of this artifact were checked against "
+                    "the legacy system and FAILED. Write a new translation from the artifact. "
+                    "Do not repeat these mistakes.\n\nEVIDENCE FROM THE FAILED ATTEMPTS "
+                    "(external, ground truth):\n" + shown
+                    + (COUNTEREXAMPLE_NOTE if any("counterexamples" in e for e in lessons[-2:]) else ""))
+            code = extract_code(llm.complete(tier, TRANSLATOR_SYSTEM, user, ledger, "translator"))
+            continue
+
+        if policy.grounded:
             repair_user = (base_user + "\n\nPREVIOUS CODE:\n```python\n" + code +
                            "\n```\n\nVERIFICATION EVIDENCE (external, ground truth):\n" +
-                           json.dumps(shown, default=str, indent=2)[:6000])
+                           json.dumps(evidence, default=str, indent=1 if has_cx else 2)[:12000 if has_cx else 6000]
+                           + (COUNTEREXAMPLE_NOTE if has_cx else ""))
         else:
             # B3: the model is told only THAT it failed, never how. No row-level
             # counterexamples, no schema diff, no error trace.

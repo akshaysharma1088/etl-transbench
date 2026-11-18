@@ -51,6 +51,16 @@ CONFIGS = {
     "A1_trace_only":       (EscalationPolicy(evidence="trace_only"), "default"),
     "A2_no_hints":         (EscalationPolicy(use_hints=False), "no_hints"),
     "A3_frontier_only":    (EscalationPolicy(fixed_tier="frontier"), "frontier"),
+    # LEGATO as revised: repair evidence carries counterexamples, and a failed
+    # patch is followed by a fresh translation that carries the evidence.
+    # (The "LEGATO" entry above is the configuration of the first submission.)
+    "L1_counterexample":   (EscalationPolicy(evidence="counterexample"), "default"),
+    "L2_cx_patch_then_fresh": (EscalationPolicy(evidence="counterexample", strategy="patch_then_fresh"), "default"),
+    "L3_summary_patch_then_fresh": (EscalationPolicy(strategy="patch_then_fresh"), "default"),
+    "C5_cheap_counterexample": (EscalationPolicy(fixed_tier="cheap", evidence="counterexample"), "cheap"),
+    "C6_cheap_cx_patch_then_fresh": (EscalationPolicy(fixed_tier="cheap", evidence="counterexample",
+                                                      strategy="patch_then_fresh"), "cheap"),
+    "C7_cheap_summary_patch_then_fresh": (EscalationPolicy(fixed_tier="cheap", strategy="patch_then_fresh"), "cheap"),
     # The same four strategies with every call on the cheap model, to see
     # whether the kind of feedback matters more for a weaker translator.
     "C0_cheap_single":     (EscalationPolicy(fixed_tier="cheap", max_iters=0), "cheap"),
@@ -166,7 +176,7 @@ def main():
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 recs = list(pool.map(lambda t: run_one(t, llm, name, rep, args.out), tasks))
             solved = sum(bool(r["heldout_equivalent"]) for r in recs)
-            print(f"rep {rep} {name:21s} held-out solved {solved}/{len(recs)} "
+            print(f"rep {rep} {name:33s} held-out solved {solved}/{len(recs)} "
                   f"[{time.time() - t0:.0f}s]", flush=True)
 
     manifest = {
