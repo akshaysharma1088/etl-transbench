@@ -1,0 +1,58 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 0,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_product = inputs[\"dim_product\"].copy()\n    stg_product = inputs[\"stg_product\"].copy()\n    \n    # Sort staged records by product_id and update_date (chronological order)\n    stg_product = stg_product.sort_values(\n        by=[\"product_id\", \"update_date\"],\n        ascending=[True, True]\n    ).reset_index(drop=True)\n    \n    # Initialize output with current dimension table\n    result = dim_product.copy()\n    \n    # Get unique product IDs that have staged updates\n    staged_product_ids = stg_product[\"product_id\"].unique()\n    \n    # Process each staged product\n    for product_id in staged_product_ids:\n        # Get all staged records for this product in chronological order\n        staged_records = stg_product[stg_product[\"product_id\"] == product_id].sort_values(\n            by=\"update_date\"\n        ).reset_index(drop=True)\n        \n        # Get current row(s) for this product from result\n        current_rows = result[\n            (result[\"product_id\"] == product_id) & \n            (result[\"is_current\"] == 1)\n        ]\n        \n        # Process each staged record sequentially\n        for _, staged_row in staged_records.iterrows():\n            staged_category = staged_row[\"category\"]\n            staged_price_band = staged_row[\"price_band\"]\n            update_date = staged_row[\"update_date\"]\n            \n            # Find current version\n            current_versions = result[\n                (result[\"product_id\"] == product_id) & \n                (result[\"is_current\"] == 1)\n            ]\n            \n            if len(current_versions) == 0:\n                # No current version exists - insert new current version\n                new_row = {\n                    \"product_id\": product_id,\n                    \"category\": staged_category,\n                    \"price_band\": staged_price_band,\n                    \"eff_start_date\": update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1\n                }\n                result = pd.concat([result, pd.DataFrame([new_row])], ignore_index=True)\n            else:\n                # Current version exists\n                current_row = current_versions.iloc[0]\n                current_category = current_row[\"category\"]\n                current_price_band = current_row[\"price_band\"]\n                \n                # Check if tracked attributes changed (NULL vs non-NULL is a change)\n                attributes_changed = (\n                    (pd.isna(current_category) != pd.isna(staged_category)) or\n                    (not pd.isna(current_category) and not pd.isna(staged_category) and current_category != staged_category) or\n                    (pd.isna(current_price_band) != pd.isna(staged_price_band)) or\n                    (not pd.isna(current_price_band) and not pd.isna(staged_price_band) and current_price_band != staged_price_band)\n                )\n                \n                if attributes_changed:\n                    # Expire current version\n                    result.loc[\n                        (result[\"product_id\"] == product_id) & \n                        (result[\"is_current\"] == 1),\n                        [\"eff_end_date\", \"is_current\"]\n                    ] = [update_date, 0]\n                    \n                    # Insert new current version\n                    new_row = {\n                        \"product_id\": product_id,\n                        \"category\": staged_category,\n                        \"price_band\": staged_price_band,\n                        \"eff_start_date\": update_date,\n                        \"eff_end_date\": pd.NaT,\n                        \"is_current\": 1\n                    }\n                    result = pd.concat([result, pd.DataFrame([new_row])], ignore_index=True)\n                # else: no change, no-op (unchanged record does not create new version)\n    \n    # Ensure correct data types\n    result[\"product_id\"] = result[\"product_id\"].astype(\"int64\")\n    result[\"category\"] = result[\"category\"].astype(\"object\")\n    result[\"price_band\"] = result[\"price_band\"].astype(\"object\")\n    result[\"eff_start_date\"] = pd.to_datetime(result[\"eff_start_date\"], unit=\"us\")\n    result[\"eff_end_date\"] = pd.to_datetime(result[\"eff_end_date\"], unit=\"s\", errors=\"coerce\")\n    result[\"is_current\"] = result[\"is_current\"].astype(\"int64\")\n    \n    result = result.reset_index(drop=True)\n    \n    return {\"dim_product_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 674,
+   "tokens_out": 2981,
+   "usd": 0.015579,
+   "wall_s": 21.00071430206299,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4662,
+  "tokens_out": 2934,
+  "usd": 0.019332000000000002,
+  "wall_s": 18.10327911376953
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

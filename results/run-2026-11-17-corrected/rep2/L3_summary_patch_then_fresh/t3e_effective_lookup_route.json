@@ -1,0 +1,48 @@
+{
+ "config": "L3_summary_patch_then_fresh",
+ "rep": 2,
+ "task": "t3e_effective_lookup_route",
+ "category": "T3",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict) -> dict:\n    orders = inputs[\"orders\"].copy()\n    price_list = inputs[\"price_list\"].copy()\n\n    # --- expression: sku_norm = UPPER(TRIM(sku)) ---\n    def norm(s):\n        if pd.isna(s):\n            return pd.NA\n        return str(s).strip().upper()\n\n    orders[\"sku_norm\"] = orders[\"sku\"].apply(norm)\n    price_list[\"sku_norm\"] = price_list[\"sku\"].apply(norm)\n\n    # give each order row a stable identifier for the lookup step\n    orders = orders.reset_index(drop=True)\n    orders[\"_row_id\"] = orders.index\n\n    pl_small = price_list[[\"sku_norm\", \"unit_price\", \"valid_from\", \"list_id\"]].copy()\n\n    # candidate matches: equal normalised sku (NaN never matches anything)\n    merged = orders.merge(pl_small, on=\"sku_norm\", how=\"left\", suffixes=(\"\", \"_pl\"))\n\n    valid_mask = merged[\"valid_from\"].notna() & (merged[\"valid_from\"] <= merged[\"order_date\"])\n    candidates = merged[valid_mask].copy()\n\n    # pick greatest valid_from, tie-break lowest list_id\n    candidates = candidates.sort_values(\n        by=[\"_row_id\", \"valid_from\", \"list_id\"],\n        ascending=[True, False, True],\n        kind=\"mergesort\",\n    )\n    best = candidates.drop_duplicates(subset=\"_row_id\", keep=\"first\")\n    best = best[[\"_row_id\", \"unit_price\"]].rename(columns={\"unit_price\": \"unit_price_matched\"})\n\n    orders = orders.merge(best, on=\"_row_id\", how=\"left\")\n\n    orders[\"price_flag\"] = np.where(orders[\"unit_price_matched\"].notna(), \"OK\", \"NO_PRICE\")\n    orders[\"unit_price\"] = orders[\"unit_price_matched\"].fillna(0.0)\n    orders = orders.drop(columns=[\"unit_price_matched\", \"_row_id\"])\n\n    # --- expression: ext_amount = qty * unit_price (NULL qty -> NULL ext_amount) ---\n    orders[\"ext_amount\"] = orders[\"qty\"] * orders[\"unit_price\"]\n\n    # --- router: first matching rule wins; NULL predicate is not true ---\n    def route_row(row):\n        qty = row[\"qty\"]\n        ext = row[\"ext_amount\"]\n\n        # Rule 1: REVIEW\n        cond1 = (row[\"price_flag\"] == \"NO_PRICE\") or pd.isna(qty)\n        if not cond1 and pd.notna(qty) and qty >= 100:\n            cond1 = True\n        if cond1:\n            return \"REVIEW\"\n\n        # Rule 2: BULK\n        if pd.notna(ext) and ext >= 1000:\n            return \"BULK\"\n\n        # Rule 3: SMALL\n        if pd.notna(ext) and ext < 50:\n            return \"SMALL\"\n\n        return \"STANDARD\"\n\n    orders[\"route\"] = orders.apply(route_row, axis=1)\n\n    # --- output 1: order_enriched ---\n    order_enriched = orders[[\"order_id\", \"sku_norm\", \"unit_price\", \"route\"]].copy()\n\n    # --- aggregator: group by route, order_date ---\n    grouped = orders.groupby([\"route\", \"order_date\"], dropna=False)\n    agg = grouped.agg(\n        order_count=(\"order_id\", \"size\"),\n        total_ext=(\"ext_amount\", lambda x: x.sum(skipna=True)),\n    ).reset_index()\n\n    # ensure total_ext is 0 (not NaN) when all values were NULL\n    agg[\"total_ext\"] = agg[\"total_ext\"].fillna(0.0)\n\n    route_daily = agg[[\"route\", \"order_date\", \"order_count\", \"total_ext\"]].copy()\n\n    return {\n        \"order_enriched\": order_enriched,\n        \"route_daily\": route_daily,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1518,
+   "tokens_out": 4126,
+   "usd": 0.066444,
+   "wall_s": 37.049524784088135,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

@@ -1,0 +1,53 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 2,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_member = inputs[\"dim_member\"].copy()\n    stg_member = inputs[\"stg_member\"].copy()\n    \n    def compute_signature(city, tier) -> str:\n        \"\"\"\n        Compute row signature for change detection.\n        SIG(city, tier) = RTRIM(COALESCE(city, '')) || '|' || RTRIM(COALESCE(tier, ''))\n        \n        In pandas:\n        - NaN, None, and empty string all coerce to empty string\n        - After COALESCE, apply RTRIM (rstrip)\n        \"\"\"\n        # Handle NaN, None, and convert to string\n        if pd.isna(city):\n            city_part = \"\"\n        else:\n            city_part = str(city).rstrip()\n        \n        if pd.isna(tier):\n            tier_part = \"\"\n        else:\n            tier_part = str(tier).rstrip()\n        \n        return city_part + \"|\" + tier_part\n    \n    # Start with the current dimension rows\n    result = dim_member.copy()\n    \n    # Process each staged record\n    for _, stg_row in stg_member.iterrows():\n        member_id = stg_row[\"member_id\"]\n        stg_city = stg_row[\"city\"]\n        stg_tier = stg_row[\"tier\"]\n        update_date = stg_row[\"update_date\"]\n        \n        # Find current row for this member (is_current = 1)\n        current_mask = (result[\"member_id\"] == member_id) & (result[\"is_current\"] == 1)\n        current_rows = result[current_mask]\n        \n        if len(current_rows) == 0:\n            # No current row: INSERT new record\n            new_row = pd.DataFrame({\n                \"member_id\": [member_id],\n                \"city\": [stg_city],\n                \"tier\": [stg_tier],\n                \"eff_start_date\": [update_date],\n                \"eff_end_date\": [pd.NaT],\n                \"is_current\": [1]\n            })\n            result = pd.concat([result, new_row], ignore_index=True)\n        else:\n            # Current row exists\n            current_row = current_rows.iloc[0]\n            current_idx = current_rows.index[0]\n            \n            # Compute signatures\n            current_sig = compute_signature(current_row[\"city\"], current_row[\"tier\"])\n            staged_sig = compute_signature(stg_city, stg_tier)\n            \n            if current_sig != staged_sig:\n                # Signatures differ: CLOSE current row and INSERT new version\n                result.loc[current_idx, \"eff_end_date\"] = update_date\n                result.loc[current_idx, \"is_current\"] = 0\n                \n                new_row = pd.DataFrame({\n                    \"member_id\": [member_id],\n                    \"city\": [stg_city],\n                    \"tier\": [stg_tier],\n                    \"eff_start_date\": [update_date],\n                    \"eff_end_date\": [pd.NaT],\n                    \"is_current\": [1]\n                })\n                result = pd.concat([result, new_row], ignore_index=True)\n            # else: signatures match, no-op (current row unchanged)\n    \n    result = result.reset_index(drop=True)\n    return {\"dim_member_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 904,
+   "tokens_out": 825,
+   "usd": 0.005029,
+   "wall_s": 6.499959230422974,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 1980,
+  "tokens_out": 1046,
+  "usd": 0.00721,
+  "wall_s": 6.475938320159912
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

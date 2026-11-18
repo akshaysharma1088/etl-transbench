@@ -1,0 +1,48 @@
+{
+ "config": "C7_cheap_summary_patch_then_fresh",
+ "rep": 2,
+ "task": "t8d_soft_delete_tombstone",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\nfrom datetime import timedelta\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n    \n    # Extract the high_ts watermark value\n    high_ts = watermark[\"high_ts\"].iloc[0]\n    \n    # Filter events that are strictly greater than the watermark\n    new_events = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n    \n    # If no new events, return the target snapshot as-is\n    if len(new_events) == 0:\n        return {\"new_snapshot\": target_snapshot}\n    \n    # Sort events by user_id, then by event_ts, then by event_seq for deterministic processing\n    new_events = new_events.sort_values(by=[\"user_id\", \"event_ts\", \"event_seq\"]).reset_index(drop=True)\n    \n    # Create a dictionary to track the current state of each user\n    # Key: user_id, Value: {email, status, status_ts}\n    user_state = {}\n    \n    # Initialize user_state from target_snapshot\n    for _, row in target_snapshot.iterrows():\n        user_id = row[\"user_id\"]\n        user_state[user_id] = {\n            \"email\": row[\"email\"],\n            \"status\": row[\"status\"],\n            \"status_ts\": row[\"status_ts\"]\n        }\n    \n    # Process each event in order\n    for _, event in new_events.iterrows():\n        user_id = event[\"user_id\"]\n        event_ts = event[\"event_ts\"]\n        op = event[\"op\"]\n        email = event[\"email\"]\n        \n        # Get current state or initialize if new user\n        if user_id not in user_state:\n            current_status = \"ACTIVE\"\n            current_status_ts = None\n            current_email = None\n        else:\n            current_status = user_state[user_id][\"status\"]\n            current_status_ts = user_state[user_id][\"status_ts\"]\n            current_email = user_state[user_id][\"email\"]\n        \n        if op == \"D\":\n            # Soft delete: set status to DELETED, preserve email, update status_ts\n            user_state[user_id] = {\n                \"email\": current_email,\n                \"status\": \"DELETED\",\n                \"status_ts\": event_ts\n            }\n        elif op == \"U\":\n            # Update operation\n            if current_status == \"DELETED\":\n                # User is currently deleted - check resurrection window\n                # Resurrection only if event_ts is STRICTLY MORE than 7 days after status_ts\n                if current_status_ts is not None:\n                    resurrection_threshold = current_status_ts + timedelta(days=7)\n                    if event_ts > resurrection_threshold:\n                        # Resurrection allowed\n                        user_state[user_id] = {\n                            \"email\": email,\n                            \"status\": \"ACTIVE\",\n                            \"status_ts\": event_ts\n                        }\n                    # else: update is discarded (deletion is sticky)\n                else:\n                    # Edge case: status is DELETED but no status_ts (shouldn't happen)\n                    user_state[user_id] = {\n                        \"email\": email,\n                        \"status\": \"ACTIVE\",\n                        \"status_ts\": event_ts\n                    }\n            else:\n                # User is ACTIVE or new: upsert\n                user_state[user_id] = {\n                    \"email\": email,\n                    \"status\": \"ACTIVE\",\n                    \"status_ts\": event_ts\n                }\n    \n    # Build the new snapshot from user_state\n    result_rows = []\n    for user_id, state in user_state.items():\n        result_rows.append({\n            \"user_id\": user_id,\n            \"email\": state[\"email\"],\n            \"status\": state[\"status\"],\n            \"status_ts\": state[\"status_ts\"]\n        })\n    \n    new_snapshot = pd.DataFrame(result_rows)\n    \n    # Ensure correct dtypes\n    if len(new_snapshot) > 0:\n        new_snapshot[\"user_id\"] = new_snapshot[\"user_id\"].astype(\"int64\")\n        new_snapshot[\"email\"] = new_snapshot[\"email\"].astype(\"object\")\n        new_snapshot[\"status\"] = new_snapshot[\"status\"].astype(\"object\")\n        new_snapshot[\"status_ts\"] = pd.to_datetime(new_snapshot[\"status_ts\"], utc=False)\n    else:\n        new_snapshot = pd.DataFrame(columns=[\"user_id\", \"email\", \"status\", \"status_ts\"])\n        new_snapshot = new_snapshot.astype({\n            \"user_id\": \"int64\",\n            \"email\": \"object\",\n            \"status\": \"object\",\n            \"status_ts\": \"datetime64[us]\"\n        })\n    \n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 616,
+   "tokens_out": 1266,
+   "usd": 0.006946,
+   "wall_s": 7.663665056228638,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

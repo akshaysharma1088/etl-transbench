@@ -1,0 +1,48 @@
+{
+ "config": "L2_cx_patch_then_fresh",
+ "rep": 2,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _differs(a, b):\n    a_na = pd.isna(a)\n    b_na = pd.isna(b)\n    if a_na and b_na:\n        return False\n    if a_na != b_na:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_acct\"].copy()\n    stg = inputs[\"stg_acct\"].copy()\n\n    # --- Step 1: Dedup staging to latest per acct_id by update_date.\n    # Tie-break: greater (email, tier) lexicographic pair wins.\n    stg_sorted = stg.sort_values(\n        by=[\"acct_id\", \"update_date\", \"email\", \"tier\"],\n        ascending=[True, False, False, False],\n        kind=\"mergesort\",\n    )\n    dedup = stg_sorted.groupby(\"acct_id\", as_index=False).first()\n\n    # Work on a mutable list of dict records for the dimension table.\n    records = dim.to_dict(\"records\")\n\n    for _, s in dedup.iterrows():\n        acct_id = s[\"acct_id\"]\n        email_s = s[\"email\"]\n        tier_s = s[\"tier\"]\n        update_date = s[\"update_date\"]\n\n        # Find current row for this acct_id (is_current == 1).\n        cur_idx = None\n        for i, r in enumerate(records):\n            if r[\"acct_id\"] == acct_id and r[\"is_current\"] == 1:\n                cur_idx = i\n                break\n\n        if cur_idx is None:\n            # No current row -> insert fresh current version.\n            records.append(\n                {\n                    \"acct_id\": acct_id,\n                    \"email\": email_s,\n                    \"tier\": tier_s,\n                    \"eff_start_date\": update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            )\n            continue\n\n        cur = records[cur_idx]\n        tier_changed = _differs(cur[\"tier\"], tier_s)\n        email_changed = _differs(cur[\"email\"], email_s)\n\n        if tier_changed:\n            # Expire the old current row.\n            records[cur_idx][\"eff_end_date\"] = update_date\n            records[cur_idx][\"is_current\"] = 0\n            # Insert new current version.\n            records.append(\n                {\n                    \"acct_id\": acct_id,\n                    \"email\": email_s,\n                    \"tier\": tier_s,\n                    \"eff_start_date\": update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n            )\n\n        if email_changed:\n            # Retro-overwrite email across ALL rows (history + current)\n            # for this acct_id, including any just-inserted row.\n            for r in records:\n                if r[\"acct_id\"] == acct_id:\n                    r[\"email\"] = email_s\n\n    out = pd.DataFrame(\n        records,\n        columns=[\"acct_id\", \"email\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"],\n    )\n\n    out[\"acct_id\"] = out[\"acct_id\"].astype(\"int64\")\n    out[\"is_current\"] = out[\"is_current\"].astype(\"int64\")\n    out[\"eff_start_date\"] = pd.to_datetime(out[\"eff_start_date\"])\n    out[\"eff_end_date\"] = pd.to_datetime(out[\"eff_end_date\"])\n\n    return {\"dim_acct_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1120,
+   "tokens_out": 3066,
+   "usd": 0.04935,
+   "wall_s": 26.15294885635376,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

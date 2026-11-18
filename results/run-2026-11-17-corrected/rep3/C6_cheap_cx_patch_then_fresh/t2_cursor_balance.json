@@ -1,0 +1,58 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 3,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    transactions = inputs[\"transactions\"].copy()\n    \n    # Sort by account_id, txn_date, txn_seq (as per cursor ORDER BY)\n    transactions = transactions.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Initialize output columns\n    running_balance = []\n    overdraft_flag = []\n    \n    # Track state for running balance\n    current_balance = 0.0\n    prev_account_id = None\n    \n    # Process each row\n    for idx, row in transactions.iterrows():\n        account_id = row[\"account_id\"]\n        amount = row[\"amount\"]\n        \n        # Reset balance if account changes\n        if account_id != prev_account_id:\n            current_balance = 0.0\n            prev_account_id = account_id\n        \n        # Update balance using COALESCE(amount, 0)\n        amount_for_calc = 0.0 if pd.isna(amount) else amount\n        current_balance += amount_for_calc\n        \n        # Determine overdraft flag\n        flag = 1 if current_balance < 0 else 0\n        \n        running_balance.append(current_balance)\n        overdraft_flag.append(flag)\n    \n    # Build output dataframe - preserve original amount column as-is\n    result = transactions[[\"account_id\", \"txn_seq\", \"txn_date\", \"amount\"]].copy()\n    result[\"running_balance\"] = running_balance\n    result[\"overdraft_flag\"] = overdraft_flag\n    \n    return {\"acct_balance_flags\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 520,
+   "tokens_out": 529,
+   "usd": 0.003165,
+   "wall_s": 5.077462911605835,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 9180,
+  "tokens_out": 1482,
+  "usd": 0.01659,
+  "wall_s": 15.307894229888916
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

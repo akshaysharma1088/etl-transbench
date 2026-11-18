@@ -1,0 +1,48 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 0,
+ "task": "t1_dialect_qualify",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Teradata-style QUALIFY filter: latest high-value transaction per account.\n    \n    Semantics:\n    1. Filter WHERE amount > 100\n    2. Add window function ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC)\n    3. QUALIFY (filter) on window result = 1\n    4. Add computed column size_band via CASE\n    5. Return filtered result\n    \"\"\"\n    \n    df = inputs[\"acct_txn\"].copy()\n    \n    # Step 1: WHERE amount > 100\n    df = df[df[\"amount\"] > 100].copy()\n    \n    # Step 2: Compute ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY txn_ts DESC, txn_id DESC)\n    # In pandas, sort descending by txn_ts, then by txn_id (both DESC)\n    # Note: in Teradata, NULLs sort high by default in DESC order\n    df = df.sort_values(\n        by=[\"account_id\", \"txn_ts\", \"txn_id\"],\n        ascending=[True, False, False],\n        na_position=\"first\"  # NULLs sort first in descending = \"high\" position\n    ).reset_index(drop=True)\n    \n    df[\"rn\"] = df.groupby(\"account_id\", sort=False).cumcount() + 1\n    \n    # Step 3: QUALIFY rn = 1 (filter on window result)\n    df = df[df[\"rn\"] == 1].copy()\n    \n    # Step 4: Add computed size_band column via CASE statement\n    def compute_size_band(amount):\n        if pd.isna(amount):\n            return None\n        if amount >= 1000:\n            return \"JUMBO\"\n        elif amount >= 500:\n            return \"LARGE\"\n        else:\n            return \"STANDARD\"\n    \n    df[\"size_band\"] = df[\"amount\"].apply(compute_size_band)\n    \n    # Step 5: Select final columns (order matches legacy SELECT)\n    result = df[[\"account_id\", \"txn_id\", \"txn_ts\", \"amount\", \"channel\", \"size_band\"]]\n    \n    return {\"latest_high_value_txn\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 432,
+   "tokens_out": 606,
+   "usd": 0.003462,
+   "wall_s": 5.706713676452637,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

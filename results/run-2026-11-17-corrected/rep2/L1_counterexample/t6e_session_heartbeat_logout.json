@@ -1,0 +1,48 @@
+{
+ "config": "L1_counterexample",
+ "rep": 2,
+ "task": "t6e_session_heartbeat_logout",
+ "category": "T6",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom datetime import timedelta\n\ndef run(inputs: dict) -> dict:\n    events = inputs[\"app_events\"].copy()\n\n    events = events.sort_values([\"user_id\", \"event_ts\", \"event_id\"], kind=\"mergesort\")\n\n    results = []\n    threshold = timedelta(minutes=30)\n\n    for user_id, grp in events.groupby(\"user_id\", sort=False):\n        session_num = 0\n        open_session = None  # dict with keys: start, last_activity, end, event_count, heartbeat_count\n\n        def finalize(sess):\n            nonlocal session_num\n            session_num += 1\n            results.append({\n                \"user_id\": user_id,\n                \"session_num\": session_num,\n                \"session_start\": sess[\"start\"],\n                \"session_end\": sess[\"end\"],\n                \"event_count\": sess[\"event_count\"],\n                \"heartbeat_count\": sess[\"heartbeat_count\"],\n            })\n\n        for _, row in grp.iterrows():\n            ts = row[\"event_ts\"]\n            etype = row[\"event_type\"]\n\n            if etype in (\"view\", \"click\", \"logout\"):\n                if open_session is None:\n                    open_session = {\n                        \"start\": ts,\n                        \"last_activity\": ts,\n                        \"end\": ts,\n                        \"event_count\": 1,\n                        \"heartbeat_count\": 0,\n                    }\n                else:\n                    delta = ts - open_session[\"last_activity\"]\n                    if delta > threshold:\n                        # close current session, start new one\n                        finalize(open_session)\n                        open_session = {\n                            \"start\": ts,\n                            \"last_activity\": ts,\n                            \"end\": ts,\n                            \"event_count\": 1,\n                            \"heartbeat_count\": 0,\n                        }\n                    else:\n                        open_session[\"event_count\"] += 1\n                        open_session[\"last_activity\"] = ts\n                        open_session[\"end\"] = ts\n\n                if etype == \"logout\":\n                    finalize(open_session)\n                    open_session = None\n\n            elif etype == \"heartbeat\":\n                if open_session is not None:\n                    delta = ts - open_session[\"last_activity\"]\n                    if delta <= threshold:\n                        open_session[\"event_count\"] += 1\n                        open_session[\"heartbeat_count\"] += 1\n                    # else dropped\n                # else dropped\n\n        if open_session is not None:\n            finalize(open_session)\n\n    columns = [\"user_id\", \"session_num\", \"session_start\", \"session_end\",\n               \"event_count\", \"heartbeat_count\"]\n\n    if results:\n        out = pd.DataFrame(results, columns=columns)\n    else:\n        out = pd.DataFrame(columns=columns)\n\n    return {\"user_sessions\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 991,
+   "tokens_out": 1386,
+   "usd": 0.023763,
+   "wall_s": 12.535023212432861,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

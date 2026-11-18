@@ -1,0 +1,68 @@
+{
+ "config": "L3_summary_patch_then_fresh",
+ "rep": 2,
+ "task": "t7_reject_validation",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom decimal import Decimal, ROUND_HALF_UP\n\ndef _round_half_up(x):\n    if pd.isna(x):\n        return x\n    d = Decimal(str(x))\n    return float(d.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"payments\"].copy()\n\n    valid_currencies = {\"USD\", \"EUR\", \"GBP\"}\n\n    reason_codes = pd.Series([None] * len(df), index=df.index, dtype=object)\n\n    # R1: amount IS NULL\n    mask_r1 = df[\"amount\"].isna()\n    reason_codes = reason_codes.where(~mask_r1, \"AMT_NULL\")\n\n    # R2: amount <= 0 (only for rows not already rejected)\n    remaining = reason_codes.isna()\n    mask_r2 = remaining & (df[\"amount\"] <= 0)\n    reason_codes = reason_codes.where(~mask_r2, \"AMT_NONPOS\")\n\n    # R3: currency not in allowed set\n    remaining = reason_codes.isna()\n    mask_r3 = remaining & (~df[\"currency\"].isin(valid_currencies))\n    reason_codes = reason_codes.where(~mask_r3, \"CCY_INVALID\")\n\n    # R4: country IS NULL\n    remaining = reason_codes.isna()\n    mask_r4 = remaining & (df[\"country\"].isna())\n    reason_codes = reason_codes.where(~mask_r4, \"CTRY_NULL\")\n\n    df[\"reason_code\"] = reason_codes\n\n    rejects_mask = df[\"reason_code\"].notna()\n\n    payments_rejects = df.loc[rejects_mask, [\"payment_id\", \"amount\", \"currency\", \"country\", \"reason_code\"]].copy()\n\n    payments_clean = df.loc[~rejects_mask, [\"payment_id\", \"amount\", \"currency\", \"country\"]].copy()\n    payments_clean[\"amount\"] = payments_clean[\"amount\"].apply(_round_half_up)\n\n    return {\n        \"payments_clean\": payments_clean,\n        \"payments_rejects\": payments_rejects,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 615,
+   "tokens_out": 879,
+   "usd": 0.01503,
+   "wall_s": 7.820363759994507,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4672,
+  "tokens_out": 3793,
+  "usd": 0.070911,
+  "wall_s": 31.895260334014893
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

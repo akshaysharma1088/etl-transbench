@@ -1,0 +1,48 @@
+{
+ "config": "L2_cx_patch_then_fresh",
+ "rep": 1,
+ "task": "t4b_delete_reinsert",
+ "category": "T4",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Multi-step partition refresh: DELETE whole arriving partitions then INSERT.\n    \n    Step 1: Create STG_NEW by filtering inbound (qty > 0) and aggregating\n    Step 2: Delete rows from TARGET_SNAPSHOT for all batch_dates in STG_NEW\n    Step 3: Insert all rows from STG_NEW into TARGET_SNAPSHOT\n    \"\"\"\n    \n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    inbound = inputs[\"inbound\"].copy()\n    \n    # Step 1: Create STG_NEW\n    # Filter rows where qty > 0\n    stg_new = inbound[inbound[\"qty\"] > 0].copy()\n    \n    # Group by product_id and batch_date, aggregating\n    stg_new = stg_new.groupby([\"product_id\", \"batch_date\"], as_index=False).agg({\n        \"qty\": \"sum\",\n        \"unit_cost\": \"max\"\n    })\n    \n    # Rename columns to match target schema\n    stg_new = stg_new.rename(columns={\"qty\": \"total_qty\", \"unit_cost\": \"max_unit_cost\"})\n    \n    # Step 2: Delete from TARGET_SNAPSHOT\n    # Get all distinct batch_dates from STG_NEW\n    arriving_batch_dates = stg_new[\"batch_date\"].unique()\n    \n    # Remove all rows from target_snapshot where batch_date is in arriving_batch_dates\n    target_snapshot = target_snapshot[~target_snapshot[\"batch_date\"].isin(arriving_batch_dates)]\n    \n    # Step 3: Insert STG_NEW into TARGET_SNAPSHOT\n    target_snapshot = pd.concat([target_snapshot, stg_new], ignore_index=True)\n    \n    # Ensure consistent dtypes\n    target_snapshot[\"product_id\"] = target_snapshot[\"product_id\"].astype(\"int64\")\n    target_snapshot[\"batch_date\"] = target_snapshot[\"batch_date\"].astype(\"datetime64[us]\")\n    target_snapshot[\"total_qty\"] = target_snapshot[\"total_qty\"].astype(\"float64\")\n    target_snapshot[\"max_unit_cost\"] = target_snapshot[\"max_unit_cost\"].astype(\"float64\")\n    \n    return {\n        \"target_snapshot\": target_snapshot\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 493,
+   "tokens_out": 598,
+   "usd": 0.003483,
+   "wall_s": 3.811598539352417,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

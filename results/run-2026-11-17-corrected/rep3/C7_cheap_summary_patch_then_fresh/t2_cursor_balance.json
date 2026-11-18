@@ -1,0 +1,58 @@
+{
+ "config": "C7_cheap_summary_patch_then_fresh",
+ "rep": 3,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    transactions = inputs[\"transactions\"].copy()\n    \n    # Sort by account_id, then txn_date, then txn_seq (cursor order)\n    transactions = transactions.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        ignore_index=False\n    )\n    \n    # Initialize output columns\n    running_balance = []\n    overdraft_flag = []\n    \n    # Process each row in cursor order\n    current_balance = 0\n    prev_account_id = None\n    \n    for idx, row in transactions.iterrows():\n        account_id = row[\"account_id\"]\n        amount = row[\"amount\"]\n        \n        # Reset balance when account changes\n        if account_id != prev_account_id:\n            current_balance = 0\n            prev_account_id = account_id\n        \n        # Add amount to balance (NULL amounts treated as 0)\n        amount_to_add = 0 if pd.isna(amount) else amount\n        current_balance += amount_to_add\n        \n        # Set overdraft flag\n        flag = 1 if current_balance < 0 else 0\n        \n        running_balance.append(current_balance)\n        overdraft_flag.append(flag)\n    \n    # Create output dataframe with all original columns plus new ones\n    result = transactions.copy()\n    result[\"running_balance\"] = running_balance\n    result[\"overdraft_flag\"] = overdraft_flag\n    \n    # Reset index to match input ordering if needed\n    result = result.reset_index(drop=True)\n    \n    return {\n        \"acct_balance_flags\": result\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 520,
+   "tokens_out": 529,
+   "usd": 0.003165,
+   "wall_s": 5.077462911605835,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 3152,
+  "tokens_out": 1668,
+  "usd": 0.011491999999999999,
+  "wall_s": 14.990085363388062
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "C5_cheap_counterexample",
+ "rep": 2,
+ "task": "t5d_asof_reconstruction",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_emp_hist = inputs[\"dim_emp_hist\"].copy()\n    asof_queries = inputs[\"asof_queries\"].copy()\n    \n    # Perform the point-in-time join\n    # For each query, find the history row where:\n    # - emp_id matches\n    # - as_of_date >= eff_start_date (start INCLUSIVE)\n    # - eff_end_date IS NULL OR as_of_date < eff_end_date (end EXCLUSIVE)\n    \n    result = asof_queries.merge(\n        dim_emp_hist,\n        on=\"emp_id\",\n        how=\"inner\"\n    )\n    \n    # Apply the half-open interval logic\n    # Start date is inclusive\n    start_condition = result[\"as_of_date\"] >= result[\"eff_start_date\"]\n    \n    # End date: NULL means open-ended (current), otherwise exclusive upper bound\n    end_condition = (result[\"eff_end_date\"].isna()) | (result[\"as_of_date\"] < result[\"eff_end_date\"])\n    \n    # Filter to only rows satisfying both conditions\n    result = result[start_condition & end_condition]\n    \n    # Select only the required output columns\n    asof_result = result[[\"query_id\", \"emp_id\", \"dept\", \"grade\"]].reset_index(drop=True)\n    \n    return {\"asof_result\": asof_result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 613,
+   "tokens_out": 383,
+   "usd": 0.002528,
+   "wall_s": 3.6254215240478516,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

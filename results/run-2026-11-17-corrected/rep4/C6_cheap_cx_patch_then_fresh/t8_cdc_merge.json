@@ -1,0 +1,48 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 4,
+ "task": "t8_cdc_merge",
+ "category": "T8",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom typing import Dict\n\ndef run(inputs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:\n    \"\"\"\n    Incremental CDC merge with watermark, latest-wins by (event_ts, event_seq),\n    and support for inserts, updates, and deletes.\n    \"\"\"\n    target_snapshot = inputs[\"target_snapshot\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    watermark = inputs[\"watermark\"].copy()\n    \n    # Extract the high_ts watermark value\n    high_ts = watermark[\"high_ts\"].iloc[0]\n    \n    # Step 1: Filter events to only those after the watermark\n    # event_ts > high_ts means events not yet applied\n    new_events = cdc_events[cdc_events[\"event_ts\"] > high_ts].copy()\n    \n    # If no new events, return target_snapshot unchanged\n    if len(new_events) == 0:\n        return {\"new_snapshot\": target_snapshot}\n    \n    # Step 2: Per product_id, find the latest event by (event_ts DESC, event_seq DESC)\n    # This implements \"latest-wins\" with deterministic tie-breaking\n    new_events_sorted = new_events.sort_values(\n        by=[\"product_id\", \"event_ts\", \"event_seq\"],\n        ascending=[True, False, False]\n    )\n    latest_per_product = new_events_sorted.drop_duplicates(\n        subset=[\"product_id\"],\n        keep=\"first\"\n    )\n    \n    # Step 3: Separate events by operation type\n    delete_events = latest_per_product[latest_per_product[\"op\"] == \"D\"].copy()\n    upsert_events = latest_per_product[\n        latest_per_product[\"op\"].isin([\"I\", \"U\"])\n    ].copy()\n    \n    # Get product IDs to delete\n    delete_product_ids = set(delete_events[\"product_id\"].values)\n    \n    # Step 4: Remove deleted products from snapshot\n    new_snapshot = target_snapshot[\n        ~target_snapshot[\"product_id\"].isin(delete_product_ids)\n    ].copy()\n    \n    # Step 5: Upsert (insert or update) products from upsert_events\n    # Build a dict for fast lookup of upsert events by product_id\n    upsert_dict = {}\n    for _, row in upsert_events.iterrows():\n        upsert_dict[row[\"product_id\"]] = {\n            \"name\": row[\"name\"],\n            \"price\": row[\"price\"],\n            \"last_event_ts\": row[\"event_ts\"]\n        }\n    \n    # Update existing products in snapshot\n    for product_id, event_data in upsert_dict.items():\n        mask = new_snapshot[\"product_id\"] == product_id\n        if mask.any():\n            new_snapshot.loc[mask, \"name\"] = event_data[\"name\"]\n            new_snapshot.loc[mask, \"price\"] = event_data[\"price\"]\n            new_snapshot.loc[mask, \"last_event_ts\"] = event_data[\"last_event_ts\"]\n        else:\n            # Insert new product\n            new_row = pd.DataFrame({\n                \"product_id\": [product_id],\n                \"name\": [event_data[\"name\"]],\n                \"price\": [event_data[\"price\"]],\n                \"last_event_ts\": [event_data[\"last_event_ts\"]]\n            })\n            new_snapshot = pd.concat([new_snapshot, new_row], ignore_index=True)\n    \n    # Ensure column order and types match input\n    new_snapshot = new_snapshot[[\"product_id\", \"name\", \"price\", \"last_event_ts\"]]\n    new_snapshot[\"product_id\"] = new_snapshot[\"product_id\"].astype(\"int64\")\n    new_snapshot[\"name\"] = new_snapshot[\"name\"].astype(\"object\")\n    new_snapshot[\"price\"] = new_snapshot[\"price\"].astype(\"float64\")\n    new_snapshot[\"last_event_ts\"] = new_snapshot[\"last_event_ts\"].astype(\"datetime64[us]\")\n    \n    # Reset index for clean output\n    new_snapshot = new_snapshot.reset_index(drop=True)\n    \n    return {\"new_snapshot\": new_snapshot}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 581,
+   "tokens_out": 1076,
+   "usd": 0.005961,
+   "wall_s": 8.647310256958008,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

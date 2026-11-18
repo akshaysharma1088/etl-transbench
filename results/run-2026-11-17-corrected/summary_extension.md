@@ -10,6 +10,12 @@
 | C2_cheap_retranslate | 0.750 ± 0.088 | 0.875 ± 0.000 | 0.900 ± 0.056 | 0.900 ± 0.056 | 0.900 ± 0.056 | 0.10 ± 0.01 |
 | C3_cheap_self_repair | 0.750 ± 0.088 | 0.825 ± 0.112 | 0.875 ± 0.000 | 0.875 ± 0.000 | 0.875 ± 0.000 | 0.12 ± 0.03 |
 | C4_cheap_trace_only | 0.750 ± 0.088 | 0.850 ± 0.056 | 0.875 ± 0.000 | 0.875 ± 0.000 | 0.875 ± 0.000 | 0.12 ± 0.02 |
+| C5_cheap_counterexample | 0.750 ± 0.088 | 0.850 ± 0.137 | 0.950 ± 0.069 | 0.950 ± 0.069 | 0.950 ± 0.069 | 0.12 ± 0.03 |
+| C6_cheap_cx_patch_then_fresh | 0.750 ± 0.088 | 0.850 ± 0.056 | 0.900 ± 0.056 | 0.900 ± 0.056 | 0.900 ± 0.056 | 0.13 ± 0.01 |
+| C7_cheap_summary_patch_then_fresh | 0.750 ± 0.088 | 0.825 ± 0.069 | 0.875 ± 0.000 | 0.875 ± 0.000 | 0.875 ± 0.000 | 0.12 ± 0.01 |
+| L1_counterexample | 0.925 ± 0.069 | 1.000 ± 0.000 | 1.000 ± 0.000 | 1.000 ± 0.000 | 1.000 ± 0.000 | 0.42 ± 0.07 |
+| L2_cx_patch_then_fresh | 0.925 ± 0.069 | 1.000 ± 0.000 | 1.000 ± 0.000 | 1.000 ± 0.000 | 1.000 ± 0.000 | 0.42 ± 0.07 |
+| L3_summary_patch_then_fresh | 0.925 ± 0.069 | 0.950 ± 0.069 | 0.950 ± 0.069 | 0.950 ± 0.069 | 0.950 ± 0.069 | 0.67 ± 0.39 |
 | LEGATO | 0.925 ± 0.069 | 0.925 ± 0.069 | 0.925 ± 0.069 | 0.925 ± 0.069 | 0.925 ± 0.069 | 0.80 ± 0.46 |
 
 Held-out SER, mean ± sample SD over 5 repetitions of 8 tasks.
@@ -26,6 +32,12 @@ Held-out SER, mean ± sample SD over 5 repetitions of 8 tasks.
 | C2_cheap_retranslate | +0.025 | 1 / 0 | 1.0000 | 1.0000 |
 | C3_cheap_self_repair | +0.050 | 1 / 0 | 1.0000 | 0.5000 |
 | C4_cheap_trace_only | +0.050 | 1 / 0 | 1.0000 | 0.5000 |
+| C5_cheap_counterexample | -0.025 | 0 / 1 | 1.0000 | 1.0000 |
+| C6_cheap_cx_patch_then_fresh | +0.025 | 1 / 0 | 1.0000 | 1.0000 |
+| C7_cheap_summary_patch_then_fresh | +0.050 | 1 / 0 | 1.0000 | 0.5000 |
+| L1_counterexample | -0.075 | 0 / 1 | 1.0000 | 0.2500 |
+| L2_cx_patch_then_fresh | -0.075 | 0 / 1 | 1.0000 | 0.2500 |
+| L3_summary_patch_then_fresh | -0.025 | 0 / 1 | 1.0000 | 1.0000 |
 
 | Configuration | T3 | T5 | T6 | T7 | T8 |
 |---|---|---|---|---|---|
@@ -39,4 +51,10 @@ Held-out SER, mean ± sample SD over 5 repetitions of 8 tasks.
 | C2_cheap_retranslate | 1.00 | 1.00 | 1.00 | 1.00 | 0.20 |
 | C3_cheap_self_repair | 1.00 | 1.00 | 1.00 | 1.00 | 0.00 |
 | C4_cheap_trace_only | 1.00 | 1.00 | 1.00 | 1.00 | 0.00 |
+| C5_cheap_counterexample | 1.00 | 1.00 | 1.00 | 1.00 | 0.60 |
+| C6_cheap_cx_patch_then_fresh | 1.00 | 1.00 | 1.00 | 1.00 | 0.20 |
+| C7_cheap_summary_patch_then_fresh | 1.00 | 1.00 | 1.00 | 1.00 | 0.00 |
+| L1_counterexample | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| L2_cx_patch_then_fresh | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| L3_summary_patch_then_fresh | 1.00 | 1.00 | 1.00 | 1.00 | 0.60 |
 | LEGATO | 1.00 | 1.00 | 1.00 | 1.00 | 0.40 |

@@ -9,11 +9,11 @@ Produced by `experiments/run_v2.py`, summarised by `experiments/analyze_v2.py`
 
 **Models:** `claude-haiku-4-5-20251001` (cheap tier), `claude-sonnet-5` (frontier tier; the API reported no dated snapshot)
 **Sampling:** API default temperature (1.0); output cap 16,000 tokens per call with one retry at double. 13 frontier replies reached the cap and were retried.
-**Scope:** 40 tasks, 11 configurations, 5 repetitions (2,200 task runs)
+**Scope:** 40 tasks, 17 configurations, 5 repetitions (3,400 task runs). The six configurations added in a second pass (`L1` to `L3`, `C5` to `C7`: counterexample evidence and the patch-then-fresh strategy) start from the same stored first translations as the others; `manifest.json` describes the first pass and `manifest_second_pass.json` the second.
 **Corpora:** repair uses development seeds 11, 23, 47; scoring uses held-out seeds 101, 211, 307, 401, 503. Repetition r adds 1000 × r to every seed.
 **Prompt:** states the keys and columns of the input dictionary.
 **Environment:** Python 3.12.5, pandas 3.1.1
-**Total cost:** about USD 25 at the prices in `manifest.json`
+**Total cost:** about USD 32 at the prices in `manifest.json`
 
 Within a repetition, every configuration in one initial-translation group
 starts from the same first candidate (`rep*/initial/`).

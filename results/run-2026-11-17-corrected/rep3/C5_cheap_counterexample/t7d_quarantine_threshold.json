@@ -1,0 +1,48 @@
+{
+ "config": "C5_cheap_counterexample",
+ "rep": 3,
+ "task": "t7d_quarantine_threshold",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    readings = inputs[\"readings\"].copy()\n    \n    # Step 1: Mark rows as BAD based on row rules\n    # value IS NULL OR value < 0 OR value > 1000 -> BAD\n    readings['is_bad'] = readings['value'].isna() | (readings['value'] < 0) | (readings['value'] > 1000)\n    \n    # Step 2: Evaluate batch-level rules (per batch_id)\n    batch_stats = readings.groupby('batch_id').agg(\n        total_rows=('is_bad', 'size'),\n        bad_rows=('is_bad', 'sum')\n    ).reset_index()\n    \n    batch_stats['bad_pct'] = (batch_stats['bad_rows'] * 100.0) / batch_stats['total_rows']\n    # STRICTLY over 20% means bad_pct > 20.0 (not >=)\n    batch_stats['is_quarantined'] = batch_stats['bad_pct'] > 20.0\n    batch_stats['batch_reject_pct'] = batch_stats['bad_pct'].round(2)\n    \n    # Merge batch decision back to readings\n    readings = readings.merge(\n        batch_stats[['batch_id', 'is_quarantined', 'batch_reject_pct']],\n        on='batch_id',\n        how='left'\n    )\n    \n    # Step 3: Route rows according to batch decision\n    readings_quarantine = readings[readings['is_quarantined']].copy()\n    readings_quarantine = readings_quarantine[['batch_id', 'reading_id', 'sensor', 'value', 'batch_reject_pct']]\n    \n    readings_not_quarantined = readings[~readings['is_quarantined']].copy()\n    \n    readings_clean = readings_not_quarantined[~readings_not_quarantined['is_bad']][['batch_id', 'reading_id', 'sensor', 'value']]\n    readings_rejects = readings_not_quarantined[readings_not_quarantined['is_bad']][['batch_id', 'reading_id', 'sensor', 'value']]\n    \n    # Reset index for cleaner output\n    readings_clean = readings_clean.reset_index(drop=True)\n    readings_rejects = readings_rejects.reset_index(drop=True)\n    readings_quarantine = readings_quarantine.reset_index(drop=True)\n    \n    return {\n        'readings_clean': readings_clean,\n        'readings_rejects': readings_rejects,\n        'readings_quarantine': readings_quarantine\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 423,
+   "tokens_out": 695,
+   "usd": 0.003898,
+   "wall_s": 4.6899073123931885,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

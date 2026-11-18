@@ -1,0 +1,48 @@
+{
+ "config": "C7_cheap_summary_patch_then_fresh",
+ "rep": 4,
+ "task": "t7b_multi_reason_collect",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    invoices = inputs[\"invoices\"].copy()\n    \n    # Initialize a list to collect failure codes for each row\n    failure_codes = [[] for _ in range(len(invoices))]\n    \n    # R1: amount IS NULL OR amount < 0 -> 'AMT_BAD'\n    r1_fail = invoices[\"amount\"].isna() | (invoices[\"amount\"] < 0)\n    for i in range(len(invoices)):\n        if r1_fail.iloc[i]:\n            failure_codes[i].append(\"AMT_BAD\")\n    \n    # R2: tax IS NULL OR tax < 0 -> 'TAX_BAD'\n    r2_fail = invoices[\"tax\"].isna() | (invoices[\"tax\"] < 0)\n    for i in range(len(invoices)):\n        if r2_fail.iloc[i]:\n            failure_codes[i].append(\"TAX_BAD\")\n    \n    # R3: tax > amount * 0.5 -> 'TAX_EXCESS'\n    # NULL-safe: only check if both amount and tax are not NULL\n    r3_fail = (~invoices[\"amount\"].isna()) & (~invoices[\"tax\"].isna()) & (invoices[\"tax\"] > invoices[\"amount\"] * 0.5)\n    for i in range(len(invoices)):\n        if r3_fail.iloc[i]:\n            failure_codes[i].append(\"TAX_EXCESS\")\n    \n    # R4: due_date IS NULL -> 'DUE_NULL'\n    r4_fail = invoices[\"due_date\"].isna()\n    for i in range(len(invoices)):\n        if r4_fail.iloc[i]:\n            failure_codes[i].append(\"DUE_NULL\")\n    \n    # R5: customer_ref IS NULL OR TRIM(customer_ref) = '' -> 'REF_EMPTY'\n    r5_fail = invoices[\"customer_ref\"].isna() | (invoices[\"customer_ref\"].str.strip() == \"\")\n    for i in range(len(invoices)):\n        if r5_fail.iloc[i]:\n            failure_codes[i].append(\"REF_EMPTY\")\n    \n    # Create reason_codes column with pipe-delimited codes\n    invoices[\"reason_codes\"] = [\"\" if len(codes) == 0 else \"|\".join(codes) for codes in failure_codes]\n    \n    # Split into clean and rejects\n    has_failures = invoices[\"reason_codes\"] != \"\"\n    \n    invoices_clean = invoices[~has_failures].drop(columns=[\"reason_codes\"]).reset_index(drop=True)\n    invoices_rejects = invoices[has_failures][[\"invoice_id\", \"amount\", \"tax\", \"due_date\", \"customer_ref\", \"reason_codes\"]].reset_index(drop=True)\n    \n    return {\n        \"invoices_clean\": invoices_clean,\n        \"invoices_rejects\": invoices_rejects\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 507,
+   "tokens_out": 781,
+   "usd": 0.004412,
+   "wall_s": 6.132380485534668,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

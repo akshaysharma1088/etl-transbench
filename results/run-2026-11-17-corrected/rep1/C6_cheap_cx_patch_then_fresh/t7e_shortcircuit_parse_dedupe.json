@@ -1,0 +1,58 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 1,
+ "task": "t7e_shortcircuit_parse_dedupe",
+ "category": "T7",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport re\nfrom datetime import datetime\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    raw = inputs[\"raw_payments\"].copy()\n    \n    # Initialize reject tracking\n    reject_rows = []\n    \n    # R1: MISSING_ID - payment_id is NULL or empty after TRIM\n    r1_fail = raw[\"payment_id\"].isna() | (raw[\"payment_id\"].str.strip() == \"\")\n    \n    # R2: BAD_AMOUNT - must be a legacy number\n    # Pattern: optional +/-, one or more digits, optional (. and 1-2 digits)\n    def is_legacy_number(s):\n        if pd.isna(s):\n            return False\n        s = s.strip()\n        pattern = r'^[+-]?\\d+(\\.\\d{1,2})?$'\n        return bool(re.match(pattern, s))\n    \n    r2_fail = ~raw[\"amount_txt\"].apply(is_legacy_number)\n    \n    # R3: NON_POSITIVE - parsed amount <= 0\n    def parse_amount(s):\n        if pd.isna(s):\n            return None\n        try:\n            return float(s.strip())\n        except:\n            return None\n    \n    parsed_amounts = raw[\"amount_txt\"].apply(parse_amount)\n    r3_fail = parsed_amounts <= 0\n    \n    # R4: BAD_CURRENCY - UPPER(TRIM(currency)) must be in ('USD', 'EUR', 'GBP')\n    def is_valid_currency(s):\n        if pd.isna(s):\n            return False\n        return s.strip().upper() in ('USD', 'EUR', 'GBP')\n    \n    r4_fail = ~raw[\"currency\"].apply(is_valid_currency)\n    \n    # R5: BAD_DATE - must be exactly YYYY-MM-DD and a valid calendar date\n    def is_valid_date(s):\n        if pd.isna(s):\n            return False\n        s = s.strip()\n        # Check format\n        if not re.match(r'^\\d{4}-\\d{2}-\\d{2}$', s):\n            return False\n        try:\n            datetime.strptime(s, '%Y-%m-%d')\n            return True\n        except ValueError:\n            return False\n    \n    r5_fail = ~raw[\"pay_date_txt\"].apply(is_valid_date)\n    \n    # Apply rules in order (short-circuit)\n    rejection_reason = pd.Series([\"\"] * len(raw), index=raw.index)\n    \n    rejection_reason[r1_fail] = \"MISSING_ID\"\n    rejection_reason[(~r1_fail) & r2_fail] = \"BAD_AMOUNT\"\n    rejection_reason[(~r1_fail) & (~r2_fail) & r3_fail] = \"NON_POSITIVE\"\n    rejection_reason[(~r1_fail) & (~r2_fail) & (~r3_fail) & r4_fail] = \"BAD_CURRENCY\"\n    rejection_reason[(~r1_fail) & (~r2_fail) & (~r3_fail) & (~r4_fail) & r5_fail] = \"BAD_DATE\"\n    \n    # R6: DUPLICATE - among rows that passed R1-R5, reject duplicates\n    passed_r1_to_r5 = rejection_reason == \"\"\n    \n    # For rows that passed R1-R5, check for duplicates\n    passed_df = raw[passed_r1_to_r5].copy()\n    passed_df[\"trimmed_payment_id\"] = passed_df[\"payment_id\"].str.strip()\n    \n    # Find the minimum row_num for each payment_id\n    min_row_num_per_id = passed_df.groupby(\"trimmed_payment_id\", sort=False)[\"row_num\"].min()\n    \n    # Mark duplicates: rows in passed_r1_to_r5 that are NOT the first occurrence\n    for idx in passed_df.index:\n        payment_id = passed_df.loc[idx, \"trimmed_payment_id\"]\n        row_num = passed_df.loc[idx, \"row_num\"]\n        if row_num != min_row_num_per_id[payment_id]:\n            rejection_reason[idx] = \"DUPLICATE\"\n    \n    # Build output dataframes\n    valid_mask = rejection_reason == \"\"\n    \n    valid_df = raw[valid_mask].copy()\n    valid_df[\"payment_id\"] = valid_df[\"payment_id\"].str.strip()\n    valid_df[\"amount\"] = valid_df[\"amount_txt\"].apply(parse_amount)\n    valid_df[\"currency\"] = valid_df[\"currency\"].str.strip().str.upper()\n    valid_df[\"pay_date\"] = pd.to_datetime(valid_df[\"pay_date_txt\"].str.strip())\n    \n    valid_payments = valid_df[[\"payment_id\", \"account_id\", \"amount\", \"currency\", \"pay_date\"]].reset_index(drop=True)\n    \n    reject_mask = rejection_reason != \"\"\n    payment_rejects = raw[reject_mask][[\"row_num\"]].copy()\n    payment_rejects[\"reject_reason\"] = rejection_reason[reject_mask].values\n    payment_rejects = payment_rejects.reset_index(drop=True)\n    \n    return {\n        \"valid_payments\": valid_payments,\n        \"payment_rejects\": payment_rejects\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 818,
+   "tokens_out": 1512,
+   "usd": 0.008378,
+   "wall_s": 8.577354669570923,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 9435,
+  "tokens_out": 3926,
+  "usd": 0.029065,
+  "wall_s": 28.23342776298523
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 0,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\nfrom typing import Optional\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    SCD Type 2 implementation with signature-based change detection.\n    Compares concatenated row signatures (city|tier) with NULL/empty equivalence\n    and trailing space removal.\n    \"\"\"\n    \n    dim_member = inputs[\"dim_member\"].copy()\n    stg_member = inputs[\"stg_member\"].copy()\n    \n    # Ensure proper types\n    dim_member[\"member_id\"] = dim_member[\"member_id\"].astype(\"int64\")\n    dim_member[\"is_current\"] = dim_member[\"is_current\"].astype(\"int64\")\n    stg_member[\"member_id\"] = stg_member[\"member_id\"].astype(\"int64\")\n    \n    def compute_signature(city: Optional[str], tier: Optional[str]) -> str:\n        \"\"\"\n        Compute row signature: RTRIM(COALESCE(city, '')) || '|' || RTRIM(COALESCE(tier, ''))\n        NULL and empty string both become empty string after COALESCE.\n        \"\"\"\n        city_part = \"\" if pd.isna(city) or city == \"\" else str(city).rstrip()\n        tier_part = \"\" if pd.isna(tier) or tier == \"\" else str(tier).rstrip()\n        return city_part + \"|\" + tier_part\n    \n    # Build result by processing staged records\n    result_rows = []\n    \n    # Start with all current rows from dim_member\n    dim_dict = {}  # member_id -> list of rows\n    for _, row in dim_member.iterrows():\n        member_id = row[\"member_id\"]\n        if member_id not in dim_dict:\n            dim_dict[member_id] = []\n        dim_dict[member_id].append(row.to_dict())\n    \n    # Process each staged record\n    for _, stg_row in stg_member.iterrows():\n        member_id = stg_row[\"member_id\"]\n        stg_city = stg_row[\"city\"]\n        stg_tier = stg_row[\"tier\"]\n        update_date = stg_row[\"update_date\"]\n        stg_sig = compute_signature(stg_city, stg_tier)\n        \n        # Find current row for this member\n        current_row = None\n        if member_id in dim_dict:\n            for row in dim_dict[member_id]:\n                if row[\"is_current\"] == 1:\n                    current_row = row\n                    break\n        \n        if current_row is None:\n            # No current row exists: INSERT new row\n            new_row = {\n                \"member_id\": member_id,\n                \"city\": stg_city,\n                \"tier\": stg_tier,\n                \"eff_start_date\": update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1\n            }\n            if member_id not in dim_dict:\n                dim_dict[member_id] = []\n            dim_dict[member_id].append(new_row)\n        else:\n            # Current row exists: check signature\n            current_sig = compute_signature(current_row[\"city\"], current_row[\"tier\"])\n            \n            if stg_sig != current_sig:\n                # Signature changed: close current row and insert new row\n                current_row[\"eff_end_date\"] = update_date\n                current_row[\"is_current\"] = 0\n                \n                new_row = {\n                    \"member_id\": member_id,\n                    \"city\": stg_city,\n                    \"tier\": stg_tier,\n                    \"eff_start_date\": update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1\n                }\n                dim_dict[member_id].append(new_row)\n            # else: signature unchanged, no-op\n    \n    # Flatten all rows into result\n    for member_rows in dim_dict.values():\n        for row in member_rows:\n            result_rows.append(row)\n    \n    # Build output DataFrame\n    if result_rows:\n        dim_member_out = pd.DataFrame(result_rows)\n    else:\n        dim_member_out = pd.DataFrame(columns=[\n            \"member_id\", \"city\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"\n        ])\n    \n    # Ensure proper types\n    dim_member_out[\"member_id\"] = dim_member_out[\"member_id\"].astype(\"int64\")\n    dim_member_out[\"is_current\"] = dim_member_out[\"is_current\"].astype(\"int64\")\n    dim_member_out[\"eff_start_date\"] = pd.to_datetime(dim_member_out[\"eff_start_date\"], utc=False)\n    dim_member_out[\"eff_end_date\"] = pd.to_datetime(dim_member_out[\"eff_end_date\"], utc=False)\n    \n    # Preserve column order and ensure string columns\n    dim_member_out[\"city\"] = dim_member_out[\"city\"].astype(\"object\")\n    dim_member_out[\"tier\"] = dim_member_out[\"tier\"].astype(\"object\")\n    \n    dim_member_out = dim_member_out[[\n        \"member_id\", \"city\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"\n    ]]\n    \n    return {\"dim_member_out\": dim_member_out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 904,
+   "tokens_out": 1410,
+   "usd": 0.007954,
+   "wall_s": 11.132388353347778,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

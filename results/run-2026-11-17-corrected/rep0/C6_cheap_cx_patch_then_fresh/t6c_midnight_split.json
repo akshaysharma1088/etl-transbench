@@ -1,0 +1,48 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 0,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(\n        by=[\"user_id\", \"event_ts\", \"event_id\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # Extract date (calendar date in local time) from event_ts\n    events[\"event_date\"] = events[\"event_ts\"].dt.date\n    \n    # Initialize session_num column\n    events[\"session_num\"] = 0\n    \n    # Group by user_id to process sessions per user\n    session_counter = {}\n    \n    for user_id in events[\"user_id\"].unique():\n        user_events = events[events[\"user_id\"] == user_id].index\n        session_counter[user_id] = 1\n        \n        for i, idx in enumerate(user_events):\n            if i == 0:\n                # First event of user starts session 1\n                events.at[idx, \"session_num\"] = session_counter[user_id]\n            else:\n                prev_idx = user_events[i - 1]\n                current_ts = events.at[idx, \"event_ts\"]\n                prev_ts = events.at[prev_idx, \"event_ts\"]\n                current_date = events.at[idx, \"event_date\"]\n                prev_date = events.at[prev_idx, \"event_date\"]\n                \n                # Check if new session should start\n                # Condition (b): different calendar date\n                if current_date != prev_date:\n                    session_counter[user_id] += 1\n                # Condition (a): gap > 45 minutes\n                elif pd.notna(current_ts) and pd.notna(prev_ts):\n                    gap_minutes = (current_ts - prev_ts).total_seconds() / 60.0\n                    if gap_minutes > 45:\n                        session_counter[user_id] += 1\n                \n                events.at[idx, \"session_num\"] = session_counter[user_id]\n    \n    # Aggregate to create user_sessions\n    user_sessions_list = []\n    \n    for (user_id, session_num), group in events.groupby([\"user_id\", \"session_num\"]):\n        session_date = group[\"event_date\"].iloc[0]\n        session_start = group[\"event_ts\"].min()\n        session_end = group[\"event_ts\"].max()\n        event_count = len(group)\n        \n        user_sessions_list.append({\n            \"user_id\": user_id,\n            \"session_num\": session_num,\n            \"session_date\": session_date,\n            \"session_start\": session_start,\n            \"session_end\": session_end,\n            \"event_count\": event_count\n        })\n    \n    user_sessions = pd.DataFrame(user_sessions_list)\n    \n    # Sort by user_id and session_num for consistent output\n    user_sessions = user_sessions.sort_values(\n        by=[\"user_id\", \"session_num\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    return {\"user_sessions\": user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 834,
+   "usd": 0.00455,
+   "wall_s": 6.992726802825928,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

@@ -1,0 +1,53 @@
+{
+ "config": "C5_cheap_counterexample",
+ "rep": 2,
+ "task": "t6b_capped_session",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n    \n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(by=[\"user_id\", \"event_ts\", \"event_id\"]).reset_index(drop=True)\n    \n    # Initialize session tracking columns\n    events[\"session_num\"] = 0\n    events[\"session_start\"] = pd.NaT\n    \n    current_user = None\n    current_session_start = None\n    current_session_num = 0\n    prev_event_ts = None\n    \n    for idx, row in events.iterrows():\n        user_id = row[\"user_id\"]\n        event_ts = row[\"event_ts\"]\n        \n        # Check if this is a new user\n        if user_id != current_user:\n            # New user starts a new session (reset counter to 1)\n            current_user = user_id\n            current_session_num = 1\n            current_session_start = event_ts\n            prev_event_ts = event_ts\n        else:\n            # Same user: check inactivity gap and hard cap\n            # Condition (a): inactivity gap > 20 minutes (from previous event of same user)\n            gap_seconds = (event_ts - prev_event_ts).total_seconds()\n            gap_minutes = gap_seconds / 60\n            inactivity_exceeded = gap_minutes > 20\n            \n            # Condition (b): hard cap of 4 hours from session start\n            time_in_session_seconds = (event_ts - current_session_start).total_seconds()\n            time_in_session_hours = time_in_session_seconds / 3600\n            hard_cap_exceeded = time_in_session_hours > 4\n            \n            if inactivity_exceeded or hard_cap_exceeded:\n                # Start a new session\n                current_session_num += 1\n                current_session_start = event_ts\n            \n            prev_event_ts = event_ts\n        \n        events.loc[idx, \"session_num\"] = current_session_num\n        events.loc[idx, \"session_start\"] = current_session_start\n    \n    # Group by user_id and session_num to aggregate session information\n    user_sessions = events.groupby([\"user_id\", \"session_num\"]).agg(\n        session_start=(\"session_start\", \"first\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    ).reset_index()\n    \n    # Ensure columns are in the right order\n    user_sessions = user_sessions[[\"user_id\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]]\n    \n    return {\"user_sessions\": user_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 421,
+   "tokens_out": 681,
+   "usd": 0.003826,
+   "wall_s": 4.33910870552063,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 4298,
+  "tokens_out": 1413,
+  "usd": 0.011363,
+  "wall_s": 11.318144798278809
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

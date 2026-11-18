@@ -1,0 +1,48 @@
+{
+ "config": "L3_summary_patch_then_fresh",
+ "rep": 4,
+ "task": "t2b_stmt_cycle_reset",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"ledger\"].copy()\n\n    # Sort per legacy cursor ORDER BY\n    df = df.sort_values(\n        by=[\"account_id\", \"entry_date\", \"row_seq\"],\n        kind=\"mergesort\"  # stable sort to preserve tie order\n    ).reset_index(drop=True)\n\n    # amount coalesced to 0 for accumulation purposes\n    amt = df[\"amount\"].fillna(0.0)\n\n    # cycle number: starts at 1 per account, increments by 1 on each STMT row\n    # (including the STMT row itself, since reset+increment happens before add)\n    is_stmt = (df[\"entry_type\"] == \"STMT\").astype(int)\n    cyc = 1 + is_stmt.groupby(df[\"account_id\"]).cumsum()\n\n    df[\"cycle_no\"] = cyc\n\n    # cycle_balance: cumulative sum of amount within (account_id, cycle_no) group,\n    # since reset-before-add means bal restarts exactly at each new cycle group\n    df[\"cycle_balance\"] = amt.groupby([df[\"account_id\"], df[\"cycle_no\"]]).cumsum()\n\n    result = df[\n        [\"account_id\", \"row_seq\", \"entry_date\", \"entry_type\", \"amount\",\n         \"cycle_no\", \"cycle_balance\"]\n    ].reset_index(drop=True)\n\n    return {\"cycle_balances\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 830,
+   "tokens_out": 1312,
+   "usd": 0.02217,
+   "wall_s": 13.01950454711914,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

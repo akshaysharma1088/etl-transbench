@@ -1,0 +1,58 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 2,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    transactions = inputs[\"transactions\"].copy()\n    \n    # Sort by account_id, txn_date, txn_seq to match cursor order\n    transactions = transactions.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    # For balance calculation, replace NULL amounts with 0\n    amount_for_calc = transactions[\"amount\"].fillna(0.0)\n    \n    # Compute running balance per account using cumsum\n    transactions[\"running_balance\"] = transactions.groupby(\"account_id\", sort=False)[\n        \"amount\"\n    ].transform(lambda x: (x.fillna(0.0)).cumsum())\n    \n    # Compute overdraft flag (1 if balance < 0, else 0)\n    transactions[\"overdraft_flag\"] = (transactions[\"running_balance\"] < 0).astype(\"int64\")\n    \n    # Keep original amount column (with NULLs preserved)\n    result = transactions[[\"account_id\", \"txn_seq\", \"txn_date\", \"amount\", \"running_balance\", \"overdraft_flag\"]]\n    \n    return {\"acct_balance_flags\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 520,
+   "tokens_out": 444,
+   "usd": 0.00274,
+   "wall_s": 4.183244705200195,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 8612,
+  "tokens_out": 1633,
+  "usd": 0.016777,
+  "wall_s": 13.965412139892578
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

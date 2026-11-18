@@ -1,0 +1,48 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 2,
+ "task": "t5h_scd2_surrogate_pit",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_customer = inputs[\"dim_customer\"].copy()\n    stg_customer = inputs[\"stg_customer\"].copy()\n    fact_txn = inputs[\"fact_txn\"].copy()\n    \n    # Ensure datetime columns are in datetime64[us] format\n    dim_customer[\"eff_start_date\"] = pd.to_datetime(dim_customer[\"eff_start_date\"], utc=False)\n    dim_customer[\"eff_end_date\"] = pd.to_datetime(dim_customer[\"eff_end_date\"], utc=False)\n    stg_customer[\"update_date\"] = pd.to_datetime(stg_customer[\"update_date\"], utc=False)\n    fact_txn[\"txn_date\"] = pd.to_datetime(fact_txn[\"txn_date\"], utc=False)\n    \n    # STEP 1: SCD Type 2 Load\n    \n    # Find max customer_sk in current dimension\n    if len(dim_customer) > 0:\n        max_sk = dim_customer[\"customer_sk\"].max()\n    else:\n        max_sk = 0\n    \n    # Identify which staged records create a version\n    versions_to_create = []\n    \n    for idx, stg_row in stg_customer.iterrows():\n        cust_id = stg_row[\"customer_id\"]\n        stg_segment = stg_row[\"segment\"]\n        update_dt = stg_row[\"update_date\"]\n        \n        # Find current row for this customer\n        current_rows = dim_customer[\n            (dim_customer[\"customer_id\"] == cust_id) & \n            (dim_customer[\"is_current\"] == 1)\n        ]\n        \n        should_create_version = False\n        \n        if len(current_rows) == 0:\n            # No current row: create a version\n            should_create_version = True\n        else:\n            # Current row exists: check if segment differs\n            current_segment = current_rows.iloc[0][\"segment\"]\n            # None vs non-None differs; None vs None does not\n            if pd.isna(current_segment) and pd.isna(stg_segment):\n                # Both NULL: no version\n                should_create_version = False\n            elif pd.isna(current_segment) or pd.isna(stg_segment):\n                # One NULL, one not: differs\n                should_create_version = True\n            elif current_segment != stg_segment:\n                # Both non-NULL but different\n                should_create_version = True\n        \n        if should_create_version:\n            versions_to_create.append({\n                \"customer_id\": cust_id,\n                \"segment\": stg_segment,\n                \"update_date\": update_dt,\n                \"stg_idx\": idx\n            })\n    \n    # Sort by customer_id to assign surrogate keys consistently\n    versions_to_create.sort(key=lambda x: x[\"customer_id\"])\n    \n    # Assign surrogate keys: max_sk + row_number (1-indexed)\n    for i, version in enumerate(versions_to_create):\n        version[\"new_sk\"] = max_sk + i + 1\n    \n    # Expire current rows that are being replaced\n    for version in versions_to_create:\n        cust_id = version[\"customer_id\"]\n        update_dt = version[\"update_date\"]\n        \n        # Find and expire current row\n        mask = (dim_customer[\"customer_id\"] == cust_id) & (dim_customer[\"is_current\"] == 1)\n        dim_customer.loc[mask, \"eff_end_date\"] = update_dt\n        dim_customer.loc[mask, \"is_current\"] = 0\n    \n    # Insert new rows from versions\n    new_rows = []\n    for version in versions_to_create:\n        new_rows.append({\n            \"customer_sk\": version[\"new_sk\"],\n            \"customer_id\": version[\"customer_id\"],\n            \"segment\": version[\"segment\"],\n            \"eff_start_date\": version[\"update_date\"],\n            \"eff_end_date\": pd.NaT,\n            \"is_current\": 1\n        })\n    \n    if new_rows:\n        new_rows_df = pd.DataFrame(new_rows)\n        dim_customer = pd.concat([dim_customer, new_rows_df], ignore_index=True)\n    \n    dim_customer_out = dim_customer.copy()\n    \n    # STEP 2: Key the facts\n    \n    # For each fact row, find the customer_sk of the version that covers txn_date\n    fact_txn[\"customer_sk\"] = -1\n    \n    for idx, fact_row in fact_txn.iterrows():\n        cust_id = fact_row[\"customer_id\"]\n        txn_dt = fact_row[\"txn_date\"]\n        \n        # Find versions of this customer where txn_date is in [eff_start_date, eff_end_date)\n        # eff_end_date = NULL means open (extends to infinity)\n        versions = dim_customer[dim_customer[\"customer_id\"] == cust_id]\n        \n        matching_sk = -1\n        for _, version in versions.iterrows():\n            start = version[\"eff_start_date\"]\n            end = version[\"eff_end_date\"]\n            \n            # Check if txn_dt falls in [start, end)\n            if txn_dt >= start:\n                if pd.isna(end) or txn_dt < end:\n                    matching_sk = version[\"customer_sk\"]\n                    break\n        \n        fact_txn.loc[idx, \"customer_sk\"] = matching_sk\n    \n    # Build output for facts: txn_id, customer_sk, amount\n    fact_txn_keyed = fact_txn[[\"txn_id\", \"customer_sk\", \"amount\"]].copy()\n    fact_txn_keyed[\"customer_sk\"] = fact_txn_keyed[\"customer_sk\"].astype(\"int64\")\n    \n    return {\n        \"dim_customer_out\": dim_customer_out,\n        \"fact_txn_keyed\": fact_txn_keyed\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 977,
+   "tokens_out": 1564,
+   "usd": 0.008797,
+   "wall_s": 9.413856983184814,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 1,
+ "task": "t3_dataflow_orders",
+ "category": "T3",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    orders = inputs[\"orders\"]\n    customers = inputs[\"customers\"]\n    \n    # Step 1: Filter (status == 'SHIPPED')\n    filtered = orders[orders[\"status\"] == \"SHIPPED\"].copy()\n    \n    # Step 2: Lookup with join and on_miss default\n    # Left join on customer_id, with region defaulting to \"UNKNOWN\" on miss\n    looked_up = filtered.merge(\n        customers[[\"customer_id\", \"region\"]],\n        on=\"customer_id\",\n        how=\"left\"\n    )\n    # Fill missing region values with \"UNKNOWN\"\n    looked_up[\"region\"] = looked_up[\"region\"].fillna(\"UNKNOWN\")\n    \n    # Step 3: Reformat - compute net_amount with NULL discount treated as 0\n    # First, treat NULL discount as 0\n    looked_up[\"discount\"] = looked_up[\"discount\"].fillna(0)\n    looked_up[\"net_amount\"] = looked_up[\"qty\"] * looked_up[\"unit_price\"] * (1 - looked_up[\"discount\"])\n    \n    # Step 4: Output - select specified columns in order\n    output_columns = [\"order_id\", \"customer_id\", \"region\", \"qty\", \"unit_price\", \"net_amount\"]\n    result = looked_up[output_columns].copy()\n    \n    return {\n        \"shipped_orders_enriched\": result\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 525,
+   "tokens_out": 372,
+   "usd": 0.002385,
+   "wall_s": 3.7448601722717285,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

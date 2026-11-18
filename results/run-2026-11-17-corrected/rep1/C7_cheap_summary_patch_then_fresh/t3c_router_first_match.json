@@ -1,0 +1,48 @@
+{
+ "config": "C7_cheap_summary_patch_then_fresh",
+ "rep": 1,
+ "task": "t3c_router_first_match",
+ "category": "T3",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Router component that directs claims to three output ports based on ordered rules.\n    Rules are evaluated IN ORDER; a row goes to the FIRST matching port only.\n    Unmatched rows go to the default port \"standard\" (which is not an output here).\n    \"\"\"\n    claims = inputs[\"claims\"].copy()\n    \n    # Initialize output DataFrames\n    fast_track = []\n    high_value = []\n    manual_review = []\n    standard = []\n    \n    # Process each row\n    for idx, row in claims.iterrows():\n        amount = row[\"amount\"]\n        photos_attached = row[\"photos_attached\"]\n        \n        # Rule 1: amount <= 500 and photos_attached == 1\n        if amount <= 500 and photos_attached == 1:\n            fast_track.append(row)\n        # Rule 2: amount > 10000\n        elif amount > 10000:\n            high_value.append(row)\n        # Rule 3: photos_attached == 0 or amount > 500\n        elif photos_attached == 0 or amount > 500:\n            manual_review.append(row)\n        # Default: standard (not output, so we track but don't return)\n        else:\n            standard.append(row)\n    \n    # Convert lists to DataFrames with proper column selection\n    output_columns = [\"claim_id\", \"amount\", \"photos_attached\"]\n    \n    if fast_track:\n        fast_track_df = pd.DataFrame(fast_track)[output_columns]\n    else:\n        fast_track_df = pd.DataFrame(columns=output_columns)\n    \n    if high_value:\n        high_value_df = pd.DataFrame(high_value)[output_columns]\n    else:\n        high_value_df = pd.DataFrame(columns=output_columns)\n    \n    if manual_review:\n        manual_review_df = pd.DataFrame(manual_review)[output_columns]\n    else:\n        manual_review_df = pd.DataFrame(columns=output_columns)\n    \n    # Ensure proper dtypes\n    for df in [fast_track_df, high_value_df, manual_review_df]:\n        df[\"claim_id\"] = df[\"claim_id\"].astype(\"int64\")\n        df[\"amount\"] = df[\"amount\"].astype(\"float64\")\n        df[\"photos_attached\"] = df[\"photos_attached\"].astype(\"int64\")\n        df.reset_index(drop=True, inplace=True)\n    \n    return {\n        \"claims_fast_track\": fast_track_df,\n        \"claims_high_value\": high_value_df,\n        \"claims_manual_review\": manual_review_df\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 593,
+   "tokens_out": 689,
+   "usd": 0.004038,
+   "wall_s": 6.049917697906494,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

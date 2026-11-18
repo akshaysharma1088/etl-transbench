@@ -1,0 +1,48 @@
+{
+ "config": "L3_summary_patch_then_fresh",
+ "rep": 0,
+ "task": "t1c_teradata_intdiv",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Replicate Teradata-style integer division (truncate toward zero) and null handling.\n    \n    - ZEROIFNULL: replace NULL with 0 before division\n    - INTEGER / INTEGER: truncate toward zero (not floor division)\n    - CAST(... AS INTEGER): also truncates toward zero\n    - QUALIFY-style filtering happens after window results (not needed here)\n    - WHERE clause filters before SELECT\n    \"\"\"\n    \n    df = inputs[\"acct_balance\"].copy()\n    \n    # WHERE acct_type <> 'CLOSED'\n    df = df[df[\"acct_type\"] != \"CLOSED\"].copy()\n    \n    # ZEROIFNULL(balance_cents) / 100 AS balance_bucket\n    # ZEROIFNULL replaces NULL with 0\n    balance_cents_filled = df[\"balance_cents\"].fillna(0.0)\n    \n    # Teradata integer division truncates toward zero\n    # For positive: floor division works. For negative: need to use trunc(x/y)\n    # In Python: int(a/b) truncates toward zero, but we need to be careful with floats\n    df[\"balance_bucket\"] = (balance_cents_filled / 100).apply(lambda x: int(np.trunc(x)))\n    \n    # CAST(ZEROIFNULL(balance_cents) * fx_rate / 100 AS INTEGER)\n    # First ZEROIFNULL, then multiply by fx_rate, divide by 100, cast to INTEGER (truncate)\n    fx_rate_filled = df[\"fx_rate\"].fillna(0.0)\n    df[\"fx_units\"] = (balance_cents_filled * fx_rate_filled / 100).apply(lambda x: int(np.trunc(x)))\n    \n    # SELECT only the required columns\n    result = df[[\"account_id\", \"balance_bucket\", \"fx_units\"]].copy()\n    \n    return {\"balance_buckets\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 429,
+   "tokens_out": 519,
+   "usd": 0.003024,
+   "wall_s": 4.059906482696533,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

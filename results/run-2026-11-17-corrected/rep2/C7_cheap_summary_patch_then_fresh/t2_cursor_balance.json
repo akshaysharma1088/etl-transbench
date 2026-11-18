@@ -1,0 +1,58 @@
+{
+ "config": "C7_cheap_summary_patch_then_fresh",
+ "rep": 2,
+ "task": "t2_cursor_balance",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 2,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "syntactic"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    transactions = inputs[\"transactions\"].copy()\n    \n    # Sort by account_id, txn_date, txn_seq to match cursor order\n    transactions = transactions.sort_values(\n        by=[\"account_id\", \"txn_date\", \"txn_seq\"],\n        ignore_index=True\n    )\n    \n    # Initialize columns for running balance and overdraft flag\n    running_balance = []\n    overdraft_flag = []\n    \n    # Track state across iterations\n    prev_acct = None\n    bal = 0.0\n    \n    # Iterate through sorted transactions\n    for idx, row in transactions.iterrows():\n        account_id = row[\"account_id\"]\n        \n        # Reset balance when account changes\n        if account_id != prev_acct:\n            bal = 0.0\n            prev_acct = account_id\n        \n        # Add amount to balance (NULL/NaN amounts treated as 0)\n        amount = row[\"amount\"]\n        if pd.isna(amount):\n            amount = 0.0\n        bal = bal + amount\n        \n        # Set overdraft flag\n        flag = 1 if bal < 0 else 0\n        \n        running_balance.append(bal)\n        overdraft_flag.append(flag)\n    \n    # Build output dataframe with original columns plus new columns\n    result = transactions.copy()\n    result[\"running_balance\"] = running_balance\n    result[\"overdraft_flag\"] = overdraft_flag\n    \n    return {\"acct_balance_flags\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 520,
+   "tokens_out": 444,
+   "usd": 0.00274,
+   "wall_s": 4.183244705200195,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2324,
+  "tokens_out": 1919,
+  "usd": 0.011918999999999999,
+  "wall_s": 12.846508741378784
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

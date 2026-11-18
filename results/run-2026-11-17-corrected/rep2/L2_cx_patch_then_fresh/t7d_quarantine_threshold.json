@@ -1,0 +1,48 @@
+{
+ "config": "L2_cx_patch_then_fresh",
+ "rep": 2,
+ "task": "t7d_quarantine_threshold",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"readings\"].copy()\n\n    df[\"is_bad\"] = df[\"value\"].isna() | (df[\"value\"] < 0) | (df[\"value\"] > 1000)\n\n    grp = df.groupby(\"batch_id\")[\"is_bad\"].agg([\"sum\", \"count\"]).rename(\n        columns={\"sum\": \"bad_count\", \"count\": \"total_rows\"}\n    )\n    grp[\"bad_count\"] = grp[\"bad_count\"].astype(int)\n    grp[\"quarantined\"] = grp[\"bad_count\"] * 100 > grp[\"total_rows\"] * 20\n    grp[\"batch_reject_pct\"] = (grp[\"bad_count\"] * 100.0 / grp[\"total_rows\"]).round(2)\n\n    df = df.merge(grp[[\"quarantined\", \"batch_reject_pct\"]], left_on=\"batch_id\", right_index=True, how=\"left\")\n\n    cols = [\"batch_id\", \"reading_id\", \"sensor\", \"value\"]\n\n    quarantine_mask = df[\"quarantined\"]\n    clean_mask = (~quarantine_mask) & (~df[\"is_bad\"])\n    rejects_mask = (~quarantine_mask) & (df[\"is_bad\"])\n\n    readings_clean = df.loc[clean_mask, cols].reset_index(drop=True)\n    readings_rejects = df.loc[rejects_mask, cols].reset_index(drop=True)\n    readings_quarantine = df.loc[quarantine_mask, cols + [\"batch_reject_pct\"]].reset_index(drop=True)\n\n    return {\n        \"readings_clean\": readings_clean,\n        \"readings_rejects\": readings_rejects,\n        \"readings_quarantine\": readings_quarantine,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 623,
+   "tokens_out": 765,
+   "usd": 0.013344,
+   "wall_s": 6.635119915008545,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

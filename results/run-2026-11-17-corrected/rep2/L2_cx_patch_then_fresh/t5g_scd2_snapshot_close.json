@@ -1,0 +1,48 @@
+{
+ "config": "L2_cx_patch_then_fresh",
+ "rep": 2,
+ "task": "t5g_scd2_snapshot_close",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    dim_store = inputs[\"dim_store\"].copy()\n    stg = inputs[\"stg_store_full\"].copy()\n    batch = inputs[\"batch_control\"].copy()\n\n    b = batch[\"batch_date\"].iloc[0]\n\n    # SELECT DISTINCT store_id, region, format FROM STG_STORE_FULL\n    S = stg.drop_duplicates(subset=[\"store_id\", \"region\", \"format\"]).reset_index(drop=True)\n\n    df = dim_store.copy()\n\n    def differs(a, b_):\n        a_null = pd.isna(a)\n        b_null = pd.isna(b_)\n        if a_null and b_null:\n            return False\n        if a_null != b_null:\n            return True\n        return a != b_\n\n    current_mask = df[\"is_current\"] == 1\n    current_df = df[current_mask]\n\n    current_by_store = {}\n    for idx, row in current_df.iterrows():\n        current_by_store[row[\"store_id\"]] = idx\n\n    s_store_ids = set(S[\"store_id\"])\n\n    new_rows = []\n    close_indices = []\n\n    for _, s in S.iterrows():\n        sid = s[\"store_id\"]\n        if sid in current_by_store:\n            idx = current_by_store[sid]\n            c = df.loc[idx]\n            if differs(c[\"region\"], s[\"region\"]) or differs(c[\"format\"], s[\"format\"]):\n                close_indices.append(idx)\n                new_rows.append({\n                    \"store_id\": sid,\n                    \"region\": s[\"region\"],\n                    \"format\": s[\"format\"],\n                    \"eff_start_date\": b,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1\n                })\n            # else: attributes unchanged -> no-op\n        else:\n            # brand-new store or reactivated store: always a new version\n            new_rows.append({\n                \"store_id\": sid,\n                \"region\": s[\"region\"],\n                \"format\": s[\"format\"],\n                \"eff_start_date\": b,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1\n            })\n\n    # Close current rows whose store_id is not in the snapshot (store closed)\n    for sid, idx in current_by_store.items():\n        if sid not in s_store_ids:\n            close_indices.append(idx)\n\n    for idx in close_indices:\n        df.at[idx, \"eff_end_date\"] = b\n        df.at[idx, \"is_current\"] = 0\n\n    if new_rows:\n        new_df = pd.DataFrame(\n            new_rows,\n            columns=[\"store_id\", \"region\", \"format\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]\n        )\n        df = pd.concat([df, new_df], ignore_index=True)\n\n    # Ensure dtypes are consistent with expected output schema\n    df[\"store_id\"] = df[\"store_id\"].astype(\"int64\")\n    df[\"is_current\"] = df[\"is_current\"].astype(\"int64\")\n    df[\"eff_start_date\"] = pd.to_datetime(df[\"eff_start_date\"])\n    df[\"eff_end_date\"] = pd.to_datetime(df[\"eff_end_date\"])\n\n    df = df.reset_index(drop=True)\n\n    return {\"dim_store_out\": df}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1241,
+   "tokens_out": 2484,
+   "usd": 0.040983,
+   "wall_s": 19.21842122077942,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

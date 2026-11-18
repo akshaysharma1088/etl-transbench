@@ -1,0 +1,48 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 0,
+ "task": "t5e_scd2_late_arriving",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\nfrom datetime import datetime\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_account = inputs[\"dim_account\"].copy()\n    stg_account = inputs[\"stg_account\"].copy()\n    \n    # Ensure proper data types\n    dim_account[\"account_id\"] = dim_account[\"account_id\"].astype(\"int64\")\n    dim_account[\"is_current\"] = dim_account[\"is_current\"].astype(\"int64\")\n    stg_account[\"account_id\"] = stg_account[\"account_id\"].astype(\"int64\")\n    \n    # Sort staging by account_id and update_date\n    stg_account = stg_account.sort_values([\"account_id\", \"update_date\"]).reset_index(drop=True)\n    \n    # Process each staged record\n    for idx, staged_row in stg_account.iterrows():\n        s_account_id = staged_row[\"account_id\"]\n        s_plan = staged_row[\"plan\"]\n        s_update_date = staged_row[\"update_date\"]\n        \n        # Find all versions of this account\n        account_versions = dim_account[dim_account[\"account_id\"] == s_account_id]\n        \n        if len(account_versions) == 0:\n            # No version exists, insert new one\n            new_row = pd.DataFrame({\n                \"account_id\": [s_account_id],\n                \"plan\": [s_plan],\n                \"eff_start_date\": [s_update_date],\n                \"eff_end_date\": [pd.NaT],\n                \"is_current\": [1]\n            })\n            dim_account = pd.concat([dim_account, new_row], ignore_index=True)\n        else:\n            # Find the version that covers s.update_date\n            # A version covers a date if eff_start_date <= date < eff_end_date\n            # (NULL eff_end_date means open/current)\n            covering_version = None\n            covering_idx = None\n            \n            for vidx, v_row in account_versions.iterrows():\n                v_start = v_row[\"eff_start_date\"]\n                v_end = v_row[\"eff_end_date\"]\n                \n                # Check if s_update_date is covered\n                if s_update_date >= v_start:\n                    if pd.isna(v_end) or s_update_date < v_end:\n                        covering_version = v_row\n                        covering_idx = vidx\n                        break\n            \n            if covering_version is None:\n                # s.update_date is earlier than account's first version\n                earliest_version_idx = account_versions[\"eff_start_date\"].idxmin()\n                f = dim_account.loc[earliest_version_idx]\n                \n                new_row = pd.DataFrame({\n                    \"account_id\": [s_account_id],\n                    \"plan\": [s_plan],\n                    \"eff_start_date\": [s_update_date],\n                    \"eff_end_date\": [f[\"eff_start_date\"]],\n                    \"is_current\": [0]\n                })\n                dim_account = pd.concat([dim_account, new_row], ignore_index=True)\n            else:\n                v = covering_version\n                v_plan = v[\"plan\"]\n                v_start = v[\"eff_start_date\"]\n                v_end = v[\"eff_end_date\"]\n                v_is_current = v[\"is_current\"]\n                \n                # Compare plans (NULL vs non-NULL is different; NULL vs NULL is same)\n                plans_equal = False\n                if pd.isna(v_plan) and pd.isna(s_plan):\n                    plans_equal = True\n                elif not pd.isna(v_plan) and not pd.isna(s_plan) and v_plan == s_plan:\n                    plans_equal = True\n                \n                if plans_equal:\n                    # no-op\n                    pass\n                elif s_update_date == v_start:\n                    # Same-day correction, update plan in place\n                    dim_account.loc[covering_idx, \"plan\"] = s_plan\n                else:\n                    # Split v at s.update_date\n                    # Insert new version for s.plan\n                    new_row = pd.DataFrame({\n                        \"account_id\": [s_account_id],\n                        \"plan\": [s_plan],\n                        \"eff_start_date\": [s_update_date],\n                        \"eff_end_date\": [v_end],\n                        \"is_current\": [v_is_current]\n                    })\n                    dim_account = pd.concat([dim_account, new_row], ignore_index=True)\n                    \n                    # Update v: set end_date and is_current\n                    dim_account.loc[covering_idx, \"eff_end_date\"] = s_update_date\n                    dim_account.loc[covering_idx, \"is_current\"] = 0\n    \n    # Reset index for clean output\n    dim_account = dim_account.reset_index(drop=True)\n    \n    return {\"dim_account_out\": dim_account}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 943,
+   "tokens_out": 1310,
+   "usd": 0.007493,
+   "wall_s": 7.58241081237793,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

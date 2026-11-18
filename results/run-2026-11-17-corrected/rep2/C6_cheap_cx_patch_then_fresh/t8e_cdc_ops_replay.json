@@ -1,0 +1,68 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 2,
+ "task": "t8e_cdc_ops_replay",
+ "category": "T8",
+ "set": "extension",
+ "dev_equivalent": false,
+ "iterations": 4,
+ "heldout_equivalent": false,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 2,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 3,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 4,
+   "tier": "cheap",
+   "class": "semantic_divergence"
+  }
+ ],
+ "final_code": "import pandas as pd\nfrom typing import Optional\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    target_state = inputs[\"target_state\"].copy()\n    cdc_events = inputs[\"cdc_events\"].copy()\n    \n    # Build a dict of target_state for fast lookup\n    state_dict = {}\n    if not target_state.empty:\n        for _, row in target_state.iterrows():\n            oid = row[\"order_id\"]\n            state_dict[oid] = {\n                \"status\": row[\"status\"],\n                \"amount\": row[\"amount\"],\n                \"last_seq\": row[\"last_seq\"]\n            }\n    \n    # Remove duplicates by seq (at-least-once delivery)\n    cdc_events = cdc_events.drop_duplicates(subset=[\"seq\"], keep=\"first\")\n    \n    # Track last applied event (by seq) for each order that becomes deleted\n    last_delete_seq = {}\n    \n    # Process events in seq order\n    if not cdc_events.empty:\n        cdc_events = cdc_events.sort_values(\"seq\")\n        \n        for _, event in cdc_events.iterrows():\n            oid = event[\"order_id\"]\n            seq = event[\"seq\"]\n            op = event[\"op\"]\n            \n            # Replay guard: skip if order exists in target_state and seq <= last_seq\n            if oid in state_dict and seq <= state_dict[oid][\"last_seq\"]:\n                continue\n            \n            # Apply the event\n            if op == \"I\":\n                # Insert or update\n                state_dict[oid] = {\n                    \"status\": event[\"status\"],\n                    \"amount\": event[\"amount\"],\n                    \"last_seq\": seq\n                }\n                # Clear any tombstone marker since row now exists\n                last_delete_seq.pop(oid, None)\n                \n            elif op == \"U\":\n                # Update\n                if oid not in state_dict:\n                    # Create new row\n                    state_dict[oid] = {\n                        \"status\": event[\"status\"],\n                        \"amount\": event[\"amount\"],\n                        \"last_seq\": seq\n                    }\n                    last_delete_seq.pop(oid, None)\n                else:\n                    # Update existing row\n                    state_dict[oid][\"status\"] = event[\"status\"]\n                    # NULL amount in update means leave unchanged\n                    if pd.notna(event[\"amount\"]):\n                        state_dict[oid][\"amount\"] = event[\"amount\"]\n                    state_dict[oid][\"last_seq\"] = seq\n                    last_delete_seq.pop(oid, None)\n                    \n            elif op == \"D\":\n                # Delete\n                if oid in state_dict:\n                    # Row exists, delete it\n                    del state_dict[oid]\n                    last_delete_seq[oid] = seq\n                else:\n                    # Row doesn't exist, no-op\n                    # But if this is the first time we see this order and it's a D,\n                    # we still need to track it for tombstones\n                    last_delete_seq[oid] = seq\n    \n    # Build new_state\n    new_state_rows = []\n    for oid in sorted(state_dict.keys()):\n        entry = state_dict[oid]\n        new_state_rows.append({\n            \"order_id\": oid,\n            \"status\": entry[\"status\"],\n            \"amount\": entry[\"amount\"],\n            \"last_seq\": entry[\"last_seq\"]\n        })\n    new_state = pd.DataFrame(new_state_rows, columns=[\"order_id\", \"status\", \"amount\", \"last_seq\"])\n    if new_state.empty:\n        new_state = pd.DataFrame(columns=[\"order_id\", \"status\", \"amount\", \"last_seq\"])\n    \n    # Build tombstones: orders whose last applied event is D\n    tombstone_rows = []\n    for oid in sorted(last_delete_seq.keys()):\n        # Only include if the order doesn't exist in final state\n        # (i.e., the last applied event left it deleted)\n        if oid not in state_dict:\n            tombstone_rows.append({\n                \"order_id\": oid,\n                \"deleted_seq\": last_delete_seq[oid]\n            })\n    \n    tombstones = pd.DataFrame(tombstone_rows, columns=[\"order_id\", \"deleted_seq\"])\n    if tombstones.empty:\n        tombstones = pd.DataFrame(columns=[\"order_id\", \"deleted_seq\"])\n    \n    return {\n        \"new_state\": new_state,\n        \"tombstones\": tombstones\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 948,
+   "tokens_out": 1523,
+   "usd": 0.008563,
+   "wall_s": 9.000327825546265,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 19525,
+  "tokens_out": 9997,
+  "usd": 0.06951,
+  "wall_s": 75.38127040863037
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

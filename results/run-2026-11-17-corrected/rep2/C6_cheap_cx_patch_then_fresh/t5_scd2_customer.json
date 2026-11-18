@@ -1,0 +1,48 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 2,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_customer = inputs[\"dim_customer\"].copy()\n    stg_customer = inputs[\"stg_customer\"].copy()\n    \n    # Step 1: Deduplicate STG_CUSTOMER to latest record per customer_id by update_date\n    # On ties, keep the record with greater (name, segment) pair lexicographically\n    stg_customer = stg_customer.sort_values(\n        by=['customer_id', 'update_date', 'name', 'segment'],\n        ascending=[True, False, False, False]\n    ).drop_duplicates(subset=['customer_id'], keep='first')\n    \n    # Step 2: Process each staged record\n    rows_to_insert = []\n    \n    for _, stg_row in stg_customer.iterrows():\n        stg_cust_id = stg_row['customer_id']\n        stg_name = stg_row['name']\n        stg_segment = stg_row['segment']\n        stg_update_date = stg_row['update_date']\n        \n        # Find current row in dim_customer for this customer_id (is_current = 1)\n        current_rows = dim_customer[\n            (dim_customer['customer_id'] == stg_cust_id) & \n            (dim_customer['is_current'] == 1)\n        ]\n        \n        if len(current_rows) == 0:\n            # No current row: INSERT new record\n            new_row = {\n                'customer_id': stg_cust_id,\n                'name': stg_name,\n                'segment': stg_segment,\n                'eff_start_date': stg_update_date,\n                'eff_end_date': pd.NaT,\n                'is_current': 1\n            }\n            rows_to_insert.append(new_row)\n        else:\n            # Current row exists\n            current_row = current_rows.iloc[0]\n            current_name = current_row['name']\n            current_segment = current_row['segment']\n            \n            # Check if tracked attributes changed (name or segment)\n            # NULL handling: NULL <> 'x' is a change; NULL == NULL is no change\n            name_changed = current_name != stg_name\n            segment_changed = current_segment != stg_segment\n            \n            # Handle NULL comparisons explicitly\n            if pd.isna(current_name) and pd.isna(stg_name):\n                name_changed = False\n            elif pd.isna(current_name) or pd.isna(stg_name):\n                name_changed = True\n                \n            if pd.isna(current_segment) and pd.isna(stg_segment):\n                segment_changed = False\n            elif pd.isna(current_segment) or pd.isna(stg_segment):\n                segment_changed = True\n            \n            if name_changed or segment_changed:\n                # Tracked attribute change: expire current row and insert new version\n                dim_customer.loc[current_rows.index, 'eff_end_date'] = stg_update_date\n                dim_customer.loc[current_rows.index, 'is_current'] = 0\n                \n                new_row = {\n                    'customer_id': stg_cust_id,\n                    'name': stg_name,\n                    'segment': stg_segment,\n                    'eff_start_date': stg_update_date,\n                    'eff_end_date': pd.NaT,\n                    'is_current': 1\n                }\n                rows_to_insert.append(new_row)\n            # else: no change, do nothing\n    \n    # Append new rows to dim_customer\n    if rows_to_insert:\n        new_rows_df = pd.DataFrame(rows_to_insert)\n        dim_customer = pd.concat([dim_customer, new_rows_df], ignore_index=True)\n    \n    # Ensure correct data types\n    dim_customer['customer_id'] = dim_customer['customer_id'].astype('int64')\n    dim_customer['is_current'] = dim_customer['is_current'].astype('int64')\n    dim_customer['eff_start_date'] = pd.to_datetime(dim_customer['eff_start_date'])\n    dim_customer['eff_end_date'] = pd.to_datetime(dim_customer['eff_end_date'])\n    \n    return {'dim_customer_out': dim_customer}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 809,
+   "tokens_out": 1145,
+   "usd": 0.006534,
+   "wall_s": 8.503398180007935,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

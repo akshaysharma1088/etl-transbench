@@ -1,0 +1,53 @@
+{
+ "config": "L2_cx_patch_then_fresh",
+ "rep": 2,
+ "task": "t6d_channel_interleave",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    \"\"\"\n    Per-(user, channel) independent sessionization over interleaved streams.\n\n    Sessions are defined by a 25-minute STRICT gap rule applied WITHIN each\n    (user_id, channel) stream separately. Events are ordered by (event_ts, event_id)\n    within each (user_id, channel) group.\n\n    Output: channel_sessions with columns:\n      - user_id: int64\n      - channel: str\n      - session_num: int64 (1-based per user+channel)\n      - session_start: datetime64[us]\n      - session_end: datetime64[us]\n      - event_count: int64\n    \"\"\"\n\n    events = inputs[\"events\"].copy()\n\n    # Sort by (user_id, channel, event_ts, event_id)\n    events = events.sort_values(\n        by=[\"user_id\", \"channel\", \"event_ts\", \"event_id\"],\n        na_position=\"last\",\n        kind=\"mergesort\",\n    ).reset_index(drop=True)\n\n    gap_threshold = pd.Timedelta(minutes=25)\n\n    # Compute previous timestamp within each (user_id, channel) group\n    grp = events.groupby([\"user_id\", \"channel\"], sort=False)\n    prev_ts = grp[\"event_ts\"].shift(1)\n\n    curr_ts = events[\"event_ts\"]\n\n    # Determine where a new session starts.\n    # Null handling: if either prev or curr is NaT, treat as no gap (same session).\n    both_valid = prev_ts.notna() & curr_ts.notna()\n    gap = curr_ts - prev_ts\n    is_new_session = both_valid & (gap > gap_threshold)\n\n    # The first row of each group is always the start of session 1 (not a \"new session\" event)\n    is_first_in_group = prev_ts.isna() & grp.cumcount().eq(0)\n    # Note: prev_ts is NaN for first row naturally; is_new_session already False for those\n    # since both_valid requires prev_ts.notna().\n\n    # new_session_flag: True marks the start of a new session (increment counter)\n    new_session_flag = is_new_session.fillna(False)\n\n    # Session number: cumulative sum of new_session_flag within each group, starting at 1\n    events[\"session_num\"] = new_session_flag.groupby([events[\"user_id\"], events[\"channel\"]]).cumsum() + 1\n\n    # Aggregate to create channel_sessions\n    channel_sessions = events.groupby(\n        [\"user_id\", \"channel\", \"session_num\"],\n        as_index=False\n    ).agg(\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\")\n    )\n\n    # Ensure sort order and column order are consistent\n    channel_sessions = channel_sessions.sort_values(\n        by=[\"user_id\", \"channel\", \"session_num\"]\n    ).reset_index(drop=True)\n\n    channel_sessions = channel_sessions[\n        [\"user_id\", \"channel\", \"session_num\", \"session_start\", \"session_end\", \"event_count\"]\n    ]\n\n    return {\"channel_sessions\": channel_sessions}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 351,
+   "tokens_out": 809,
+   "usd": 0.004396,
+   "wall_s": 5.680577993392944,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2165,
+  "tokens_out": 1358,
+  "usd": 0.026865,
+  "wall_s": 12.205167770385742
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

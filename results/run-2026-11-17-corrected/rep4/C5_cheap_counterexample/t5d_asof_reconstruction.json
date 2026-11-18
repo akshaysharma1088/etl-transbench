@@ -1,0 +1,48 @@
+{
+ "config": "C5_cheap_counterexample",
+ "rep": 4,
+ "task": "t5d_asof_reconstruction",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_emp_hist = inputs[\"dim_emp_hist\"]\n    asof_queries = inputs[\"asof_queries\"]\n    \n    # Perform the point-in-time join\n    # For each query, find the matching history row where:\n    # - emp_id matches\n    # - as_of_date >= eff_start_date (start INCLUSIVE)\n    # - eff_end_date IS NULL OR as_of_date < eff_end_date (end EXCLUSIVE)\n    \n    result_rows = []\n    \n    for _, query_row in asof_queries.iterrows():\n        query_id = query_row[\"query_id\"]\n        emp_id = query_row[\"emp_id\"]\n        as_of_date = query_row[\"as_of_date\"]\n        \n        # Find matching history rows for this emp_id\n        matching_hist = dim_emp_hist[dim_emp_hist[\"emp_id\"] == emp_id]\n        \n        # Apply the date range conditions\n        # Start condition: as_of_date >= eff_start_date\n        start_match = as_of_date >= matching_hist[\"eff_start_date\"]\n        \n        # End condition: eff_end_date IS NULL OR as_of_date < eff_end_date\n        end_match = matching_hist[\"eff_end_date\"].isna() | (as_of_date < matching_hist[\"eff_end_date\"])\n        \n        # Combine both conditions\n        valid_rows = matching_hist[start_match & end_match]\n        \n        # If we have matching rows, take them (there should be at most one valid version)\n        # In case of multiple matches (shouldn't happen with proper SCD Type 2),\n        # we take all matching rows\n        for _, hist_row in valid_rows.iterrows():\n            result_rows.append({\n                \"query_id\": query_id,\n                \"emp_id\": emp_id,\n                \"dept\": hist_row[\"dept\"],\n                \"grade\": hist_row[\"grade\"]\n            })\n    \n    # Create result DataFrame\n    if result_rows:\n        asof_result = pd.DataFrame(result_rows)\n    else:\n        asof_result = pd.DataFrame(columns=[\"query_id\", \"emp_id\", \"dept\", \"grade\"])\n        asof_result = asof_result.astype({\n            \"query_id\": \"int64\",\n            \"emp_id\": \"int64\",\n            \"dept\": \"str\",\n            \"grade\": \"str\"\n        })\n    \n    return {\"asof_result\": asof_result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 613,
+   "tokens_out": 668,
+   "usd": 0.003953,
+   "wall_s": 5.537165403366089,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "C7_cheap_summary_patch_then_fresh",
+ "rep": 1,
+ "task": "t5c_scd1_scd2_mixed",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_acct = inputs[\"dim_acct\"].copy()\n    stg_acct = inputs[\"stg_acct\"].copy()\n    \n    # Step 1: Dedup STG_ACCT to latest per acct_id by update_date\n    # Ties: greater (email, tier) lexicographic pair wins\n    stg_acct = stg_acct.sort_values(\n        by=[\"acct_id\", \"update_date\", \"email\", \"tier\"],\n        ascending=[True, True, False, False],\n        na_position=\"last\"\n    )\n    stg_acct_dedup = stg_acct.drop_duplicates(subset=[\"acct_id\"], keep=\"first\")\n    \n    # Step 2: Process each staged record\n    for _, staged_row in stg_acct_dedup.iterrows():\n        s_acct_id = staged_row[\"acct_id\"]\n        s_email = staged_row[\"email\"]\n        s_tier = staged_row[\"tier\"]\n        s_update_date = staged_row[\"update_date\"]\n        \n        # Find current row for this acct_id\n        current_mask = (dim_acct[\"acct_id\"] == s_acct_id) & (dim_acct[\"is_current\"] == 1)\n        current_rows = dim_acct[current_mask]\n        \n        if len(current_rows) == 0:\n            # Insert new current version\n            new_row = pd.DataFrame({\n                \"acct_id\": [s_acct_id],\n                \"email\": [s_email],\n                \"tier\": [s_tier],\n                \"eff_start_date\": [s_update_date],\n                \"eff_end_date\": [pd.NaT],\n                \"is_current\": [1]\n            })\n            dim_acct = pd.concat([dim_acct, new_row], ignore_index=True)\n        else:\n            # Current row exists\n            current_row = current_rows.iloc[0]\n            c_email = current_row[\"email\"]\n            c_tier = current_row[\"tier\"]\n            current_idx = current_rows.index[0]\n            \n            # Check for TYPE-2 change (tier change)\n            # Use null-safe comparison: NULL vs NULL is same, NULL vs non-NULL is different\n            tier_changed = (pd.isna(c_tier) and not pd.isna(s_tier)) or \\\n                          (not pd.isna(c_tier) and pd.isna(s_tier)) or \\\n                          (not pd.isna(c_tier) and not pd.isna(s_tier) and c_tier != s_tier)\n            \n            # Check for TYPE-1 change (email change)\n            email_changed = (pd.isna(c_email) and not pd.isna(s_email)) or \\\n                           (not pd.isna(c_email) and pd.isna(s_email)) or \\\n                           (not pd.isna(c_email) and not pd.isna(s_email) and c_email != s_email)\n            \n            if tier_changed:\n                # Expire current row at s_update_date\n                dim_acct.loc[current_idx, \"eff_end_date\"] = s_update_date\n                dim_acct.loc[current_idx, \"is_current\"] = 0\n                \n                # Insert new current version\n                new_row = pd.DataFrame({\n                    \"acct_id\": [s_acct_id],\n                    \"email\": [s_email],\n                    \"tier\": [s_tier],\n                    \"eff_start_date\": [s_update_date],\n                    \"eff_end_date\": [pd.NaT],\n                    \"is_current\": [1]\n                })\n                dim_acct = pd.concat([dim_acct, new_row], ignore_index=True)\n            \n            if email_changed:\n                # Retro-overwrite email across all rows of this acct_id\n                dim_acct.loc[dim_acct[\"acct_id\"] == s_acct_id, \"email\"] = s_email\n    \n    # Reset index for clean output\n    dim_acct = dim_acct.reset_index(drop=True)\n    \n    return {\"dim_acct_out\": dim_acct}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 809,
+   "tokens_out": 1125,
+   "usd": 0.006434,
+   "wall_s": 6.453224420547485,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

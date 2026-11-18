@@ -1,0 +1,48 @@
+{
+ "config": "C5_cheap_counterexample",
+ "rep": 4,
+ "task": "t2d_reject_skip_accum",
+ "category": "T2",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    postings = inputs[\"postings\"].copy()\n    \n    # Sort by account_id, post_date, post_seq to match cursor order\n    postings = postings.sort_values(\n        by=[\"account_id\", \"post_date\", \"post_seq\"],\n        na_position=\"last\"\n    ).reset_index(drop=True)\n    \n    posted_totals_rows = []\n    reject_counts_rows = []\n    \n    prev_acct = None\n    tot = 0.0\n    rej = 0\n    \n    for idx, row in postings.iterrows():\n        current_acct = row[\"account_id\"]\n        \n        # Account change: flush previous account's reject count\n        if current_acct != prev_acct:\n            if prev_acct is not None:\n                reject_counts_rows.append({\n                    \"account_id\": prev_acct,\n                    \"reject_count\": rej\n                })\n            tot = 0.0\n            rej = 0\n            prev_acct = current_acct\n        \n        # Row-level validation and processing\n        try:\n            qty = row[\"qty\"]\n            unit_price = row[\"unit_price\"]\n            \n            # Reject conditions: qty is null/NaN, qty <= 0, unit_price is null/NaN, or unit_price < 0\n            if (pd.isna(qty) or qty <= 0 or \n                pd.isna(unit_price) or unit_price < 0):\n                raise ValueError(\"Invalid row\")\n            \n            # Calculate value and update running total\n            v = qty * unit_price\n            tot = tot + v\n            \n            # Insert into POSTED_TOTALS\n            posted_totals_rows.append({\n                \"account_id\": row[\"account_id\"],\n                \"post_seq\": row[\"post_seq\"],\n                \"post_date\": row[\"post_date\"],\n                \"post_value\": v,\n                \"running_total\": tot\n            })\n        except (ValueError, TypeError):\n            # Row rejected: increment reject count, don't update total\n            rej += 1\n    \n    # Flush final account's reject count\n    if prev_acct is not None:\n        reject_counts_rows.append({\n            \"account_id\": prev_acct,\n            \"reject_count\": rej\n        })\n    \n    # Build output DataFrames\n    if posted_totals_rows:\n        posted_totals_df = pd.DataFrame(posted_totals_rows)\n    else:\n        posted_totals_df = pd.DataFrame(columns=[\n            \"account_id\", \"post_seq\", \"post_date\", \"post_value\", \"running_total\"\n        ])\n    \n    if reject_counts_rows:\n        reject_counts_df = pd.DataFrame(reject_counts_rows)\n    else:\n        reject_counts_df = pd.DataFrame(columns=[\n            \"account_id\", \"reject_count\"\n        ])\n    \n    return {\n        \"posted_totals\": posted_totals_df,\n        \"reject_counts\": reject_counts_df\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 729,
+   "tokens_out": 799,
+   "usd": 0.004724,
+   "wall_s": 4.901813268661499,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  4011,
+  4023,
+  4047
+ ],
+ "heldout_seeds": [
+  4101,
+  4211,
+  4307,
+  4401,
+  4503
+ ]
+}

@@ -1,0 +1,53 @@
+{
+ "config": "L3_summary_patch_then_fresh",
+ "rep": 0,
+ "task": "t5_scd2_customer",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "semantic_divergence"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs):\n    dim = inputs[\"dim_customer\"].copy()\n    stg = inputs[\"stg_customer\"].copy()\n\n    # Ensure proper dtypes\n    dim[\"eff_start_date\"] = pd.to_datetime(dim[\"eff_start_date\"])\n    dim[\"eff_end_date\"] = pd.to_datetime(dim[\"eff_end_date\"])\n    stg[\"update_date\"] = pd.to_datetime(stg[\"update_date\"])\n\n    # Step 1: Deduplicate STG_CUSTOMER to latest record per customer_id by update_date.\n    # On ties, keep record with greater (name, segment) pair (lexicographic, DESC).\n    # IMPORTANT: use drop_duplicates (keep whole row) rather than groupby().first(),\n    # since groupby().first() selects the first *non-null* value independently per\n    # column, which can stitch together values from different source rows when a\n    # column is null in the top-ranked row (producing incorrect composite records).\n    stg_sorted = stg.sort_values(\n        by=[\"customer_id\", \"update_date\", \"name\", \"segment\"],\n        ascending=[True, False, False, False],\n        kind=\"mergesort\",\n        na_position=\"last\",\n    )\n    stg_dedup = stg_sorted.drop_duplicates(subset=\"customer_id\", keep=\"first\")\n\n    # Reset index of dim for easy mutation\n    dim = dim.reset_index(drop=True)\n\n    def is_changed(a, b):\n        a_null = pd.isnull(a)\n        b_null = pd.isnull(b)\n        if a_null and b_null:\n            return False\n        if a_null != b_null:\n            return True\n        return a != b\n\n    new_rows = []\n\n    # Process staged records in customer_id ascending order (deterministic)\n    stg_dedup = stg_dedup.sort_values(by=\"customer_id\", kind=\"mergesort\")\n\n    for _, s in stg_dedup.iterrows():\n        cust_id = s[\"customer_id\"]\n        s_name = s[\"name\"]\n        s_segment = s[\"segment\"]\n        s_update_date = s[\"update_date\"]\n\n        # Find current row for this customer in dim\n        mask_current = (dim[\"customer_id\"] == cust_id) & (dim[\"is_current\"] == 1)\n        current_idx = dim.index[mask_current]\n\n        if len(current_idx) == 0:\n            # No current row exists: insert new\n            new_rows.append({\n                \"customer_id\": cust_id,\n                \"name\": s_name,\n                \"segment\": s_segment,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n        else:\n            idx = current_idx[0]\n            c_name = dim.at[idx, \"name\"]\n            c_segment = dim.at[idx, \"segment\"]\n\n            name_changed = is_changed(c_name, s_name)\n            segment_changed = is_changed(c_segment, s_segment)\n\n            if name_changed or segment_changed:\n                # Expire old current row\n                dim.at[idx, \"eff_end_date\"] = s_update_date\n                dim.at[idx, \"is_current\"] = 0\n\n                # Insert new version\n                new_rows.append({\n                    \"customer_id\": cust_id,\n                    \"name\": s_name,\n                    \"segment\": s_segment,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            else:\n                # No change: do nothing\n                pass\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=[\n            \"customer_id\", \"name\", \"segment\", \"eff_start_date\", \"eff_end_date\", \"is_current\"\n        ])\n        result = pd.concat([dim, new_df], ignore_index=True)\n    else:\n        result = dim\n\n    # Ensure dtypes\n    result[\"customer_id\"] = result[\"customer_id\"].astype(\"int64\")\n    result[\"is_current\"] = result[\"is_current\"].astype(\"int64\")\n    result[\"eff_start_date\"] = pd.to_datetime(result[\"eff_start_date\"])\n    result[\"eff_end_date\"] = pd.to_datetime(result[\"eff_end_date\"])\n\n    return {\"dim_customer_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1154,
+   "tokens_out": 1943,
+   "usd": 0.032607,
+   "wall_s": 16.898943185806274,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2847,
+  "tokens_out": 7991,
+  "usd": 0.128406,
+  "wall_s": 86.91324639320374
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}

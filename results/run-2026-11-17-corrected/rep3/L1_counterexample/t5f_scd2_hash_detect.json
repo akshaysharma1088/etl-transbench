@@ -1,0 +1,48 @@
+{
+ "config": "L1_counterexample",
+ "rep": 3,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _sig(city, tier):\n    c = '' if pd.isna(city) else str(city)\n    t = '' if pd.isna(tier) else str(tier)\n    return c.rstrip(' ') + '|' + t.rstrip(' ')\n\n\ndef run(inputs: dict) -> dict:\n    dim = inputs[\"dim_member\"].copy()\n    stg = inputs[\"stg_member\"].copy()\n\n    # ensure proper dtypes for working columns\n    if not dim.empty:\n        dim[\"eff_start_date\"] = pd.to_datetime(dim[\"eff_start_date\"])\n        dim[\"eff_end_date\"] = pd.to_datetime(dim[\"eff_end_date\"])\n        dim[\"is_current\"] = dim[\"is_current\"].astype(\"int64\")\n        dim[\"member_id\"] = dim[\"member_id\"].astype(\"int64\")\n\n    new_rows = []\n\n    for s in stg.itertuples(index=False):\n        member_id = s.member_id\n        s_city = s.city\n        s_tier = s.tier\n        s_update_date = s.update_date\n\n        mask_current = (dim[\"member_id\"] == member_id) & (dim[\"is_current\"] == 1)\n        current_idx = dim.index[mask_current]\n\n        if len(current_idx) == 0:\n            new_rows.append({\n                \"member_id\": member_id,\n                \"city\": s_city,\n                \"tier\": s_tier,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            })\n        else:\n            idx = current_idx[0]\n            c_city = dim.at[idx, \"city\"]\n            c_tier = dim.at[idx, \"tier\"]\n\n            if _sig(s_city, s_tier) != _sig(c_city, c_tier):\n                dim.at[idx, \"eff_end_date\"] = s_update_date\n                dim.at[idx, \"is_current\"] = 0\n\n                new_rows.append({\n                    \"member_id\": member_id,\n                    \"city\": s_city,\n                    \"tier\": s_tier,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                })\n            # else: no-op, unchanged record, no new version\n\n    if new_rows:\n        new_df = pd.DataFrame(new_rows, columns=[\n            \"member_id\", \"city\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"\n        ])\n        new_df[\"eff_start_date\"] = pd.to_datetime(new_df[\"eff_start_date\"])\n        new_df[\"eff_end_date\"] = pd.to_datetime(new_df[\"eff_end_date\"])\n        new_df[\"is_current\"] = new_df[\"is_current\"].astype(\"int64\")\n        new_df[\"member_id\"] = new_df[\"member_id\"].astype(\"int64\")\n\n        result = pd.concat([dim, new_df], ignore_index=True)\n    else:\n        result = dim.reset_index(drop=True)\n\n    result = result[[\"member_id\", \"city\", \"tier\", \"eff_start_date\", \"eff_end_date\", \"is_current\"]]\n\n    return {\"dim_member_out\": result}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 1247,
+   "tokens_out": 2018,
+   "usd": 0.034011,
+   "wall_s": 17.535886764526367,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "config": "C5_cheap_counterexample",
+ "rep": 2,
+ "task": "t7c_crossfield_reference",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    orders = inputs[\"orders\"].copy()\n    ref_customers = inputs[\"ref_customers\"].copy()\n    ref_skus = inputs[\"ref_skus\"].copy()\n    \n    # Initialize result column with None (no failure)\n    orders[\"reason_code\"] = None\n    \n    # R1: customer_id not present in ref_customers\n    valid_customers = set(ref_customers[\"customer_id\"].dropna())\n    mask_r1 = ~orders[\"customer_id\"].isin(valid_customers)\n    orders.loc[mask_r1 & (orders[\"reason_code\"].isna()), \"reason_code\"] = \"CUST_UNKNOWN\"\n    \n    # R2: customer status <> 'ACTIVE'\n    # Join with ref_customers to get status\n    orders_with_status = orders.merge(\n        ref_customers[[\"customer_id\", \"status\"]], \n        on=\"customer_id\", \n        how=\"left\"\n    )\n    mask_r2 = (orders_with_status[\"status\"] != \"ACTIVE\") & (orders_with_status[\"status\"].notna())\n    orders.loc[mask_r2 & (orders[\"reason_code\"].isna()), \"reason_code\"] = \"CUST_INACTIVE\"\n    \n    # R3: sku not present in ref_skus\n    valid_skus = set(ref_skus[\"sku\"].dropna())\n    mask_r3 = ~orders[\"sku\"].isin(valid_skus)\n    orders.loc[mask_r3 & (orders[\"reason_code\"].isna()), \"reason_code\"] = \"SKU_UNKNOWN\"\n    \n    # R4: sku discontinued = 1\n    # Join with ref_skus to get discontinued flag\n    sku_discontinued_map = dict(zip(ref_skus[\"sku\"], ref_skus[\"discontinued\"]))\n    orders[\"_discontinued\"] = orders[\"sku\"].map(sku_discontinued_map)\n    mask_r4 = orders[\"_discontinued\"] == 1\n    orders.loc[mask_r4 & (orders[\"reason_code\"].isna()), \"reason_code\"] = \"SKU_DISC\"\n    \n    # R5: allowed_countries non-empty AND ship_country not in list (trimmed)\n    # Join with ref_skus to get allowed_countries\n    sku_allowed_countries_map = dict(zip(ref_skus[\"sku\"], ref_skus[\"allowed_countries\"]))\n    orders[\"_allowed_countries\"] = orders[\"sku\"].map(sku_allowed_countries_map)\n    \n    def is_country_blocked(row):\n        allowed_countries_str = row[\"_allowed_countries\"]\n        ship_country = row[\"ship_country\"]\n        \n        # Empty or NULL means all countries allowed\n        if pd.isna(allowed_countries_str) or allowed_countries_str == \"\":\n            return False\n        \n        # Parse comma-delimited list (trimmed)\n        allowed = [c.strip() for c in str(allowed_countries_str).split(\",\")]\n        allowed = [c for c in allowed if c]  # Remove empty strings after strip\n        \n        # If ship_country is null, treat as blocked if list is non-empty\n        if pd.isna(ship_country):\n            return len(allowed) > 0\n        \n        return str(ship_country) not in allowed\n    \n    mask_r5 = orders.apply(is_country_blocked, axis=1)\n    orders.loc[mask_r5 & (orders[\"reason_code\"].isna()), \"reason_code\"] = \"CTRY_BLOCKED\"\n    \n    # Split into clean and rejects\n    orders_clean = orders[orders[\"reason_code\"].isna()].copy()\n    orders_rejects = orders[orders[\"reason_code\"].notna()].copy()\n    \n    # Drop temporary columns\n    orders_clean = orders_clean.drop(columns=[\"reason_code\", \"_discontinued\", \"_allowed_countries\"])\n    orders_rejects = orders_rejects.drop(columns=[\"_discontinued\", \"_allowed_countries\"])\n    \n    # Ensure orders_rejects has reason_code column\n    orders_rejects = orders_rejects[[\"order_id\", \"customer_id\", \"sku\", \"qty\", \"ship_country\", \"reason_code\"]]\n    \n    return {\n        \"orders_clean\": orders_clean,\n        \"orders_rejects\": orders_rejects\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 574,
+   "tokens_out": 1123,
+   "usd": 0.006189,
+   "wall_s": 9.227440357208252,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

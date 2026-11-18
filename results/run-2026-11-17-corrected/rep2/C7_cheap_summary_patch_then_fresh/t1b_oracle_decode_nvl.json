@@ -1,0 +1,48 @@
+{
+ "config": "C7_cheap_summary_patch_then_fresh",
+ "rep": 2,
+ "task": "t1b_oracle_decode_nvl",
+ "category": "T1",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\nfrom datetime import datetime\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    regional_txn = inputs[\"regional_txn\"].copy()\n    \n    # Filter for POSTED status\n    regional_txn = regional_txn[regional_txn[\"status\"] == \"POSTED\"].copy()\n    \n    # Apply DECODE logic for region normalization\n    # DECODE(region, NULL, 'MISSING', 'XX', 'UNKNOWN', region)\n    # This means: if region IS NULL -> 'MISSING', else if region == 'XX' -> 'UNKNOWN', else region\n    def decode_region(r):\n        if pd.isna(r):\n            return 'MISSING'\n        elif r == 'XX':\n            return 'UNKNOWN'\n        else:\n            return r\n    \n    regional_txn['region_norm'] = regional_txn['region'].apply(decode_region)\n    \n    # Apply TRUNC(txn_ts, 'MM') - truncate to month start\n    # This sets day, hour, minute, second, microsecond to the start of month\n    regional_txn['txn_month'] = regional_txn['txn_ts'].dt.to_period('M').dt.to_timestamp()\n    \n    # Apply NVL(amount, 0) - replace NULL amounts with 0\n    regional_txn['amount_normalized'] = regional_txn['amount'].fillna(0)\n    \n    # Group by txn_month and region_norm\n    grouped = regional_txn.groupby(['txn_month', 'region_norm'], as_index=False).agg(\n        total_amount=('amount_normalized', 'sum'),\n        txn_count=('txn_id', 'count')\n    )\n    \n    # Rename columns to match expected output\n    grouped = grouped.rename(columns={\n        'txn_month': 'txn_month',\n        'region_norm': 'region_norm',\n        'total_amount': 'total_amount',\n        'txn_count': 'txn_count'\n    })\n    \n    return {\n        'monthly_region_rollup': grouped\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 480,
+   "tokens_out": 559,
+   "usd": 0.003275,
+   "wall_s": 4.991013288497925,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  2011,
+  2023,
+  2047
+ ],
+ "heldout_seeds": [
+  2101,
+  2211,
+  2307,
+  2401,
+  2503
+ ]
+}

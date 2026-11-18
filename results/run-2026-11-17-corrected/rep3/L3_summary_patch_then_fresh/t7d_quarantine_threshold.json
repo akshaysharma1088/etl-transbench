@@ -1,0 +1,48 @@
+{
+ "config": "L3_summary_patch_then_fresh",
+ "rep": 3,
+ "task": "t7d_quarantine_threshold",
+ "category": "T7",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef run(inputs: dict) -> dict:\n    df = inputs[\"readings\"].copy()\n\n    # Row-level bad flag: null, negative, or > 1000\n    df[\"is_bad\"] = df[\"value\"].isna() | (df[\"value\"] < 0) | (df[\"value\"] > 1000)\n\n    # Per-batch aggregates\n    grp = df.groupby(\"batch_id\")\n    total_rows = grp[\"reading_id\"].transform(\"count\")\n    bad_row_count = grp[\"is_bad\"].transform(\"sum\")\n\n    df[\"_total_rows\"] = total_rows\n    df[\"_bad_row_count\"] = bad_row_count\n\n    # Strict >20% quarantine rule\n    quarantine_mask = (df[\"_bad_row_count\"] * 100) > (df[\"_total_rows\"] * 20)\n\n    quarantine_df = df[quarantine_mask].copy()\n    if len(quarantine_df) > 0:\n        quarantine_df[\"batch_reject_pct\"] = (\n            quarantine_df[\"_bad_row_count\"] * 100.0 / quarantine_df[\"_total_rows\"]\n        ).round(2)\n    else:\n        quarantine_df[\"batch_reject_pct\"] = pd.Series(dtype=\"float64\")\n\n    non_quarantine = df[~quarantine_mask]\n\n    clean = non_quarantine[~non_quarantine[\"is_bad\"]].copy()\n    rejects = non_quarantine[non_quarantine[\"is_bad\"]].copy()\n\n    helper_cols = [\"is_bad\", \"_total_rows\", \"_bad_row_count\"]\n    clean = clean.drop(columns=helper_cols).reset_index(drop=True)\n    rejects = rejects.drop(columns=helper_cols).reset_index(drop=True)\n    quarantine_df = quarantine_df.drop(columns=helper_cols).reset_index(drop=True)\n\n    return {\n        \"readings_clean\": clean,\n        \"readings_rejects\": rejects,\n        \"readings_quarantine\": quarantine_df,\n    }\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 623,
+   "tokens_out": 1469,
+   "usd": 0.023904,
+   "wall_s": 11.493950843811035,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  3011,
+  3023,
+  3047
+ ],
+ "heldout_seeds": [
+  3101,
+  3211,
+  3307,
+  3401,
+  3503
+ ]
+}

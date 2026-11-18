@@ -1,0 +1,53 @@
+{
+ "config": "L1_counterexample",
+ "rep": 1,
+ "task": "t6c_midnight_split",
+ "category": "T6",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 1,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": false,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "runtime"
+  },
+  {
+   "iter": 1,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    events = inputs[\"events\"].copy()\n\n    # Sort by user_id, then event_ts, then event_id\n    events = events.sort_values(by=[\"user_id\", \"event_ts\", \"event_id\"]).reset_index(drop=True)\n\n    # Extract calendar date (date part of event_ts)\n    events[\"event_date\"] = events[\"event_ts\"].dt.date\n\n    # Compute previous row's user_id, event_ts, event_date within the sorted frame\n    prev_user = events[\"user_id\"].shift(1)\n    prev_ts = events[\"event_ts\"].shift(1)\n    prev_date = events[\"event_date\"].shift(1)\n\n    same_user = events[\"user_id\"] == prev_user\n    different_date = events[\"event_date\"] != prev_date\n\n    gap_minutes = (events[\"event_ts\"] - prev_ts).dt.total_seconds() / 60.0\n    gap_too_large = gap_minutes > 45\n\n    # New session starts when: different user, OR different date, OR gap > 45 min\n    new_session = (~same_user) | different_date | gap_too_large\n    # First row is always a new session start\n    new_session.iloc[0] = True\n\n    # session_num: cumulative count of new_session flags, reset per user\n    # Compute global session boundary cumulative sum, then reset numbering per user\n    events[\"_new_session_flag\"] = new_session.astype(int)\n    events[\"_session_group\"] = events[\"_new_session_flag\"].cumsum()\n\n    # Now compute session_num as rank of _session_group within each user\n    events[\"session_num\"] = events.groupby(\"user_id\")[\"_session_group\"].rank(method=\"dense\").astype(\"int64\")\n\n    # Group by user_id and session_num to build sessions\n    grouped = events.groupby([\"user_id\", \"session_num\"], as_index=False).agg(\n        session_date=(\"event_date\", \"first\"),\n        session_start=(\"event_ts\", \"min\"),\n        session_end=(\"event_ts\", \"max\"),\n        event_count=(\"event_id\", \"count\"),\n    )\n\n    # Ensure correct types\n    grouped[\"user_id\"] = grouped[\"user_id\"].astype(\"int64\")\n    grouped[\"session_num\"] = grouped[\"session_num\"].astype(\"int64\")\n    grouped[\"session_date\"] = grouped[\"session_date\"].astype(\"object\")\n    grouped[\"session_start\"] = grouped[\"session_start\"].astype(\"datetime64[us]\")\n    grouped[\"session_end\"] = grouped[\"session_end\"].astype(\"datetime64[us]\")\n    grouped[\"event_count\"] = grouped[\"event_count\"].astype(\"int64\")\n\n    # Sort output by user_id and session_num\n    grouped = grouped.sort_values(by=[\"user_id\", \"session_num\"]).reset_index(drop=True)\n\n    grouped = grouped[[\"user_id\", \"session_num\", \"session_date\", \"session_start\", \"session_end\", \"event_count\"]]\n\n    return {\"user_sessions\": grouped}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 380,
+   "tokens_out": 995,
+   "usd": 0.005355,
+   "wall_s": 8.033911228179932,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 2342,
+  "tokens_out": 1207,
+  "usd": 0.025131,
+  "wall_s": 10.398668766021729
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

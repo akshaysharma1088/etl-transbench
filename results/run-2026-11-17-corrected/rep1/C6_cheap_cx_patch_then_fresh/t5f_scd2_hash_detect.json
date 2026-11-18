@@ -1,0 +1,48 @@
+{
+ "config": "C6_cheap_cx_patch_then_fresh",
+ "rep": 1,
+ "task": "t5f_scd2_hash_detect",
+ "category": "T5",
+ "set": "extension",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "cheap",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\nimport numpy as np\n\ndef run(inputs: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:\n    dim_member = inputs[\"dim_member\"].copy()\n    stg_member = inputs[\"stg_member\"].copy()\n    \n    # Ensure proper column types\n    dim_member[\"member_id\"] = dim_member[\"member_id\"].astype(\"int64\")\n    dim_member[\"is_current\"] = dim_member[\"is_current\"].astype(\"int64\")\n    stg_member[\"member_id\"] = stg_member[\"member_id\"].astype(\"int64\")\n    \n    # Function to compute signature\n    def compute_signature(city, tier):\n        \"\"\"\n        Compute SIG(city, tier) = RTRIM(COALESCE(city, '')) || '|' || RTRIM(COALESCE(tier, ''))\n        NULL and '' are both treated as '' after COALESCE.\n        RTRIM removes trailing whitespace.\n        \"\"\"\n        city_str = \"\" if pd.isna(city) else str(city)\n        tier_str = \"\" if pd.isna(tier) else str(tier)\n        city_trimmed = city_str.rstrip()\n        tier_trimmed = tier_str.rstrip()\n        return city_trimmed + \"|\" + tier_trimmed\n    \n    # Process each staged record\n    rows_to_insert = []\n    \n    for _, stg_row in stg_member.iterrows():\n        member_id = stg_row[\"member_id\"]\n        stg_city = stg_row[\"city\"]\n        stg_tier = stg_row[\"tier\"]\n        update_date = stg_row[\"update_date\"]\n        \n        # Find current row (is_current = 1) for this member_id\n        current_rows = dim_member[\n            (dim_member[\"member_id\"] == member_id) & \n            (dim_member[\"is_current\"] == 1)\n        ]\n        \n        if len(current_rows) == 0:\n            # No current row: INSERT new row\n            rows_to_insert.append({\n                \"member_id\": member_id,\n                \"city\": stg_city,\n                \"tier\": stg_tier,\n                \"eff_start_date\": update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1\n            })\n        else:\n            # There is a current row\n            current_row = current_rows.iloc[0]\n            current_city = current_row[\"city\"]\n            current_tier = current_row[\"tier\"]\n            \n            # Compute signatures\n            stg_sig = compute_signature(stg_city, stg_tier)\n            current_sig = compute_signature(current_city, current_tier)\n            \n            if stg_sig != current_sig:\n                # Signatures differ: CLOSE current row and INSERT new row\n                # Update the current row in dim_member\n                dim_member.loc[current_row.name, \"eff_end_date\"] = update_date\n                dim_member.loc[current_row.name, \"is_current\"] = 0\n                \n                # Insert new row\n                rows_to_insert.append({\n                    \"member_id\": member_id,\n                    \"city\": stg_city,\n                    \"tier\": stg_tier,\n                    \"eff_start_date\": update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1\n                })\n            # else: signatures are the same, no-op\n    \n    # Append inserted rows to dim_member\n    if rows_to_insert:\n        insert_df = pd.DataFrame(rows_to_insert)\n        dim_member = pd.concat([dim_member, insert_df], ignore_index=True)\n    \n    # Reset index for clean output\n    dim_member = dim_member.reset_index(drop=True)\n    \n    # Ensure output column order and types\n    dim_member_out = dim_member[[\n        \"member_id\", \"city\", \"tier\", \n        \"eff_start_date\", \"eff_end_date\", \"is_current\"\n    ]].copy()\n    \n    dim_member_out[\"member_id\"] = dim_member_out[\"member_id\"].astype(\"int64\")\n    dim_member_out[\"is_current\"] = dim_member_out[\"is_current\"].astype(\"int64\")\n    \n    return {\"dim_member_out\": dim_member_out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-haiku-4-5-20251001",
+   "tokens_in": 904,
+   "tokens_out": 1136,
+   "usd": 0.006584,
+   "wall_s": 8.818755865097046,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  1011,
+  1023,
+  1047
+ ],
+ "heldout_seeds": [
+  1101,
+  1211,
+  1307,
+  1401,
+  1503
+ ]
+}

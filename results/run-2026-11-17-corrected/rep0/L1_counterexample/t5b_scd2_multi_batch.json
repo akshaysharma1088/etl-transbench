@@ -1,0 +1,48 @@
+{
+ "config": "L1_counterexample",
+ "rep": 0,
+ "task": "t5b_scd2_multi_batch",
+ "category": "T5",
+ "set": "core",
+ "dev_equivalent": true,
+ "iterations": 0,
+ "heldout_equivalent": true,
+ "heldout_equivalent_first": true,
+ "history": [
+  {
+   "iter": 0,
+   "tier": "frontier",
+   "class": "equivalent"
+  }
+ ],
+ "final_code": "import pandas as pd\n\n\ndef _is_different(a, b) -> bool:\n    a_null = pd.isna(a)\n    b_null = pd.isna(b)\n    if a_null and b_null:\n        return False\n    if a_null != b_null:\n        return True\n    return a != b\n\n\ndef run(inputs: dict) -> dict:\n    dim_product = inputs[\"dim_product\"].copy()\n    stg_product = inputs[\"stg_product\"].copy()\n\n    # Build working list of rows (dicts) from existing dim_product\n    rows = dim_product.to_dict(\"records\")\n\n    # Map product_id -> index in rows for the currently-current row\n    current = {}\n    for idx, r in enumerate(rows):\n        if r.get(\"is_current\") == 1:\n            current[r[\"product_id\"]] = idx\n\n    # Order staged records by product_id, update_date ascending (per spec)\n    stg_sorted = stg_product.sort_values(\n        by=[\"product_id\", \"update_date\"], kind=\"mergesort\"\n    )\n\n    for _, s in stg_sorted.iterrows():\n        pid = s[\"product_id\"]\n        s_category = s[\"category\"]\n        s_price_band = s[\"price_band\"]\n        s_update_date = s[\"update_date\"]\n\n        if pid in current:\n            c_idx = current[pid]\n            c = rows[c_idx]\n\n            changed = _is_different(c[\"category\"], s_category) or _is_different(\n                c[\"price_band\"], s_price_band\n            )\n\n            if changed:\n                # Expire the current row\n                rows[c_idx][\"eff_end_date\"] = s_update_date\n                rows[c_idx][\"is_current\"] = 0\n\n                # Insert new current version\n                new_row = {\n                    \"product_id\": pid,\n                    \"category\": s_category,\n                    \"price_band\": s_price_band,\n                    \"eff_start_date\": s_update_date,\n                    \"eff_end_date\": pd.NaT,\n                    \"is_current\": 1,\n                }\n                rows.append(new_row)\n                current[pid] = len(rows) - 1\n            # else: no-op, unchanged record does not create a new version\n        else:\n            # No current row exists for this product -> insert new current version\n            new_row = {\n                \"product_id\": pid,\n                \"category\": s_category,\n                \"price_band\": s_price_band,\n                \"eff_start_date\": s_update_date,\n                \"eff_end_date\": pd.NaT,\n                \"is_current\": 1,\n            }\n            rows.append(new_row)\n            current[pid] = len(rows) - 1\n\n    out = pd.DataFrame(\n        rows,\n        columns=[\n            \"product_id\",\n            \"category\",\n            \"price_band\",\n            \"eff_start_date\",\n            \"eff_end_date\",\n            \"is_current\",\n        ],\n    )\n\n    if not out.empty:\n        out[\"product_id\"] = out[\"product_id\"].astype(\"int64\")\n        out[\"is_current\"] = out[\"is_current\"].astype(\"int64\")\n        out[\"eff_start_date\"] = pd.to_datetime(out[\"eff_start_date\"]).astype(\n            \"datetime64[us]\"\n        )\n        out[\"eff_end_date\"] = pd.to_datetime(out[\"eff_end_date\"]).astype(\n            \"datetime64[s]\"\n        )\n\n        out = out.sort_values(\n            by=[\"product_id\", \"eff_start_date\"], kind=\"mergesort\"\n        ).reset_index(drop=True)\n\n    return {\"dim_product_out\": out}\n",
+ "initial_calls": [
+  {
+   "role": "translator",
+   "model": "claude-sonnet-5",
+   "tokens_in": 968,
+   "tokens_out": 2070,
+   "usd": 0.033954,
+   "wall_s": 17.70386290550232,
+   "stop_reason": "end_turn"
+  }
+ ],
+ "repair_cost": {
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "usd": 0.0,
+  "wall_s": 0.0
+ },
+ "dev_seeds": [
+  11,
+  23,
+  47
+ ],
+ "heldout_seeds": [
+  101,
+  211,
+  307,
+  401,
+  503
+ ]
+}
